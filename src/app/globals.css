@@ -12,6 +12,10 @@
   --color-on-primary-container: #00695f;
   --color-on-surface: #e2e2e2;
   --color-on-surface-variant: #bbcac6;
+  --color-surface: #131313;
+  --color-surface-container: #1f1f1f;
+  --color-outline-variant: #3c4947;
+  --color-error: #ffb4ab;
 }
 
 body {
