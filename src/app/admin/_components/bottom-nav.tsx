@@ -2,17 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NAV_ITEMS } from "./nav-items";
+import { NAV_ITEMS_ADMIN } from "./nav-items";
 
 export function BottomNav() {
   const pathname = usePathname();
 
   return (
     <nav className="bg-surface-container/80 backdrop-blur-xl fixed bottom-0 w-full z-50 rounded-t-xl border-t border-outline-variant flex justify-around items-center h-20 pb-[env(safe-area-inset-bottom)] px-5 md:hidden">
-      {NAV_ITEMS.map((item) => {
+      {NAV_ITEMS_ADMIN.map((item) => {
         const activo =
-          item.href === "/panel"
-            ? pathname === "/panel"
+          item.href === "/admin"
+            ? pathname === "/admin"
             : pathname === item.href || pathname.startsWith(`${item.href}/`);
         return (
           <Link

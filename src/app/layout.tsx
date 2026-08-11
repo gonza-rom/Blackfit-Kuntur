@@ -1,23 +1,35 @@
 import type { Metadata } from "next";
-import { Sora, Inter, JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
-const sora = Sora({
+// Autohospedadas (en vez de next/font/google) porque Turbopack en esta
+// versión de Next pide un hash de archivo fijo a fonts.gstatic.com que
+// Google ya no sirve (404 permanente, no es un problema de red local).
+const sora = localFont({
   variable: "--font-sora",
-  subsets: ["latin"],
-  weight: ["400", "600", "700"],
+  display: "swap",
+  src: [
+    { path: "../fonts/sora-400.woff2", weight: "400", style: "normal" },
+    { path: "../fonts/sora-600.woff2", weight: "600", style: "normal" },
+    { path: "../fonts/sora-700.woff2", weight: "700", style: "normal" },
+  ],
 });
 
-const inter = Inter({
+const inter = localFont({
   variable: "--font-inter",
-  subsets: ["latin"],
-  weight: ["400", "500"],
+  display: "swap",
+  src: [
+    { path: "../fonts/inter-variable.woff2", weight: "400", style: "normal" },
+    { path: "../fonts/inter-variable.woff2", weight: "500", style: "normal" },
+  ],
 });
 
-const jetbrainsMono = JetBrains_Mono({
+const jetbrainsMono = localFont({
   variable: "--font-jetbrains-mono",
-  subsets: ["latin"],
-  weight: ["500"],
+  display: "swap",
+  src: [
+    { path: "../fonts/jetbrains-mono-500.woff2", weight: "500", style: "normal" },
+  ],
 });
 
 export const metadata: Metadata = {

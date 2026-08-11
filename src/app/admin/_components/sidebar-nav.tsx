@@ -2,17 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NAV_ITEMS } from "./nav-items";
+import { NAV_ITEMS_ADMIN } from "./nav-items";
 
 export function SidebarNav() {
   const pathname = usePathname();
 
   return (
     <nav className="flex flex-col gap-2 px-4">
-      {NAV_ITEMS.map((item) => {
+      {NAV_ITEMS_ADMIN.map((item) => {
         const activo =
-          item.href === "/panel"
-            ? pathname === "/panel"
+          item.href === "/admin"
+            ? pathname === "/admin"
             : pathname === item.href || pathname.startsWith(`${item.href}/`);
 
         if (activo) {

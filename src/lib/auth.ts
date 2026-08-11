@@ -35,3 +35,23 @@ export async function obtenerEntrenadorActual(): Promise<
   }
   return { usuario, id_entrenador: usuario.entrenador.id_entrenador };
 }
+
+export async function obtenerAlumnoActual(): Promise<
+  { usuario: UsuarioActual; id_alumno: string } | null
+> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario || !tieneRol(usuario, "alumno") || !usuario.alumno) {
+    return null;
+  }
+  return { usuario, id_alumno: usuario.alumno.id_alumno };
+}
+
+export async function obtenerAdministradorActual(): Promise<
+  { usuario: UsuarioActual } | null
+> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario || !tieneRol(usuario, "administrador")) {
+    return null;
+  }
+  return { usuario };
+}

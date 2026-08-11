@@ -11,7 +11,22 @@
       "Bash(curl -s -o /dev/null -w \"status=%{http_code}\\\\n\" \"http://localhost:3000/coach/alumnos/00000000-0000-0000-0000-000000000000\")",
       "Bash(curl -s -o /dev/null -w \"status=%{http_code}\\\\n\" \"http://localhost:3000/coach/programas/00000000-0000-0000-0000-000000000000\")",
       "Bash(rm -rf .next)",
-      "Bash(npx next *)"
+      "Bash(npx next *)",
+      "PowerShell(Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-Process -Id 21724)",
+      "PowerShell(Stop-Process -Id 21724 -Force)",
+      "Bash(curl -s -o /dev/null -w \"gstatic status=%{http_code} time=%{time_total}s\\\\n\" \"https://fonts.gstatic.com/s/sora/v17/xMQ9uFFYT72X5wkB_18qmnndmSdSnh2BAfO5mnuyOo1lGSQwWa-xo6eeI7fM.woff2\" --max-time 10)",
+      "Bash(curl -s \"https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&display=swap\" -A \"Mozilla/5.0\" --max-time 10)",
+      "Bash(curl -s \"https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700&display=swap\" -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/120 Safari/537.36\" --max-time 10)",
+      "Bash(curl -s -o /dev/null -w \"status=%{http_code}\\\\n\" \"https://fonts.gstatic.com/s/sora/v17/xMQ9uFFYT72X5wkB_18qmnndmSdSnh2BAfO5mnuyOo1lGSQwWa-xo6eeI7fM.woff2\" --max-time 10)",
+      "Bash(curl -sL \"https://fonts.gstatic.com/s/sora/v17/xMQOuFFYT72X5wkB_18qmnndmSdSnk-NKQI.woff2\" -o sora-400.woff2 --max-time 20)",
+      "Bash(curl -sL \"https://fonts.gstatic.com/s/sora/v17/xMQOuFFYT72X5wkB_18qmnndmSeMmU-NKQI.woff2\" -o sora-600.woff2 --max-time 20)",
+      "Bash(curl -sL \"https://fonts.gstatic.com/s/sora/v17/xMQOuFFYT72X5wkB_18qmnndmSe1mU-NKQI.woff2\" -o sora-700.woff2 --max-time 20)",
+      "Bash(curl -sL \"https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2\" -o inter-variable.woff2 --max-time 20)",
+      "Bash(curl -sL \"https://fonts.gstatic.com/s/jetbrainsmono/v24/tDbY2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8-qxTOlOV.woff2\" -o jetbrains-mono-500.woff2 --max-time 20)",
+      "Bash(curl -sD - -o /dev/null http://localhost:3000/iniciar-sesion)",
+      "PowerShell(Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force })",
+      "Bash(node --env-file=.env scripts/crear-admin-prueba.mjs)"
     ]
   }
 }
