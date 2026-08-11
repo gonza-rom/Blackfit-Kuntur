@@ -1,7 +1,17 @@
 {
   "permissions": {
     "allow": [
-      "Bash(node _seed-test-user.js)"
+      "Bash(node _seed-test-user.js)",
+      "Bash(npx prisma *)",
+      "Bash(powershell -Command \"Get-Process node -ErrorAction SilentlyContinue | Select-Object Id, ProcessName, Path\")",
+      "Bash(node --env-file=.env -e ' *)",
+      "Bash(node --env-file=.env scripts/crear-coach-prueba.mjs)",
+      "Bash(curl -s -o /dev/null -w \"status=%{http_code}\\\\n\" http://localhost:3000/coach)",
+      "Bash(curl -s -o /dev/null -w \"status=%{http_code}\\\\n\" http://localhost:3000/coach/ejercicios)",
+      "Bash(curl -s -o /dev/null -w \"status=%{http_code}\\\\n\" \"http://localhost:3000/coach/alumnos/00000000-0000-0000-0000-000000000000\")",
+      "Bash(curl -s -o /dev/null -w \"status=%{http_code}\\\\n\" \"http://localhost:3000/coach/programas/00000000-0000-0000-0000-000000000000\")",
+      "Bash(rm -rf .next)",
+      "Bash(npx next *)"
     ]
   }
 }

@@ -1,12 +1,18 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/proxy";
 
-const RUTAS_PROTEGIDAS = ["/panel"];
+const RUTAS_PROTEGIDAS = ["/panel", "/coach"];
 const RUTAS_SOLO_INVITADOS = ["/iniciar-sesion", "/registro"];
 
 export default async function proxy(request: NextRequest) {
   const { supabaseResponse, user } = await updateSession(request);
   const { pathname } = request.nextUrl;
+
+  if (pathname === "/") {
+    return NextResponse.redirect(
+      new URL(user ? "/panel" : "/iniciar-sesion", request.url)
+    );
+  }
 
   if (!user && RUTAS_PROTEGIDAS.some((ruta) => pathname.startsWith(ruta))) {
     return NextResponse.redirect(new URL("/iniciar-sesion", request.url));

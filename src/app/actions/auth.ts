@@ -68,6 +68,7 @@ export async function registrarse(
       nombre,
       apellido,
       roles: { create: { rol: "alumno" } },
+      alumno: { create: {} },
     },
   });
 

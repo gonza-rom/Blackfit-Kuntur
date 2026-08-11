@@ -1,0 +1,37 @@
+import { createClient } from "@/lib/supabase/server";
+import { prisma } from "@/lib/prisma";
+import type { RolUsuario, Usuario, UsuarioRol, Alumno, Entrenador } from "@prisma/client";
+
+export type UsuarioActual = Usuario & {
+  roles: UsuarioRol[];
+  alumno: Alumno | null;
+  entrenador: Entrenador | null;
+};
+
+export async function obtenerUsuarioActual(): Promise<UsuarioActual | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return null;
+
+  return prisma.usuario.findUnique({
+    where: { id_usuario: user.id },
+    include: { roles: true, alumno: true, entrenador: true },
+  });
+}
+
+export function tieneRol(usuario: UsuarioActual | null, rol: RolUsuario): boolean {
+  return usuario?.roles.some((r) => r.rol === rol) ?? false;
+}
+
+export async function obtenerEntrenadorActual(): Promise<
+  { usuario: UsuarioActual; id_entrenador: string } | null
+> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario || !tieneRol(usuario, "entrenador") || !usuario.entrenador) {
+    return null;
+  }
+  return { usuario, id_entrenador: usuario.entrenador.id_entrenador };
+}

@@ -285,6 +285,7 @@ model EjercicioPrograma {
   tempo                    String?
   descanso                 String?
   metodo_entrenamiento     String?
+  tiempo_bajo_tension_sugerido Int? // segundos, nunca obligatorio
   orden                    Int
 
   bloque       BloqueEntrenamiento @relation(fields: [id_bloque], references: [id_bloque], onDelete: Cascade)
