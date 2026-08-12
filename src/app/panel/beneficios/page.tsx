@@ -37,8 +37,12 @@ export default async function BeneficiosPage() {
         where: { id_usuario: user.id },
         include: {
           credencial: true,
+          // "Activa" no alcanza: también tiene que estar vigente en el
+          // tiempo (fecha_vencimiento_membresia >= hoy). Ver punto 5 y 7
+          // del brief — nunca confiar solo en el estado guardado.
           membresias: {
-            where: { estado_membresia: "activa" },
+            where: { estado_membresia: "activa", fecha_vencimiento_membresia: { gte: new Date() } },
+            orderBy: { fecha_vencimiento_membresia: "desc" },
             take: 1,
             include: {
               plan_membresia: {
