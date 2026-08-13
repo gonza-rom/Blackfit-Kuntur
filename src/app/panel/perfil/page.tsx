@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { cerrarSesion } from "@/app/actions/auth";
@@ -113,16 +114,14 @@ export default async function PerfilPage() {
             Gestión de Cuenta
           </h2>
           {[
-            { icon: "badge", label: "Información Personal" },
-            { icon: "credit_card", label: "Plan de Membresía" },
-            { icon: "monitor_heart", label: "Métricas Corporales" },
-            { icon: "settings", label: "Configuración" },
-            { icon: "help", label: "Soporte" },
+            { icon: "badge", label: "Información Personal", href: "/panel/perfil/informacion-personal" },
+            { icon: "credit_card", label: "Plan de Membresía", href: "/panel/beneficios" },
+            { icon: "monitor_heart", label: "Métricas Corporales", href: "/panel/seguimiento/progreso" },
           ].map((item) => (
-            <a
+            <Link
               key={item.label}
               className="flex items-center justify-between bg-[#1f1f1f] border border-[#262626] rounded-lg p-4 hover:border-outline-variant transition-colors group"
-              href="#"
+              href={item.href}
             >
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-md bg-[#353535] flex items-center justify-center text-on-surface-variant group-hover:text-primary-container transition-colors">
@@ -135,7 +134,7 @@ export default async function PerfilPage() {
               <span className="material-symbols-outlined text-on-surface-variant group-hover:text-on-surface transition-colors">
                 chevron_right
               </span>
-            </a>
+            </Link>
           ))}
         </div>
 
@@ -175,12 +174,12 @@ export default async function PerfilPage() {
                   )}`
                 : "Todavía no tenés un plan activo."}
             </p>
-            <a
+            <Link
               href="/panel/beneficios"
               className="mt-6 w-full py-3 px-4 bg-transparent border border-primary-container text-primary-container font-[family-name:var(--font-sora)] text-sm rounded-lg hover:bg-primary-container/10 transition-colors uppercase tracking-wider flex items-center justify-center"
             >
               Gestionar Plan
-            </a>
+            </Link>
           </div>
 
           {/* Acceso QR */}

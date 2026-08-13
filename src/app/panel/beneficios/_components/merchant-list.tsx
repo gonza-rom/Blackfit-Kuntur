@@ -92,12 +92,12 @@ export function MerchantList({ comercios }: { comercios: ComercioConBeneficio[] 
                 <p className="font-[family-name:var(--font-inter)] text-sm text-on-surface-variant mb-2">
                   {beneficio.descripcion ?? comercio.descripcion ?? beneficio.titulo}
                 </p>
-                <button
-                  type="button"
-                  className="w-full bg-primary-container text-background font-[family-name:var(--font-sora)] text-[14px] py-3 rounded text-center uppercase tracking-wider font-bold"
+                <a
+                  href={`/panel/beneficios/${comercio.id_comercio}`}
+                  className="block w-full bg-primary-container text-background font-[family-name:var(--font-sora)] text-[14px] py-3 rounded text-center uppercase tracking-wider font-bold"
                 >
                   Ver Beneficio
-                </button>
+                </a>
               </div>
             </div>
           ))}

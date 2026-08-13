@@ -1,7 +1,7 @@
-import QRCode from "qrcode";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { MerchantList } from "./_components/merchant-list";
+import { CredencialCard } from "./_components/credencial-card";
 
 const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
   day: "2-digit",
@@ -90,53 +90,21 @@ export default async function BeneficiosPage() {
   }
   const comercios = Array.from(comerciosMap.values());
 
-  let qrSvg: string | null = null;
-  if (usuario?.credencial) {
-    qrSvg = await QRCode.toString(usuario.credencial.codigo_qr_token, {
-      type: "svg",
-      margin: 0,
-      color: { dark: "#000000ff", light: "#ffffffff" },
-    });
-  }
-
   return (
     <main className="flex-1 w-full max-w-3xl mx-auto px-5 md:px-10 py-8 flex flex-col gap-8">
       {/* Credencial Digital */}
-      <section className="flex flex-col gap-2">
+      <section id="credencial" className="flex flex-col gap-2 scroll-mt-20">
         <h2 className="font-[family-name:var(--font-sora)] text-[24px] leading-8 font-semibold text-on-surface">
           Credencial Digital
         </h2>
 
         {usuario?.credencial ? (
-          <div className="bg-[#1a1a1a] border border-primary-container rounded-lg p-4 relative overflow-hidden flex flex-col items-center justify-center min-h-[220px]">
-            <div className="absolute inset-0 bg-gradient-to-br from-transparent to-outline-variant/10 pointer-events-none" />
-            <div className="w-full flex justify-between items-start mb-auto z-10">
-              <div className="flex flex-col">
-                <span className="font-[family-name:var(--font-sora)] text-[20px] leading-tight font-bold text-on-surface">
-                  {nombreCompleto}
-                </span>
-                <span className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-[#c8c6c5]">
-                  SOCIO #{usuario.credencial.numero_socio}
-                </span>
-              </div>
-              <div className="border border-primary-container rounded-full px-2 py-1 flex items-center gap-1 bg-background/50 backdrop-blur-sm">
-                <div className="w-2 h-2 rounded-full bg-primary-container animate-pulse" />
-                <span className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] text-primary-container">
-                  {membresiaActiva ? "ACTIVA" : "SIN MEMBRESÍA"}
-                </span>
-              </div>
-            </div>
-            <div className="bg-white p-2 rounded-lg border border-outline-variant mt-4 z-10 flex items-center justify-center w-[144px] h-[144px]">
-              {qrSvg && (
-                <div
-                  className="w-32 h-32"
-                  // El SVG viene de la librería `qrcode`, generado a partir del
-                  // token opaco `codigo_qr_token` del usuario — no de HTML externo.
-                  dangerouslySetInnerHTML={{ __html: qrSvg }}
-                />
-              )}
-            </div>
-          </div>
+          <CredencialCard
+            nombreCompleto={nombreCompleto}
+            numeroSocio={usuario.credencial.numero_socio}
+            membresiaActiva={Boolean(membresiaActiva)}
+            codigoQrToken={usuario.credencial.codigo_qr_token}
+          />
         ) : (
           <div className="bg-[#1a1a1a] border border-outline-variant rounded-lg p-6 text-center">
             <p className="font-[family-name:var(--font-inter)] text-on-surface-variant text-sm">
@@ -178,12 +146,12 @@ export default async function BeneficiosPage() {
                 <p className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] text-on-surface-variant uppercase">
                   Vence {FORMATEADOR_FECHA.format(beneficio.fecha_vencimiento)}
                 </p>
-                <button
-                  type="button"
+                <a
+                  href={`/panel/beneficios/${beneficio.comercio.id_comercio}`}
                   className="mt-auto text-left font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-primary-container border-b border-primary-container/30 w-fit pb-1 group-hover:border-primary-container transition-colors uppercase"
                 >
                   Usar ahora
-                </button>
+                </a>
               </div>
             ))}
           </div>

@@ -184,7 +184,7 @@ export default async function PanelPage() {
 
       {tieneRol(usuario, "miembro_kuntur") && (
         <section className="flex flex-col gap-1">
-          <a
+          <Link
             href="/panel/beneficios"
             className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex items-center justify-between border-l-2 border-l-primary-container"
           >
@@ -206,7 +206,7 @@ export default async function PanelPage() {
             <span className="material-symbols-outlined text-on-surface-variant text-[20px]">
               qr_code_scanner
             </span>
-          </a>
+          </Link>
         </section>
       )}
     </main>
