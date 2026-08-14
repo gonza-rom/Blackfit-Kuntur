@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { obtenerUsuarioActual, tieneRol } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { OfflineSyncBanner } from "@/components/offline-sync-banner";
 import { BottomNav } from "./_components/bottom-nav";
 import { SidebarNav } from "./_components/sidebar-nav";
 
@@ -86,7 +87,10 @@ export default async function PanelLayout({
         <SidebarNav />
       </aside>
 
-      <div className="md:pl-[280px] flex-1 flex flex-col">{children}</div>
+      <div className="md:pl-[280px] flex-1 flex flex-col">
+        <OfflineSyncBanner />
+        {children}
+      </div>
 
       {/* BottomNavBar (mobile) */}
       <BottomNav />

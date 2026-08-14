@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
+import { detectarAlertas } from "@/lib/alertas";
+import { SugerenciaIA } from "./_components/sugerencia-ia";
 
 const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
   day: "2-digit",
@@ -76,6 +78,7 @@ export default async function AlumnoDetallePage(
     habitosSemana,
     feedbackDiarios,
     feedbackSemanales,
+    alertas,
   ] = await Promise.all([
     prisma.programaEntrenamiento.findMany({
       where: { id_alumno, id_entrenador: contexto.id_entrenador },
@@ -118,6 +121,7 @@ export default async function AlumnoDetallePage(
       orderBy: { semana_inicio: "desc" },
       take: 5,
     }),
+    detectarAlertas(id_alumno),
   ]);
 
   const { usuario } = relacion.alumno;
@@ -141,6 +145,38 @@ export default async function AlumnoDetallePage(
           </p>
         )}
       </section>
+
+      {alertas.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
+            Alertas
+          </h2>
+          <div className="flex flex-col gap-1">
+            {alertas.map((a, i) => (
+              <div
+                key={i}
+                className={`rounded-xl p-3 flex items-start gap-2 border text-sm ${
+                  a.severidad === "critica"
+                    ? "border-[#ffb4ab]/40 bg-[#ffb4ab]/5 text-[#ffb4ab]"
+                    : a.severidad === "advertencia"
+                      ? "border-[#eda100]/40 bg-[#eda100]/5 text-[#eda100]"
+                      : "border-[#262626] bg-[#1A1A1A] text-on-surface-variant"
+                }`}
+              >
+                <span className="material-symbols-outlined text-[18px] mt-0.5">
+                  {a.severidad === "critica"
+                    ? "error"
+                    : a.severidad === "advertencia"
+                      ? "warning"
+                      : "info"}
+                </span>
+                <span>{a.mensaje}</span>
+              </div>
+            ))}
+          </div>
+          <SugerenciaIA idAlumno={id_alumno} />
+        </section>
+      )}
 
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between">

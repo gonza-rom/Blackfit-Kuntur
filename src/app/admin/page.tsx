@@ -8,20 +8,61 @@ const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
 });
 
 export default async function AdminPage() {
-  const [porRol, porEstadoMembresia, ultimaActividad] = await Promise.all([
-    prisma.usuarioRol.groupBy({ by: ["rol"], _count: { _all: true } }),
-    prisma.membresia.groupBy({ by: ["estado_membresia"], _count: { _all: true } }),
-    prisma.registroAuditoria.findMany({
-      orderBy: { fecha: "desc" },
-      take: 10,
-      include: { usuario: true },
-    }),
-  ]);
+  const hace7 = new Date();
+  hace7.setDate(hace7.getDate() - 7);
+  const hace14 = new Date();
+  hace14.setDate(hace14.getDate() - 14);
+
+  const [porRol, porEstadoMembresia, ultimaActividad, comercios, validacionesSemanaAnterior] =
+    await Promise.all([
+      prisma.usuarioRol.groupBy({ by: ["rol"], _count: { _all: true } }),
+      prisma.membresia.groupBy({ by: ["estado_membresia"], _count: { _all: true } }),
+      prisma.registroAuditoria.findMany({
+        orderBy: { fecha: "desc" },
+        take: 10,
+        include: { usuario: true },
+      }),
+      prisma.comercio.findMany({
+        include: {
+          _count: { select: { validaciones: true } },
+          validaciones: {
+            where: { fecha_validacion: { gte: hace7 } },
+            select: { resultado: true },
+          },
+        },
+      }),
+      prisma.validacionBeneficio.groupBy({
+        by: ["id_comercio"],
+        where: { fecha_validacion: { gte: hace14, lt: hace7 } },
+        _count: { _all: true },
+      }),
+    ]);
 
   const activas =
     porEstadoMembresia.find((e) => e.estado_membresia === "activa")?._count._all ?? 0;
   const vencidas =
     porEstadoMembresia.find((e) => e.estado_membresia === "vencida")?._count._all ?? 0;
+
+  const semanaAnteriorPorComercio = new Map<string, number>(
+    validacionesSemanaAnterior.map((v) => [v.id_comercio, v._count._all])
+  );
+
+  const rankingComercios = comercios
+    .map((c) => {
+      const estaSemana = c.validaciones.length;
+      const aprobadas = c.validaciones.filter((v) => v.resultado === "aprobado").length;
+      const semanaPasada = semanaAnteriorPorComercio.get(c.id_comercio) ?? 0;
+      return {
+        nombre: c.nombre,
+        totalHistorico: c._count.validaciones,
+        estaSemana,
+        aprobadas,
+        tendencia: estaSemana - semanaPasada,
+      };
+    })
+    .filter((c) => c.totalHistorico > 0)
+    .sort((a, b) => b.totalHistorico - a.totalHistorico)
+    .slice(0, 6);
 
   return (
     <main className="flex-1 w-full max-w-3xl mx-auto px-5 md:px-10 py-8 flex flex-col gap-8">
@@ -66,6 +107,42 @@ export default async function AdminPage() {
           ))}
         </div>
       </section>
+
+      {rankingComercios.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
+            Comercios más usados
+          </h2>
+          <div className="flex flex-col gap-1">
+            {rankingComercios.map((c) => (
+              <div
+                key={c.nombre}
+                className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-3 flex items-center justify-between text-sm"
+              >
+                <div>
+                  <p className="text-on-surface font-medium">{c.nombre}</p>
+                  <p className="text-xs text-on-surface-variant">
+                    {c.totalHistorico} validaciones históricas · {c.estaSemana} esta semana (
+                    {c.aprobadas} aprobadas)
+                  </p>
+                </div>
+                {c.tendencia !== 0 && (
+                  <span
+                    className={`flex items-center gap-0.5 text-xs font-[family-name:var(--font-jetbrains-mono)] ${
+                      c.tendencia > 0 ? "text-primary-container" : "text-[#ffb4ab]"
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[16px]">
+                      {c.tendencia > 0 ? "trending_up" : "trending_down"}
+                    </span>
+                    {Math.abs(c.tendencia)}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="flex flex-col gap-2">
         <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">

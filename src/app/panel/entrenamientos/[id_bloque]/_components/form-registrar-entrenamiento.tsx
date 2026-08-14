@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
-import { registrarEntrenamiento } from "@/app/actions/alumno";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { encolarSesion, sincronizarPendientes } from "@/lib/offline-queue";
 
 type EjercicioPrograma = {
   id_ejercicio_programa: string;
@@ -15,6 +16,17 @@ type EjercicioPrograma = {
   ejercicio: { nombre: string };
 };
 
+function numeroOpcional(valor: FormDataEntryValue | null): number | null {
+  if (valor === null || valor === "") return null;
+  const n = Number(valor);
+  return Number.isNaN(n) ? null : n;
+}
+
+function textoOpcional(valor: FormDataEntryValue | null): string | null {
+  const s = String(valor ?? "").trim();
+  return s === "" ? null : s;
+}
+
 export function FormRegistrarEntrenamiento({
   idBloque,
   ejercicios,
@@ -22,12 +34,68 @@ export function FormRegistrarEntrenamiento({
   idBloque: string;
   ejercicios: EjercicioPrograma[];
 }) {
-  const [state, action, pending] = useActionState(registrarEntrenamiento, undefined);
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const [enviando, setEnviando] = useState(false);
+  const [avisoOffline, setAvisoOffline] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    setEnviando(true);
+
+    const formData = new FormData(e.currentTarget);
+    const sesion = {
+      id_bloque: idBloque,
+      comentario_general: textoOpcional(formData.get("comentario_general")),
+      series: ejercicios.map((ep) => ({
+        id_ejercicio_programa: ep.id_ejercicio_programa,
+        peso_utilizado: numeroOpcional(formData.get(`peso_${ep.id_ejercicio_programa}`)),
+        repeticiones_realizadas: numeroOpcional(
+          formData.get(`reps_${ep.id_ejercicio_programa}`)
+        ),
+        series_completadas: numeroOpcional(
+          formData.get(`series_${ep.id_ejercicio_programa}`)
+        ),
+        rpe: numeroOpcional(formData.get(`rpe_${ep.id_ejercicio_programa}`)),
+        descanso_real: numeroOpcional(formData.get(`descanso_${ep.id_ejercicio_programa}`)),
+        tiempo_bajo_tension: numeroOpcional(formData.get(`tut_${ep.id_ejercicio_programa}`)),
+        comentarios: textoOpcional(formData.get(`comentario_${ep.id_ejercicio_programa}`)),
+      })),
+    };
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      encolarSesion(sesion);
+      setAvisoOffline(true);
+      setEnviando(false);
+      setTimeout(() => router.push("/panel/entrenamientos"), 1200);
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/entrenamiento", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sesion),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error ?? "No se pudo guardar. Probá de nuevo.");
+        setEnviando(false);
+        return;
+      }
+      sincronizarPendientes();
+      router.push("/panel/entrenamientos");
+    } catch {
+      encolarSesion(sesion);
+      setAvisoOffline(true);
+      setEnviando(false);
+      setTimeout(() => router.push("/panel/entrenamientos"), 1200);
+    }
+  }
 
   return (
-    <form action={action} className="flex flex-col gap-4">
-      <input type="hidden" name="id_bloque" value={idBloque} />
-
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       {ejercicios.map((ep) => (
         <div
           key={ep.id_ejercicio_programa}
@@ -112,18 +180,22 @@ export function FormRegistrarEntrenamiento({
         />
       </div>
 
-      {state?.error && (
-        <p className="font-[family-name:var(--font-inter)] text-sm text-[#ffb4ab]">
-          {state.error}
+      {error && (
+        <p className="font-[family-name:var(--font-inter)] text-sm text-[#ffb4ab]">{error}</p>
+      )}
+      {avisoOffline && (
+        <p className="font-[family-name:var(--font-inter)] text-sm text-primary-container">
+          Sin conexión: guardamos tu sesión en el teléfono y se sincroniza sola cuando
+          vuelva la señal.
         </p>
       )}
 
       <button
         type="submit"
-        disabled={pending}
+        disabled={enviando}
         className="w-full bg-primary-container text-black font-[family-name:var(--font-sora)] text-[16px] font-bold h-12 rounded mt-2 hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-60"
       >
-        {pending ? "Guardando..." : "Finalizar sesión"}
+        {enviando ? "Guardando..." : "Finalizar sesión"}
       </button>
     </form>
   );

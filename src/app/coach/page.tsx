@@ -2,13 +2,14 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
+import { detectarAlertas } from "@/lib/alertas";
 
 export default async function CoachPage() {
   const contexto = await obtenerEntrenadorActual();
   if (!contexto) redirect("/panel");
   const { id_entrenador } = contexto;
 
-  const [alumnosActivos, programasActivos, ultimosAlumnos] = await Promise.all([
+  const [alumnosActivos, programasActivos, relacionesActivas] = await Promise.all([
     prisma.relacionEntrenadorAlumno.count({
       where: { id_entrenador, estado_relacion: "activa" },
     }),
@@ -19,9 +20,20 @@ export default async function CoachPage() {
       where: { id_entrenador, estado_relacion: "activa" },
       include: { alumno: { include: { usuario: true } } },
       orderBy: { fecha_inicio: "desc" },
-      take: 5,
     }),
   ]);
+  const ultimosAlumnos = relacionesActivas.slice(0, 5);
+
+  const alertasPorAlumno = await Promise.all(
+    relacionesActivas.map(async (r) => ({
+      relacion: r,
+      alertas: await detectarAlertas(r.alumno.id_alumno),
+    }))
+  );
+  const conAlertas = alertasPorAlumno
+    .filter((a) => a.alertas.length > 0)
+    .sort((a, b) => b.alertas.length - a.alertas.length)
+    .slice(0, 5);
 
   return (
     <main className="flex-1 w-full max-w-3xl mx-auto px-5 md:px-10 py-8 flex flex-col gap-8">
@@ -43,6 +55,45 @@ export default async function CoachPage() {
           </span>
         </div>
       </section>
+
+      {conAlertas.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
+            Alertas
+          </h2>
+          <div className="flex flex-col gap-1">
+            {conAlertas.map(({ relacion, alertas }) => {
+              const tieneCritica = alertas.some((a) => a.severidad === "critica");
+              return (
+                <Link
+                  key={relacion.id_relacion}
+                  href={`/coach/alumnos/${relacion.alumno.id_alumno}`}
+                  className={`bg-[#1A1A1A] border rounded-xl p-4 flex items-start gap-3 ${
+                    tieneCritica ? "border-[#ffb4ab]/40" : "border-[#262626]"
+                  }`}
+                >
+                  <span
+                    className={`material-symbols-outlined text-[20px] mt-0.5 ${
+                      tieneCritica ? "text-[#ffb4ab]" : "text-[#eda100]"
+                    }`}
+                  >
+                    {tieneCritica ? "error" : "warning"}
+                  </span>
+                  <div>
+                    <p className="text-sm font-medium text-on-surface">
+                      {relacion.alumno.usuario.nombre} {relacion.alumno.usuario.apellido}
+                    </p>
+                    <p className="text-xs text-on-surface-variant mt-0.5">
+                      {alertas[0].mensaje}
+                      {alertas.length > 1 ? ` (+${alertas.length - 1} más)` : ""}
+                    </p>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
