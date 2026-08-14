@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
+import { RegistroServiceWorker } from "@/components/registro-service-worker";
 
 // Autohospedadas (en vez de next/font/google) porque Turbopack en esta
 // versión de Next pide un hash de archivo fijo a fonts.gstatic.com que
@@ -35,6 +36,16 @@ const jetbrainsMono = localFont({
 export const metadata: Metadata = {
   title: "BLACK HUB",
   description: "Entrá al Hub. El rendimiento elite empieza acá.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "BLACK HUB",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0A0A0A",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -50,6 +61,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         />
       </head>
       <body className="min-h-full flex flex-col bg-black font-[family-name:var(--font-inter)]">
+        <RegistroServiceWorker />
         {children}
       </body>
     </html>

@@ -2,6 +2,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { cerrarSesion } from "@/app/actions/auth";
+import { CredencialCard } from "../beneficios/_components/credencial-card";
+import { calcularEstadisticasAlumno } from "@/lib/alumno";
 
 const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
   day: "2-digit",
@@ -33,6 +35,8 @@ export default async function PerfilPage() {
             include: { plan_membresia: true },
           },
           roles: true,
+          alumno: true,
+          credencial: true,
         },
       })
     : null;
@@ -48,6 +52,15 @@ export default async function PerfilPage() {
     false;
   const membresia = usuario?.membresias[0];
   const inicial = nombreCompleto.charAt(0).toUpperCase();
+
+  const estadisticas =
+    usuario?.alumno && (await calcularEstadisticasAlumno(usuario.alumno.id_alumno));
+
+  const membresiaVigente = Boolean(
+    membresia &&
+      membresia.estado_membresia === "activa" &&
+      membresia.fecha_vencimiento_membresia >= new Date()
+  );
 
   return (
     <main className="flex-1 w-full max-w-3xl mx-auto px-5 md:px-10 py-8">
@@ -83,7 +96,7 @@ export default async function PerfilPage() {
       <section className="grid grid-cols-3 gap-4 mb-8">
         <div className="bg-[#1f1f1f] border border-[#262626] rounded-xl p-4 flex flex-col items-center justify-center relative overflow-hidden group">
           <span className="font-[family-name:var(--font-sora)] text-[32px] leading-10 font-bold text-on-surface mb-1 group-hover:text-primary-container transition-colors">
-            142
+            {estadisticas ? estadisticas.sesiones : "—"}
           </span>
           <span className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
             Sesiones
@@ -91,7 +104,7 @@ export default async function PerfilPage() {
         </div>
         <div className="bg-[#1f1f1f] border border-[#262626] rounded-xl p-4 flex flex-col items-center justify-center relative overflow-hidden group">
           <span className="font-[family-name:var(--font-sora)] text-[32px] leading-10 font-bold text-on-surface mb-1 group-hover:text-primary-container transition-colors">
-            12
+            {estadisticas ? estadisticas.rachaDias : "—"}
           </span>
           <span className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
             Racha (días)
@@ -99,7 +112,7 @@ export default async function PerfilPage() {
         </div>
         <div className="bg-[#1f1f1f] border border-[#262626] rounded-xl p-4 flex flex-col items-center justify-center relative overflow-hidden group">
           <span className="font-[family-name:var(--font-sora)] text-[32px] leading-10 font-bold text-on-surface mb-1 group-hover:text-primary-container transition-colors">
-            8
+            {estadisticas ? estadisticas.nuevosRecords : "—"}
           </span>
           <span className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
             Nuevos Récords
@@ -182,25 +195,27 @@ export default async function PerfilPage() {
             </Link>
           </div>
 
-          {/* Acceso QR */}
-          <div className="bg-[#1f1f1f] border border-[#262626] rounded-xl p-6 flex flex-col items-center justify-center text-center">
-            <div className="w-32 h-32 bg-white rounded-lg p-2 mb-4">
-              <div className="w-full h-full bg-black relative">
-                <div className="absolute top-2 left-2 w-6 h-6 border-4 border-white bg-black" />
-                <div className="absolute top-2 right-2 w-6 h-6 border-4 border-white bg-black" />
-                <div className="absolute bottom-2 left-2 w-6 h-6 border-4 border-white bg-black" />
-                <div className="absolute top-10 left-10 w-4 h-4 bg-white" />
-                <div className="absolute bottom-10 right-10 w-8 h-4 bg-white" />
-                <div className="absolute top-4 right-12 w-4 h-8 bg-white" />
-              </div>
+          {/* Acceso QR — credencial real, la misma que en /panel/beneficios */}
+          {usuario?.credencial ? (
+            <CredencialCard
+              nombreCompleto={nombreCompleto.toUpperCase()}
+              numeroSocio={usuario.credencial.numero_socio}
+              membresiaActiva={membresiaVigente}
+              codigoQrToken={usuario.credencial.codigo_qr_token}
+            />
+          ) : (
+            <div className="bg-[#1f1f1f] border border-[#262626] rounded-xl p-6 flex flex-col items-center justify-center text-center min-h-[220px]">
+              <span className="material-symbols-outlined text-on-surface-variant text-4xl mb-2">
+                qr_code_2
+              </span>
+              <h3 className="font-[family-name:var(--font-sora)] text-lg font-semibold text-on-surface mb-1">
+                Sin credencial todavía
+              </h3>
+              <p className="font-[family-name:var(--font-inter)] text-sm text-on-surface-variant">
+                Se genera automáticamente cuando se activa tu membresía Kuntur.
+              </p>
             </div>
-            <h3 className="font-[family-name:var(--font-sora)] text-lg font-semibold text-on-surface mb-1">
-              Pase de Ingreso
-            </h3>
-            <p className="font-[family-name:var(--font-inter)] text-sm text-on-surface-variant">
-              Escaneá en cualquier molinete BLACK HUB.
-            </p>
-          </div>
+          )}
         </div>
       </div>
 

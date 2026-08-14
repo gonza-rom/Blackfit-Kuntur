@@ -182,6 +182,31 @@ export default async function PanelPage() {
         </div>
       </section>
 
+      <section className="grid grid-cols-2 gap-2">
+        <Link
+          href="/panel/biblioteca"
+          className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col gap-2"
+        >
+          <span className="material-symbols-outlined text-primary-container text-[22px]">
+            menu_book
+          </span>
+          <span className="font-[family-name:var(--font-sora)] text-sm font-semibold text-on-surface">
+            Biblioteca
+          </span>
+        </Link>
+        <Link
+          href="/panel/chat"
+          className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col gap-2"
+        >
+          <span className="material-symbols-outlined text-primary-container text-[22px]">
+            chat
+          </span>
+          <span className="font-[family-name:var(--font-sora)] text-sm font-semibold text-on-surface">
+            Mensajes
+          </span>
+        </Link>
+      </section>
+
       {tieneRol(usuario, "miembro_kuntur") && (
         <section className="flex flex-col gap-1">
           <Link

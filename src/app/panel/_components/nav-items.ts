@@ -13,5 +13,6 @@ export const NAV_ITEMS = [
     icon: "monitoring",
   },
   { href: "/panel/beneficios", label: "Beneficios", shortLabel: "Beneficios", icon: "loyalty" },
+  { href: "/panel/biblioteca", label: "Biblioteca", shortLabel: "Bibliot.", icon: "menu_book" },
   { href: "/panel/perfil", label: "Perfil", shortLabel: "Perfil", icon: "person" },
 ] as const;

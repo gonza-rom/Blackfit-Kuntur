@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoActual } from "@/lib/auth";
+import { guardarSesionEntrenamiento, type SerieRegistrada } from "@/lib/alumno";
 
 export type EstadoAlumno = { error?: string; message?: string } | undefined;
 
@@ -35,73 +36,30 @@ export async function registrarEntrenamiento(
 
   const bloque = await prisma.bloqueEntrenamiento.findUnique({
     where: { id_bloque },
-    include: { programa: true, ejercicios_programa: true },
+    include: { ejercicios_programa: true },
   });
-
-  if (!bloque || bloque.programa.id_alumno !== contexto.id_alumno) {
-    return { error: "No autorizado sobre este bloque." };
-  }
+  if (!bloque) return { error: "Bloque inválido." };
 
   const comentarioGeneral = textoOpcional(formData.get("comentario_general"));
 
-  await prisma.$transaction(async (tx) => {
-    const entrenamiento = await tx.entrenamiento.create({
-      data: {
-        id_alumno: contexto.id_alumno,
-        id_programa: bloque.id_programa,
-        nombre: bloque.nombre,
-        estado: "completado",
-        comentarios: comentarioGeneral,
-      },
-    });
+  const series: SerieRegistrada[] = bloque.ejercicios_programa.map((ep) => ({
+    id_ejercicio_programa: ep.id_ejercicio_programa,
+    peso_utilizado: numeroOpcional(formData.get(`peso_${ep.id_ejercicio_programa}`)),
+    repeticiones_realizadas: numeroOpcional(formData.get(`reps_${ep.id_ejercicio_programa}`)),
+    series_completadas: numeroOpcional(formData.get(`series_${ep.id_ejercicio_programa}`)),
+    rpe: numeroOpcional(formData.get(`rpe_${ep.id_ejercicio_programa}`)),
+    descanso_real: numeroOpcional(formData.get(`descanso_${ep.id_ejercicio_programa}`)),
+    tiempo_bajo_tension: numeroOpcional(formData.get(`tut_${ep.id_ejercicio_programa}`)),
+    comentarios: textoOpcional(formData.get(`comentario_${ep.id_ejercicio_programa}`)),
+  }));
 
-    for (const ep of bloque.ejercicios_programa) {
-      const peso_utilizado = numeroOpcional(
-        formData.get(`peso_${ep.id_ejercicio_programa}`)
-      );
-      const repeticiones_realizadas = numeroOpcional(
-        formData.get(`reps_${ep.id_ejercicio_programa}`)
-      );
-      const series_completadas = numeroOpcional(
-        formData.get(`series_${ep.id_ejercicio_programa}`)
-      );
-      const rpe = numeroOpcional(formData.get(`rpe_${ep.id_ejercicio_programa}`));
-      const descanso_real = numeroOpcional(
-        formData.get(`descanso_${ep.id_ejercicio_programa}`)
-      );
-      const tiempo_bajo_tension = numeroOpcional(
-        formData.get(`tut_${ep.id_ejercicio_programa}`)
-      );
-      const comentarios = textoOpcional(
-        formData.get(`comentario_${ep.id_ejercicio_programa}`)
-      );
-
-      const huboCarga =
-        peso_utilizado !== null ||
-        repeticiones_realizadas !== null ||
-        series_completadas !== null ||
-        rpe !== null ||
-        descanso_real !== null ||
-        tiempo_bajo_tension !== null ||
-        comentarios !== null;
-
-      if (!huboCarga) continue;
-
-      await tx.serieEntrenamiento.create({
-        data: {
-          id_entrenamiento: entrenamiento.id_entrenamiento,
-          id_ejercicio_programa: ep.id_ejercicio_programa,
-          peso_utilizado,
-          repeticiones_realizadas,
-          series_completadas: series_completadas ?? ep.series,
-          rpe,
-          descanso_real,
-          tiempo_bajo_tension,
-          comentarios,
-        },
-      });
-    }
-  });
+  const resultado = await guardarSesionEntrenamiento(
+    contexto.id_alumno,
+    id_bloque,
+    comentarioGeneral,
+    series
+  );
+  if (resultado.error) return { error: resultado.error };
 
   redirect("/panel/entrenamientos");
 }

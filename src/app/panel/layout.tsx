@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { obtenerUsuarioActual, tieneRol } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { BottomNav } from "./_components/bottom-nav";
 import { SidebarNav } from "./_components/sidebar-nav";
 
@@ -38,6 +40,9 @@ export default async function PanelLayout({
 
   const nombre = usuario.nombre;
   const inicial = nombre.charAt(0).toUpperCase();
+  const noLeidas = await prisma.notificacion.count({
+    where: { id_usuario: usuario.id_usuario, leido: false },
+  });
 
   return (
     <div className="bg-background text-on-surface antialiased min-h-screen flex flex-col pt-16 pb-20 md:pb-0 font-[family-name:var(--font-inter)]">
@@ -53,14 +58,22 @@ export default async function PanelLayout({
             BLACK HUB
           </span>
         </div>
-        <button className="text-primary-container hover:opacity-80 transition-opacity active:scale-95 duration-150">
+        <Link
+          href="/panel/notificaciones"
+          className="relative text-primary-container hover:opacity-80 transition-opacity active:scale-95 duration-150"
+        >
           <span
             className="material-symbols-outlined text-2xl"
             style={{ fontVariationSettings: "'FILL' 1" }}
           >
             notifications
           </span>
-        </button>
+          {noLeidas > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 bg-[#ffb4ab] text-[#3a0a09] text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+              {noLeidas > 9 ? "9+" : noLeidas}
+            </span>
+          )}
+        </Link>
       </header>
 
       {/* Sidebar (desktop) */}
