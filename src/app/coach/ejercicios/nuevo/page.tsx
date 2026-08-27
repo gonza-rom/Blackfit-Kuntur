@@ -3,12 +3,15 @@
 import { useActionState } from "react";
 import { crearEjercicio } from "@/app/actions/coach";
 
+<<<<<<< HEAD
 const inputClase =
   "w-full bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface font-[family-name:var(--font-inter)] text-base p-3 transition-colors";
 
 const labelClase =
   "font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface uppercase";
 
+=======
+>>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
 export default function NuevoEjercicioPage() {
   const [state, action, pending] = useActionState(crearEjercicio, undefined);
 
@@ -21,7 +24,14 @@ export default function NuevoEjercicioPage() {
       <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 md:p-6">
         <form action={action} className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
+<<<<<<< HEAD
             <label htmlFor="nombre" className={labelClase}>
+=======
+            <label
+              htmlFor="nombre"
+              className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface uppercase"
+            >
+>>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
               Nombre
             </label>
             <input
@@ -30,12 +40,23 @@ export default function NuevoEjercicioPage() {
               type="text"
               required
               placeholder="Sentadilla trasera"
+<<<<<<< HEAD
               className={inputClase}
+=======
+              className="w-full bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface font-[family-name:var(--font-inter)] text-base p-3 transition-colors"
+>>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
             />
           </div>
 
           <div className="flex flex-col gap-2">
+<<<<<<< HEAD
             <label htmlFor="grupo_muscular" className={labelClase}>
+=======
+            <label
+              htmlFor="grupo_muscular"
+              className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface uppercase"
+            >
+>>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
               Grupo muscular
             </label>
             <input
@@ -43,11 +64,16 @@ export default function NuevoEjercicioPage() {
               name="grupo_muscular"
               type="text"
               placeholder="Cuádriceps"
+<<<<<<< HEAD
               className={inputClase}
+=======
+              className="w-full bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface font-[family-name:var(--font-inter)] text-base p-3 transition-colors"
+>>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
             />
           </div>
 
           <div className="flex flex-col gap-2">
+<<<<<<< HEAD
             <label htmlFor="descripcion" className={labelClase}>
               Descripción
             </label>
@@ -63,6 +89,42 @@ export default function NuevoEjercicioPage() {
 
           <div className="flex flex-col gap-2">
             <label htmlFor="video_url" className={labelClase}>
+=======
+            <label
+              htmlFor="descripcion"
+              className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface uppercase"
+            >
+              Descripción
+            </label>
+            <textarea
+              id="descripcion"
+              name="descripcion"
+              rows={3}
+              className="w-full bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface font-[family-name:var(--font-inter)] text-base p-3 transition-colors"
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label
+              htmlFor="instrucciones"
+              className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface uppercase"
+            >
+              Instrucciones
+            </label>
+            <textarea
+              id="instrucciones"
+              name="instrucciones"
+              rows={3}
+              className="w-full bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface font-[family-name:var(--font-inter)] text-base p-3 transition-colors"
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label
+              htmlFor="video_url"
+              className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface uppercase"
+            >
+>>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
               URL de video
             </label>
             <input
@@ -70,6 +132,7 @@ export default function NuevoEjercicioPage() {
               name="video_url"
               type="url"
               placeholder="https://..."
+<<<<<<< HEAD
               className={inputClase}
             />
           </div>
@@ -130,6 +193,12 @@ export default function NuevoEjercicioPage() {
             </div>
           </div>
 
+=======
+              className="w-full bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface font-[family-name:var(--font-inter)] text-base p-3 transition-colors"
+            />
+          </div>
+
+>>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
           {state?.error && (
             <p className="font-[family-name:var(--font-inter)] text-sm text-[#ffb4ab]">
               {state.error}

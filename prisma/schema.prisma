@@ -117,7 +117,10 @@ model Usuario {
   conversaciones_2     Conversacion[]   @relation("ConversacionUsuario2")
   validaciones         ValidacionBeneficio[]
   registros_auditoria  RegistroAuditoria[]
+<<<<<<< HEAD
   suscripciones_push   SuscripcionPush[]
+=======
+>>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
 
   @@map("usuarios")
 }
@@ -271,6 +274,7 @@ model Ejercicio {
   video_url        String?
   instrucciones    String?
 
+<<<<<<< HEAD
   // Valores por defecto, para no tipear series/reps/peso/etc. de nuevo
   // cada vez que se agrega este ejercicio a un bloque de un programa.
   // Son solo una plantilla: EjercicioPrograma sigue guardando el valor
@@ -284,6 +288,8 @@ model Ejercicio {
   metodo_entrenamiento_default  String?
   tiempo_bajo_tension_default   Int?
 
+=======
+>>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
   ejercicios_programa EjercicioPrograma[]
 
   @@map("ejercicios")
@@ -483,6 +489,7 @@ model Notificacion {
   @@map("notificaciones")
 }
 
+<<<<<<< HEAD
 // Suscripción push del navegador (Web Push API). Un usuario puede tener
 // más de una (varios dispositivos/navegadores instalados como PWA).
 model SuscripcionPush {
@@ -499,6 +506,8 @@ model SuscripcionPush {
   @@map("suscripciones_push")
 }
 
+=======
+>>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
 // ------------------------------------------------------------
 // BLACK HUB BENEFITS (KUNTUR)
 // ------------------------------------------------------------
