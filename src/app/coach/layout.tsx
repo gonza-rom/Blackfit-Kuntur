@@ -1,10 +1,7 @@
 import { redirect } from "next/navigation";
 import { obtenerUsuarioActual, tieneRol } from "@/lib/auth";
 import { cerrarSesion } from "@/app/actions/auth";
-<<<<<<< HEAD
 import { ActivarPush } from "@/components/activar-push";
-=======
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
 import { BottomNav } from "./_components/bottom-nav";
 import { SidebarNav } from "./_components/sidebar-nav";
 
@@ -71,16 +68,12 @@ export default async function CoachLayout({
         </form>
       </aside>
 
-<<<<<<< HEAD
       <div className="md:pl-[280px] flex-1 flex flex-col">
         <div className="w-full max-w-3xl mx-auto px-5 md:px-10 pt-4">
           <ActivarPush />
         </div>
         {children}
       </div>
-=======
-      <div className="md:pl-[280px] flex-1 flex flex-col">{children}</div>
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
 
       {/* BottomNavBar (mobile) */}
       <BottomNav />

@@ -9,7 +9,6 @@ export default async function EjerciciosPage() {
 
   const ejercicios = await prisma.ejercicio.findMany({ orderBy: { nombre: "asc" } });
 
-<<<<<<< HEAD
   const detalleDefault = (e: (typeof ejercicios)[number]) => {
     if (!e.series_default && !e.repeticiones_default) return null;
     const partes = [
@@ -23,8 +22,6 @@ export default async function EjerciciosPage() {
     return partes.join(" · ") || null;
   };
 
-=======
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
   return (
     <main className="flex-1 w-full max-w-3xl mx-auto px-5 md:px-10 py-8 flex flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -57,12 +54,9 @@ export default async function EjerciciosPage() {
               {ejercicio.grupo_muscular && (
                 <p className="text-sm text-on-surface-variant">{ejercicio.grupo_muscular}</p>
               )}
-<<<<<<< HEAD
               {detalleDefault(ejercicio) && (
                 <p className="text-xs text-primary-container mt-1">{detalleDefault(ejercicio)}</p>
               )}
-=======
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
               {ejercicio.video_url && (
                 <a
                   href={ejercicio.video_url}

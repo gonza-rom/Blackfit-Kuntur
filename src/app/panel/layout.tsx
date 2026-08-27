@@ -3,11 +3,8 @@ import Link from "next/link";
 import { obtenerUsuarioActual, tieneRol } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { OfflineSyncBanner } from "@/components/offline-sync-banner";
-<<<<<<< HEAD
 import { ActivarPush } from "@/components/activar-push";
 import { verificarRecordatorioMembresia } from "@/lib/membresia";
-=======
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
 import { BottomNav } from "./_components/bottom-nav";
 import { SidebarNav } from "./_components/sidebar-nav";
 
@@ -50,13 +47,10 @@ export default async function PanelLayout({
     where: { id_usuario: usuario.id_usuario, leido: false },
   });
 
-<<<<<<< HEAD
   // No bloquea el render: si falla (ej. sin fila de membresía todavía)
   // no debe tumbar la navegación del alumno.
   verificarRecordatorioMembresia(usuario.id_usuario).catch(() => {});
 
-=======
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
   return (
     <div className="bg-background text-on-surface antialiased min-h-screen flex flex-col pt-16 pb-20 md:pb-0 font-[family-name:var(--font-inter)]">
       {/* TopAppBar (mobile) */}
@@ -101,12 +95,9 @@ export default async function PanelLayout({
 
       <div className="md:pl-[280px] flex-1 flex flex-col">
         <OfflineSyncBanner />
-<<<<<<< HEAD
         <div className="w-full max-w-md md:max-w-3xl mx-auto px-5 md:px-10 pt-4">
           <ActivarPush />
         </div>
-=======
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
         {children}
       </div>
 

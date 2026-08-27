@@ -28,7 +28,7 @@ SET search_path = public
 AS $$
   SELECT EXISTS (
     SELECT 1 FROM roles_usuario
-    WHERE id_usuario = auth.uid() AND rol = 'administrador'
+    WHERE id_usuario = auth.uid()::text AND rol = 'administrador'
   );
 $$;
 
@@ -37,7 +37,7 @@ RETURNS text
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT id_alumno FROM alumnos WHERE id_usuario = auth.uid();
+  SELECT id_alumno FROM alumnos WHERE id_usuario = auth.uid()::text;
 $$;
 
 CREATE OR REPLACE FUNCTION public.id_entrenador_actual()
@@ -45,7 +45,7 @@ RETURNS text
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT id_entrenador FROM entrenadores WHERE id_usuario = auth.uid();
+  SELECT id_entrenador FROM entrenadores WHERE id_usuario = auth.uid()::text;
 $$;
 
 CREATE OR REPLACE FUNCTION public.id_comercio_actual()
@@ -53,7 +53,7 @@ RETURNS text
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT id_comercio FROM comercios WHERE id_usuario = auth.uid();
+  SELECT id_comercio FROM comercios WHERE id_usuario = auth.uid()::text;
 $$;
 
 CREATE OR REPLACE FUNCTION public.entrenador_tiene_alumno(alumno_id text)
@@ -73,10 +73,10 @@ $$;
 ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY usuarios_select_propio ON usuarios
-  FOR SELECT USING (id_usuario = auth.uid() OR public.es_administrador());
+  FOR SELECT USING (id_usuario = auth.uid()::text OR public.es_administrador());
 
 CREATE POLICY usuarios_update_propio ON usuarios
-  FOR UPDATE USING (id_usuario = auth.uid() OR public.es_administrador());
+  FOR UPDATE USING (id_usuario = auth.uid()::text OR public.es_administrador());
 
 CREATE POLICY usuarios_admin_all ON usuarios
   FOR ALL USING (public.es_administrador());
@@ -85,7 +85,7 @@ CREATE POLICY usuarios_admin_all ON usuarios
 ALTER TABLE roles_usuario ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY roles_usuario_select_propio ON roles_usuario
-  FOR SELECT USING (id_usuario = auth.uid() OR public.es_administrador());
+  FOR SELECT USING (id_usuario = auth.uid()::text OR public.es_administrador());
 
 CREATE POLICY roles_usuario_admin_write ON roles_usuario
   FOR INSERT WITH CHECK (public.es_administrador());
@@ -97,7 +97,7 @@ CREATE POLICY roles_usuario_admin_delete ON roles_usuario
 ALTER TABLE alumnos ENABLE ROW LEVEL SECURITY;
 CREATE POLICY alumnos_select ON alumnos
   FOR SELECT USING (
-    id_usuario = auth.uid()
+    id_usuario = auth.uid()::text
     OR public.es_administrador()
     OR public.entrenador_tiene_alumno(id_alumno)
   );
@@ -108,7 +108,7 @@ CREATE POLICY entrenadores_select ON entrenadores
 
 ALTER TABLE comercios ENABLE ROW LEVEL SECURITY;
 CREATE POLICY comercios_select_propio_o_admin ON comercios
-  FOR SELECT USING (id_usuario = auth.uid() OR public.es_administrador());
+  FOR SELECT USING (id_usuario = auth.uid()::text OR public.es_administrador());
 CREATE POLICY comercios_select_alumnos ON comercios
   FOR SELECT USING (estado = 'activo');
 
@@ -124,12 +124,12 @@ CREATE POLICY relaciones_select ON relaciones_entrenador_alumno
 -- membresias --------------------------------------------------------------
 ALTER TABLE membresias ENABLE ROW LEVEL SECURITY;
 CREATE POLICY membresias_select_propia ON membresias
-  FOR SELECT USING (id_usuario = auth.uid() OR public.es_administrador());
+  FOR SELECT USING (id_usuario = auth.uid()::text OR public.es_administrador());
 
 -- credenciales (QR) -------------------------------------------------------
 ALTER TABLE credenciales ENABLE ROW LEVEL SECURITY;
 CREATE POLICY credenciales_select_propia ON credenciales
-  FOR SELECT USING (id_usuario = auth.uid() OR public.es_administrador());
+  FOR SELECT USING (id_usuario = auth.uid()::text OR public.es_administrador());
 
 -- programas / bloques / ejercicios de programa ----------------------------
 ALTER TABLE programas_entrenamiento ENABLE ROW LEVEL SECURITY;
@@ -242,7 +242,7 @@ CREATE POLICY biblioteca_select_autenticados ON biblioteca
 ALTER TABLE conversaciones ENABLE ROW LEVEL SECURITY;
 CREATE POLICY conversaciones_select ON conversaciones
   FOR SELECT USING (
-    id_usuario_1 = auth.uid() OR id_usuario_2 = auth.uid() OR public.es_administrador()
+    id_usuario_1 = auth.uid()::text OR id_usuario_2 = auth.uid()::text OR public.es_administrador()
   );
 
 ALTER TABLE mensajes ENABLE ROW LEVEL SECURITY;
@@ -250,25 +250,25 @@ CREATE POLICY mensajes_select ON mensajes
   FOR SELECT USING (
     id_conversacion IN (
       SELECT id_conversacion FROM conversaciones
-      WHERE id_usuario_1 = auth.uid() OR id_usuario_2 = auth.uid()
+      WHERE id_usuario_1 = auth.uid()::text OR id_usuario_2 = auth.uid()::text
     )
     OR public.es_administrador()
   );
 CREATE POLICY mensajes_insert ON mensajes
   FOR INSERT WITH CHECK (
-    id_usuario_emisor = auth.uid()
+    id_usuario_emisor = auth.uid()::text
     AND id_conversacion IN (
       SELECT id_conversacion FROM conversaciones
-      WHERE id_usuario_1 = auth.uid() OR id_usuario_2 = auth.uid()
+      WHERE id_usuario_1 = auth.uid()::text OR id_usuario_2 = auth.uid()::text
     )
   );
 
 -- notificaciones: solo las propias ------------------------------------------
 ALTER TABLE notificaciones ENABLE ROW LEVEL SECURITY;
 CREATE POLICY notificaciones_select_propia ON notificaciones
-  FOR SELECT USING (id_usuario = auth.uid() OR public.es_administrador());
+  FOR SELECT USING (id_usuario = auth.uid()::text OR public.es_administrador());
 CREATE POLICY notificaciones_update_propia ON notificaciones
-  FOR UPDATE USING (id_usuario = auth.uid());
+  FOR UPDATE USING (id_usuario = auth.uid()::text);
 
 -- planes de membresía (catálogo público para autenticados) -----------------
 ALTER TABLE planes_membresia ENABLE ROW LEVEL SECURITY;
@@ -284,7 +284,7 @@ CREATE POLICY beneficios_select_miembro_activo ON beneficios
     estado = 'activo'
     AND EXISTS (
       SELECT 1 FROM membresias m
-      WHERE m.id_usuario = auth.uid()
+      WHERE m.id_usuario = auth.uid()::text
         AND m.estado_membresia = 'activa'
         AND m.fecha_vencimiento_membresia >= now()
     )
@@ -299,7 +299,7 @@ ALTER TABLE validaciones_beneficios ENABLE ROW LEVEL SECURITY;
 CREATE POLICY validaciones_select ON validaciones_beneficios
   FOR SELECT USING (
     id_comercio = public.id_comercio_actual()
-    OR id_usuario = auth.uid()
+    OR id_usuario = auth.uid()::text
     OR public.es_administrador()
   );
 CREATE POLICY validaciones_insert_comercio ON validaciones_beneficios

@@ -3,10 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { obtenerUsuarioActual } from "@/lib/auth";
-<<<<<<< HEAD
 import { crearNotificacion } from "@/lib/notificaciones";
-=======
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
 
 export type EstadoMensaje = { error?: string } | undefined;
 
@@ -57,22 +54,12 @@ export async function enviarMensaje(
       ? conversacion.id_usuario_2
       : conversacion.id_usuario_1;
 
-<<<<<<< HEAD
   await crearNotificacion({
     id_usuario: idDestinatario,
     titulo: `Mensaje de ${usuario.nombre}`,
     contenido: contenido.slice(0, 140),
     tipo: "mensaje",
     url: "/panel/chat",
-=======
-  await prisma.notificacion.create({
-    data: {
-      id_usuario: idDestinatario,
-      titulo: `Mensaje de ${usuario.nombre}`,
-      contenido: contenido.slice(0, 140),
-      tipo: "mensaje",
-    },
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
   });
 
   revalidatePath("/panel/chat");

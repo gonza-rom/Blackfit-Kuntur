@@ -8,7 +8,6 @@ export type Alerta = {
 
 const DIA_MS = 1000 * 60 * 60 * 24;
 
-<<<<<<< HEAD
 const TIPOS_BLOQUE_DESCARGA = /deload|descarga/i;
 
 type BloqueActual = { nombre: string; tipo: string | null } | null;
@@ -44,33 +43,24 @@ async function obtenerBloqueActual(id_alumno: string): Promise<BloqueActual> {
   return null;
 }
 
-=======
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
 /**
  * Reglas simples y explicables sobre datos que el alumno ya registró —
  * sin caja negra. Cubre adherencia baja, estancamiento/caída de volumen,
  * fatiga elevada, dolor repetitivo y ausencias. Nunca decide nada por sí
  * sola: son señales para que el entrenador revise, la decisión final
  * siempre es humana.
-<<<<<<< HEAD
  *
  * Antes de marcar una caída de volumen como alerta, el motor consulta si
  * el alumno está cursando un bloque de deload planificado (según el
  * programa vigente) o si la caída de volumen viene acompañada de un
  * aumento de peso (progresión de intensidad, no retroceso) — en ambos
  * casos no es una señal real y no debe generar ruido para el coach.
-=======
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
  */
 export async function detectarAlertas(id_alumno: string): Promise<Alerta[]> {
   const hace30 = new Date(Date.now() - 30 * DIA_MS);
   const hace14 = new Date(Date.now() - 14 * DIA_MS);
 
-<<<<<<< HEAD
   const [entrenamientos, feedbacksDiarios, habitosRecientes, bloqueActual] = await Promise.all([
-=======
-  const [entrenamientos, feedbacksDiarios, habitosRecientes] = await Promise.all([
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
     prisma.entrenamiento.findMany({
       where: { id_alumno, fecha: { gte: hace30 } },
       include: { series: true },
@@ -78,16 +68,11 @@ export async function detectarAlertas(id_alumno: string): Promise<Alerta[]> {
     }),
     prisma.feedbackDiario.findMany({ where: { id_alumno, fecha: { gte: hace14 } } }),
     prisma.habito.count({ where: { id_alumno, fecha: { gte: hace14 } } }),
-<<<<<<< HEAD
     obtenerBloqueActual(id_alumno),
   ]);
 
   const enDeload = bloqueActual != null && TIPOS_BLOQUE_DESCARGA.test(bloqueActual.tipo ?? "");
 
-=======
-  ]);
-
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
   const alertas: Alerta[] = [];
 
   const ultimo = entrenamientos[0];
@@ -143,7 +128,6 @@ export async function detectarAlertas(id_alumno: string): Promise<Alerta[]> {
       0
     )
   );
-<<<<<<< HEAD
   // Peso promedio por serie registrada, para distinguir "cayó el volumen
   // porque bajó el rendimiento" de "cayó el volumen porque subió la
   // intensidad" (menos repeticiones, más peso: progresión válida).
@@ -156,14 +140,11 @@ export async function detectarAlertas(id_alumno: string): Promise<Alerta[]> {
     return series.length ? series.reduce((a, b) => a + b, 0) / series.length : 0;
   };
 
-=======
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
   if (volumenes.length >= 4) {
     const recientes = volumenes.slice(0, 2);
     const previos = volumenes.slice(2, 4);
     const avgReciente = recientes.reduce((a, b) => a + b, 0) / recientes.length;
     const avgPrevio = previos.reduce((a, b) => a + b, 0) / previos.length;
-<<<<<<< HEAD
 
     if (avgPrevio > 0 && avgReciente < avgPrevio * 0.85) {
       if (enDeload) {
@@ -194,14 +175,6 @@ export async function detectarAlertas(id_alumno: string): Promise<Alerta[]> {
           });
         }
       }
-=======
-    if (avgPrevio > 0 && avgReciente < avgPrevio * 0.85) {
-      alertas.push({
-        tipo: "volumen",
-        mensaje: "El volumen de entrenamiento cayó más de un 15% respecto a sesiones previas.",
-        severidad: "advertencia",
-      });
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
     }
   }
 
@@ -225,12 +198,8 @@ export async function detectarAlertas(id_alumno: string): Promise<Alerta[]> {
   }
 
   const criticas = alertas.filter((a) => a.severidad === "critica").length;
-<<<<<<< HEAD
   const señalesReales = alertas.filter((a) => a.severidad !== "info").length;
   if (criticas >= 1 && señalesReales >= 3) {
-=======
-  if (criticas >= 1 && alertas.length >= 3) {
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
     alertas.unshift({
       tipo: "abandono",
       mensaje: "Combinación de señales — vale la pena un contacto personal esta semana.",

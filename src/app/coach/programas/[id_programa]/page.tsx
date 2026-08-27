@@ -1,15 +1,10 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
-<<<<<<< HEAD
 import { eliminarBloque, duplicarBloque, avisarAlumnoRutinaLista } from "@/app/actions/coach";
 import { FormNuevoBloque } from "./_components/form-nuevo-bloque";
 import { FormNuevoEjercicioBloque } from "./_components/form-nuevo-ejercicio-bloque";
 import { EjercicioProgramaItem } from "./_components/ejercicio-programa-item";
-=======
-import { FormNuevoBloque } from "./_components/form-nuevo-bloque";
-import { FormNuevoEjercicioBloque } from "./_components/form-nuevo-ejercicio-bloque";
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
 
 export default async function ProgramaDetallePage(
   props: PageProps<"/coach/programas/[id_programa]">
@@ -37,7 +32,6 @@ export default async function ProgramaDetallePage(
     }),
     prisma.ejercicio.findMany({
       orderBy: { nombre: "asc" },
-<<<<<<< HEAD
       select: {
         id_ejercicio: true,
         nombre: true,
@@ -49,9 +43,6 @@ export default async function ProgramaDetallePage(
         metodo_entrenamiento_default: true,
         tiempo_bajo_tension_default: true,
       },
-=======
-      select: { id_ejercicio: true, nombre: true },
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
     }),
   ]);
 
@@ -59,7 +50,6 @@ export default async function ProgramaDetallePage(
     notFound();
   }
 
-<<<<<<< HEAD
   // Decimal de Prisma no es serializable tal cual hacia un client
   // component — se pasa como string, igual que se hace más abajo con
   // ep.peso_sugerido.
@@ -98,21 +88,6 @@ export default async function ProgramaDetallePage(
             </form>
           )}
         </div>
-=======
-  return (
-    <main className="flex-1 w-full max-w-3xl mx-auto px-5 md:px-10 py-8 flex flex-col gap-8">
-      <section className="flex flex-col gap-1">
-        <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
-          {programa.nombre}
-        </h1>
-        <p className="text-sm text-on-surface-variant">
-          {programa.alumno.usuario.nombre} {programa.alumno.usuario.apellido} ·{" "}
-          {programa.estado_programa}
-        </p>
-        {programa.objetivo && (
-          <p className="text-sm text-on-surface-variant">Objetivo: {programa.objetivo}</p>
-        )}
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
       </section>
 
       <section className="flex flex-col gap-4">
@@ -133,7 +108,6 @@ export default async function ProgramaDetallePage(
                     : ""}
                 </p>
               </div>
-<<<<<<< HEAD
 
               <div className="flex items-center gap-1 shrink-0">
                 <form action={duplicarBloque}>
@@ -158,13 +132,10 @@ export default async function ProgramaDetallePage(
                   </button>
                 </form>
               </div>
-=======
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
             </div>
 
             {bloque.ejercicios_programa.length > 0 && (
               <div className="flex flex-col gap-1">
-<<<<<<< HEAD
                 {bloque.ejercicios_programa.map((ep, idx) => (
                   <EjercicioProgramaItem
                     key={ep.id_ejercicio_programa}
@@ -182,34 +153,11 @@ export default async function ProgramaDetallePage(
                     esPrimero={idx === 0}
                     esUltimo={idx === bloque.ejercicios_programa.length - 1}
                   />
-=======
-                {bloque.ejercicios_programa.map((ep) => (
-                  <div
-                    key={ep.id_ejercicio_programa}
-                    className="bg-[#131313] border border-[#262626] rounded-lg p-3 text-sm text-on-surface"
-                  >
-                    <p className="font-semibold">{ep.ejercicio.nombre}</p>
-                    <p className="text-on-surface-variant">
-                      {ep.series}×{ep.repeticiones}
-                      {ep.peso_sugerido ? ` · ${ep.peso_sugerido.toString()}kg` : ""}
-                      {ep.tempo ? ` · tempo ${ep.tempo}` : ""}
-                      {ep.descanso ? ` · descanso ${ep.descanso}` : ""}
-                      {ep.metodo_entrenamiento ? ` · ${ep.metodo_entrenamiento}` : ""}
-                      {ep.tiempo_bajo_tension_sugerido
-                        ? ` · TUT ${ep.tiempo_bajo_tension_sugerido}s`
-                        : ""}
-                    </p>
-                  </div>
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
                 ))}
               </div>
             )}
 
-<<<<<<< HEAD
             <FormNuevoEjercicioBloque idBloque={bloque.id_bloque} biblioteca={bibliotecaSerializable} />
-=======
-            <FormNuevoEjercicioBloque idBloque={bloque.id_bloque} biblioteca={biblioteca} />
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
           </div>
         ))}
       </section>

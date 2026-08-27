@@ -26,5 +26,5 @@ ALTER TABLE "suscripciones_push" ADD CONSTRAINT "suscripciones_push_id_usuario_f
 ALTER TABLE suscripciones_push ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY suscripciones_push_propia ON suscripciones_push
-  FOR ALL USING (id_usuario = auth.uid())
-  WITH CHECK (id_usuario = auth.uid());
+  FOR ALL USING (id_usuario = auth.uid()::text)
+  WITH CHECK (id_usuario = auth.uid()::text);

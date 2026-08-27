@@ -40,7 +40,6 @@ self.addEventListener("fetch", (event) => {
     })
   );
 });
-<<<<<<< HEAD
 
 // ── PUSH NOTIFICATIONS ─────────────────────────────────────────
 // El payload lo arma src/lib/push.ts como JSON: { titulo, contenido, url, tipo }.
@@ -76,5 +75,3 @@ self.addEventListener("notificationclick", (event) => {
     })
   );
 });
-=======
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5

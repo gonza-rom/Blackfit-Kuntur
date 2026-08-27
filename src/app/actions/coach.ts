@@ -5,10 +5,7 @@ import { revalidatePath } from "next/cache";
 import type { EstadoPrograma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
-<<<<<<< HEAD
 import { crearNotificacion } from "@/lib/notificaciones";
-=======
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
 
 export type EstadoCoach = { error?: string; message?: string } | undefined;
 
@@ -80,7 +77,6 @@ export async function crearEjercicio(
   const video_url = String(formData.get("video_url") ?? "").trim() || null;
   const instrucciones = String(formData.get("instrucciones") ?? "").trim() || null;
 
-<<<<<<< HEAD
   const series_defaultRaw = String(formData.get("series_default") ?? "").trim();
   const repeticiones_default = String(formData.get("repeticiones_default") ?? "").trim() || null;
   const peso_sugerido_defaultRaw = String(formData.get("peso_sugerido_default") ?? "").trim();
@@ -105,10 +101,6 @@ export async function crearEjercicio(
       metodo_entrenamiento_default,
       tiempo_bajo_tension_default: tut_defaultRaw ? Number(tut_defaultRaw) : null,
     },
-=======
-  await prisma.ejercicio.create({
-    data: { nombre, descripcion, grupo_muscular, video_url, instrucciones },
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
   });
 
   redirect("/coach/ejercicios");
@@ -137,10 +129,7 @@ export async function crearPrograma(
     where: {
       id_entrenador_id_alumno: { id_entrenador: contexto.id_entrenador, id_alumno },
     },
-<<<<<<< HEAD
     include: { alumno: { include: { usuario: true } } },
-=======
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
   });
   if (!relacion || relacion.estado_relacion !== "activa") {
     return { error: "Ese alumno no está vinculado a tu cartera." };
@@ -159,7 +148,6 @@ export async function crearPrograma(
     },
   });
 
-<<<<<<< HEAD
   await crearNotificacion({
     id_usuario: relacion.alumno.usuario.id_usuario,
     titulo: "Tenés un programa nuevo",
@@ -168,8 +156,6 @@ export async function crearPrograma(
     url: "/panel/entrenamientos",
   });
 
-=======
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
   redirect(`/coach/programas/${programa.id_programa}`);
 }
 
@@ -268,7 +254,6 @@ export async function crearEjercicioPrograma(
   revalidatePath(`/coach/programas/${bloque.id_programa}`);
   return { message: "Ejercicio agregado al bloque." };
 }
-<<<<<<< HEAD
 
 /** Trae el id_programa a partir de un id_bloque, validando que sea del entrenador logueado. */
 async function bloqueDelEntrenador(id_bloque: string, id_entrenador: string) {
@@ -478,5 +463,3 @@ export async function avisarAlumnoRutinaLista(formData: FormData): Promise<void>
 
   revalidatePath(`/coach/programas/${id_programa}`);
 }
-=======
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
