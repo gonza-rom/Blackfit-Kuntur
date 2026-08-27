@@ -1,0 +1,604 @@
+// ============================================================
+// BLACK HUB MEMBERSHIP — schema.prisma
+// Next.js 15 + Prisma + Supabase (PostgreSQL)
+// Convención: nombres en español, snake_case en base de datos.
+// ============================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["relationJoins"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Supabase recomienda una URL de conexión "directa" para migraciones
+  directUrl = env("DIRECT_URL")
+}
+
+// ------------------------------------------------------------
+// ENUMS
+// ------------------------------------------------------------
+
+// Un usuario puede tener MÁS DE UN rol a la vez (ej: alumno + miembro_kuntur).
+// Por eso no vive como campo único en Usuario, sino en la tabla puente
+// UsuarioRol. Nunca se asigna ni se confía en un rol que venga del cliente:
+// siempre se lee esta tabla en el servidor.
+enum RolUsuario {
+  alumno          // Black Fit
+  entrenador      // Black Fit
+  miembro_kuntur  // Kuntur (habilita el módulo de Beneficios)
+  comercio        // Operativo — asignado por el administrador
+  administrador   // Operativo — asignado por el administrador
+}
+
+enum EstadoUsuario {
+  activo
+  inactivo
+  suspendido
+}
+
+enum EstadoMembresia {
+  activa
+  vencida
+  cancelada
+  suspendida
+  pendiente
+}
+
+enum EstadoRelacion {
+  activa
+  inactiva
+  finalizada
+}
+
+enum EstadoPrograma {
+  activo
+  pausado
+  finalizado
+}
+
+enum EstadoEntrenamiento {
+  pendiente
+  completado
+  omitido
+}
+
+enum EstadoComercio {
+  activo
+  inactivo
+}
+
+enum EstadoBeneficio {
+  activo
+  inactivo
+  vencido
+}
+
+enum ResultadoValidacion {
+  aprobado
+  rechazado
+}
+
+enum CategoriaBiblioteca {
+  ejercicios
+  tecnicas
+  movilidad
+  recuperacion
+  nutricion
+  metodologia
+}
+
+// ------------------------------------------------------------
+// USUARIOS Y ROLES
+// ------------------------------------------------------------
+
+model Usuario {
+  id_usuario          String        @id @default(uuid())
+  // Debe coincidir con el auth.uid() de Supabase Auth
+  email                String        @unique
+  nombre               String
+  apellido             String
+  telefono             String?
+  foto_perfil          String?
+  estado_usuario       EstadoUsuario @default(activo)
+  fecha_creacion       DateTime      @default(now())
+  fecha_actualizacion  DateTime      @updatedAt
+
+  roles                UsuarioRol[]
+  alumno               Alumno?
+  entrenador           Entrenador?
+  comercio             Comercio?
+  membresias           Membresia[]
+  credencial           Credencial?
+  notificaciones       Notificacion[]
+  mensajes_enviados    Mensaje[]        @relation("MensajesEnviados")
+  conversaciones_1     Conversacion[]   @relation("ConversacionUsuario1")
+  conversaciones_2     Conversacion[]   @relation("ConversacionUsuario2")
+  validaciones         ValidacionBeneficio[]
+  registros_auditoria  RegistroAuditoria[]
+  suscripciones_push   SuscripcionPush[]
+
+  @@map("usuarios")
+}
+
+// Tabla puente: un usuario puede tener uno o más roles activos al mismo
+// tiempo (ej: alumno + miembro_kuntur, o entrenador + miembro_kuntur).
+// El servidor SIEMPRE valida contra esta tabla; nunca contra un valor
+// enviado desde el cliente.
+model UsuarioRol {
+  id_rol_usuario   String     @id @default(uuid())
+  id_usuario       String
+  rol              RolUsuario
+  fecha_asignacion DateTime   @default(now())
+
+  usuario  Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+
+  @@unique([id_usuario, rol], name: "usuario_rol_unico")
+
+  @@map("roles_usuario")
+}
+
+model Alumno {
+  id_alumno         String   @id @default(uuid())
+  id_usuario        String   @unique
+  usuario           Usuario  @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+
+  fecha_nacimiento  DateTime?
+  objetivo          String?
+  fecha_alta        DateTime @default(now())
+
+  relaciones            RelacionEntrenadorAlumno[]
+  programas             ProgramaEntrenamiento[]
+  entrenamientos        Entrenamiento[]
+  progreso_fisico       ProgresoFisico[]
+  medidas_corporales    MedidaCorporal[]
+  habitos               Habito[]
+  feedback_diario       FeedbackDiario[]
+  feedback_semanal      FeedbackSemanal[]
+
+  @@map("alumnos")
+}
+
+model Entrenador {
+  id_entrenador   String   @id @default(uuid())
+  id_usuario      String   @unique
+  usuario         Usuario  @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+
+  especialidad    String?
+  biografia       String?
+  fecha_alta      DateTime @default(now())
+
+  relaciones      RelacionEntrenadorAlumno[]
+  programas       ProgramaEntrenamiento[]
+
+  @@map("entrenadores")
+}
+
+model RelacionEntrenadorAlumno {
+  id_relacion     String         @id @default(uuid())
+  id_entrenador   String
+  id_alumno       String
+  estado_relacion EstadoRelacion @default(activa)
+  fecha_inicio    DateTime       @default(now())
+  fecha_fin       DateTime?
+
+  entrenador      Entrenador @relation(fields: [id_entrenador], references: [id_entrenador], onDelete: Cascade)
+  alumno          Alumno     @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+
+  @@unique([id_entrenador, id_alumno])
+  @@map("relaciones_entrenador_alumno")
+}
+
+// ------------------------------------------------------------
+// MEMBRESÍAS
+// ------------------------------------------------------------
+
+model PlanMembresia {
+  id_plan_membresia  String   @id @default(uuid())
+  nombre             String
+  descripcion        String?
+  precio             Decimal  @db.Decimal(10, 2)
+  duracion_dias      Int
+  fecha_creacion     DateTime @default(now())
+
+  membresias         Membresia[]
+  beneficios_planes  BeneficioPlan[]
+
+  @@map("planes_membresia")
+}
+
+model Membresia {
+  id_membresia                String          @id @default(uuid())
+  id_usuario                  String
+  id_plan_membresia           String
+  estado_membresia            EstadoMembresia @default(pendiente)
+  fecha_inicio_membresia      DateTime
+  fecha_vencimiento_membresia DateTime
+  fecha_creacion               DateTime        @default(now())
+  fecha_actualizacion          DateTime        @updatedAt
+
+  usuario         Usuario       @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+  plan_membresia  PlanMembresia @relation(fields: [id_plan_membresia], references: [id_plan_membresia])
+
+  @@index([id_usuario, estado_membresia])
+  @@map("membresias")
+}
+
+// ------------------------------------------------------------
+// PROGRAMACIÓN Y ENTRENAMIENTO
+// ------------------------------------------------------------
+
+model ProgramaEntrenamiento {
+  id_programa      String         @id @default(uuid())
+  id_alumno        String
+  id_entrenador    String
+  nombre           String
+  descripcion      String?
+  objetivo         String?
+  fecha_inicio     DateTime
+  fecha_fin        DateTime?
+  estado_programa  EstadoPrograma @default(activo)
+
+  alumno           Alumno              @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+  entrenador       Entrenador          @relation(fields: [id_entrenador], references: [id_entrenador])
+  bloques          BloqueEntrenamiento[]
+  entrenamientos   Entrenamiento[]
+
+  @@map("programas_entrenamiento")
+}
+
+model BloqueEntrenamiento {
+  id_bloque        String   @id @default(uuid())
+  id_programa      String
+  nombre           String
+  orden            Int
+  semana_inicio    Int?
+  semana_fin       Int?
+  tipo             String?  // ej: acumulacion, intensificacion, deload
+
+  programa         ProgramaEntrenamiento @relation(fields: [id_programa], references: [id_programa], onDelete: Cascade)
+  ejercicios_programa EjercicioPrograma[]
+
+  @@map("bloques_entrenamiento")
+}
+
+model Ejercicio {
+  id_ejercicio     String   @id @default(uuid())
+  nombre           String
+  descripcion      String?
+  grupo_muscular   String?
+  video_url        String?
+  instrucciones    String?
+
+  // Valores por defecto, para no tipear series/reps/peso/etc. de nuevo
+  // cada vez que se agrega este ejercicio a un bloque de un programa.
+  // Son solo una plantilla: EjercicioPrograma sigue guardando el valor
+  // real usado en cada programa, así que cambiar el default acá nunca
+  // pisa una rutina ya armada.
+  series_default                Int?
+  repeticiones_default          String?
+  peso_sugerido_default         Decimal? @db.Decimal(6, 2)
+  tempo_default                 String?
+  descanso_default              String?
+  metodo_entrenamiento_default  String?
+  tiempo_bajo_tension_default   Int?
+
+  ejercicios_programa EjercicioPrograma[]
+
+  @@map("ejercicios")
+}
+
+model EjercicioPrograma {
+  id_ejercicio_programa String  @id @default(uuid())
+  id_bloque              String
+  id_ejercicio            String
+
+  series                  Int
+  repeticiones             String   // admite rangos, ej: "8-10"
+  peso_sugerido            Decimal? @db.Decimal(6, 2) // nunca obligatorio
+  tempo                    String?
+  descanso                 String?
+  metodo_entrenamiento     String?
+  tiempo_bajo_tension_sugerido Int? // segundos, nunca obligatorio
+  orden                    Int
+
+  bloque       BloqueEntrenamiento @relation(fields: [id_bloque], references: [id_bloque], onDelete: Cascade)
+  ejercicio    Ejercicio           @relation(fields: [id_ejercicio], references: [id_ejercicio])
+  series_registradas SerieEntrenamiento[]
+
+  @@map("ejercicios_programa")
+}
+
+model Entrenamiento {
+  id_entrenamiento String              @id @default(uuid())
+  id_alumno        String
+  id_programa      String?
+  fecha            DateTime            @default(now())
+  nombre           String?
+  comentarios      String?
+  estado           EstadoEntrenamiento @default(pendiente)
+
+  alumno   Alumno                 @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+  programa ProgramaEntrenamiento? @relation(fields: [id_programa], references: [id_programa])
+  series   SerieEntrenamiento[]
+
+  @@index([id_alumno, fecha])
+  @@map("entrenamientos")
+}
+
+model SerieEntrenamiento {
+  id_serie                String   @id @default(uuid())
+  id_entrenamiento        String
+  id_ejercicio_programa   String
+
+  peso_utilizado          Decimal? @db.Decimal(6, 2)
+  repeticiones_realizadas Int?
+  series_completadas      Int?
+  rpe                     Decimal? @db.Decimal(3, 1)
+  descanso_real            Int?     // segundos
+  tiempo_bajo_tension      Int?     // segundos
+  comentarios              String?
+  fecha_registro           DateTime @default(now())
+
+  entrenamiento     Entrenamiento     @relation(fields: [id_entrenamiento], references: [id_entrenamiento], onDelete: Cascade)
+  ejercicio_programa EjercicioPrograma @relation(fields: [id_ejercicio_programa], references: [id_ejercicio_programa])
+
+  @@map("series_entrenamiento")
+}
+
+// ------------------------------------------------------------
+// SEGUIMIENTO FÍSICO Y HÁBITOS
+// ------------------------------------------------------------
+
+model ProgresoFisico {
+  id_progreso          String   @id @default(uuid())
+  id_alumno            String
+  fecha                DateTime @default(now())
+  peso_corporal         Decimal? @db.Decimal(5, 2)
+  porcentaje_graso      Decimal? @db.Decimal(4, 2)
+  masa_muscular         Decimal? @db.Decimal(5, 2)
+
+  alumno   Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+
+  @@index([id_alumno, fecha])
+  @@map("progreso_fisico")
+}
+
+model MedidaCorporal {
+  id_medida     String   @id @default(uuid())
+  id_alumno     String
+  fecha         DateTime @default(now())
+  tipo_medida   String   // ej: cintura, cadera, brazo, pecho
+  valor_cm      Decimal  @db.Decimal(5, 2)
+  foto_url      String?  // referencia a objeto en Supabase Storage (bucket privado)
+
+  alumno   Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+
+  @@index([id_alumno, fecha])
+  @@map("medidas_corporales")
+}
+
+model Habito {
+  id_habito        String   @id @default(uuid())
+  id_alumno        String
+  fecha            DateTime @default(now())
+  sueno            Int?     // horas o escala 1-10
+  agua             Decimal? @db.Decimal(4, 2) // litros
+  nutricion        Int?     // escala 1-10
+  suplementacion   Boolean?
+  cardio           Boolean?
+  movilidad        Boolean?
+  recuperacion     Int?     // escala 1-10
+
+  alumno   Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+
+  @@unique([id_alumno, fecha])
+  @@map("habitos")
+}
+
+model FeedbackDiario {
+  id_feedback_diario String   @id @default(uuid())
+  id_alumno          String
+  fecha              DateTime @default(now())
+  comentario_diario  String
+
+  alumno   Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+
+  @@map("feedback_diario")
+}
+
+model FeedbackSemanal {
+  id_feedback_semanal String   @id @default(uuid())
+  id_alumno           String
+  semana_inicio        DateTime
+  comentario_semanal   String
+
+  alumno   Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+
+  @@map("feedback_semanal")
+}
+
+// ------------------------------------------------------------
+// BIBLIOTECA EDUCATIVA
+// ------------------------------------------------------------
+
+model Biblioteca {
+  id_recurso       String              @id @default(uuid())
+  titulo           String
+  descripcion      String?
+  categoria        CategoriaBiblioteca
+  url_contenido    String?
+  tipo_contenido   String?  // video, articulo, pdf
+  fecha_creacion   DateTime @default(now())
+
+  @@map("biblioteca")
+}
+
+// ------------------------------------------------------------
+// COMUNICACIÓN
+// ------------------------------------------------------------
+
+model Conversacion {
+  id_conversacion  String   @id @default(uuid())
+  id_usuario_1     String
+  id_usuario_2     String
+  fecha_creacion   DateTime @default(now())
+
+  usuario_1  Usuario   @relation("ConversacionUsuario1", fields: [id_usuario_1], references: [id_usuario], onDelete: Cascade)
+  usuario_2  Usuario   @relation("ConversacionUsuario2", fields: [id_usuario_2], references: [id_usuario], onDelete: Cascade)
+  mensajes   Mensaje[]
+
+  @@unique([id_usuario_1, id_usuario_2])
+  @@map("conversaciones")
+}
+
+model Mensaje {
+  id_mensaje         String   @id @default(uuid())
+  id_conversacion    String
+  id_usuario_emisor  String
+  contenido          String
+  fecha_envio        DateTime @default(now())
+  leido              Boolean  @default(false)
+
+  conversacion  Conversacion @relation(fields: [id_conversacion], references: [id_conversacion], onDelete: Cascade)
+  emisor        Usuario      @relation("MensajesEnviados", fields: [id_usuario_emisor], references: [id_usuario])
+
+  @@index([id_conversacion, fecha_envio])
+  @@map("mensajes")
+}
+
+model Notificacion {
+  id_notificacion  String   @id @default(uuid())
+  id_usuario       String
+  titulo           String
+  contenido        String
+  tipo             String?
+  leido            Boolean  @default(false)
+  fecha_creacion   DateTime @default(now())
+
+  usuario  Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+
+  @@index([id_usuario, leido])
+  @@map("notificaciones")
+}
+
+// Suscripción push del navegador (Web Push API). Un usuario puede tener
+// más de una (varios dispositivos/navegadores instalados como PWA).
+model SuscripcionPush {
+  id_suscripcion   String   @id @default(uuid())
+  id_usuario       String
+  endpoint         String   @unique
+  clave_p256dh     String
+  clave_auth       String
+  fecha_creacion   DateTime @default(now())
+
+  usuario  Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+
+  @@index([id_usuario])
+  @@map("suscripciones_push")
+}
+
+// ------------------------------------------------------------
+// BLACK HUB BENEFITS (KUNTUR)
+// ------------------------------------------------------------
+
+model Comercio {
+  id_comercio      String         @id @default(uuid())
+  id_usuario       String         @unique
+  nombre           String
+  descripcion      String?
+  direccion        String?
+  telefono         String?
+  email            String?
+  logo             String?
+  categoria        String?
+  estado           EstadoComercio @default(activo)
+  fecha_creacion   DateTime       @default(now())
+
+  usuario        Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+  beneficios     Beneficio[]
+  validaciones   ValidacionBeneficio[]
+
+  @@map("comercios")
+}
+
+model Beneficio {
+  id_beneficio         String          @id @default(uuid())
+  id_comercio          String
+  titulo               String
+  descripcion          String?
+  descuento            String?
+  condiciones          String?
+  fecha_inicio         DateTime
+  fecha_vencimiento    DateTime
+  estado               EstadoBeneficio @default(activo)
+
+  comercio             Comercio               @relation(fields: [id_comercio], references: [id_comercio], onDelete: Cascade)
+  beneficios_planes    BeneficioPlan[]
+  validaciones         ValidacionBeneficio[]
+
+  @@index([id_comercio, estado])
+  @@map("beneficios")
+}
+
+// Tabla puente: qué beneficios están disponibles para qué planes de membresía
+model BeneficioPlan {
+  id_beneficio        String
+  id_plan_membresia   String
+
+  beneficio       Beneficio     @relation(fields: [id_beneficio], references: [id_beneficio], onDelete: Cascade)
+  plan_membresia  PlanMembresia @relation(fields: [id_plan_membresia], references: [id_plan_membresia], onDelete: Cascade)
+
+  @@id([id_beneficio, id_plan_membresia])
+  @@map("beneficios_planes")
+}
+
+model Credencial {
+  id_credencial          String   @id @default(uuid())
+  id_usuario             String   @unique
+  numero_socio           String   @unique
+  // Identificador opaco embebido en el QR — NUNCA datos sensibles del socio
+  codigo_qr_token        String   @unique @default(uuid())
+  fecha_creacion         DateTime @default(now())
+
+  usuario  Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+
+  @@map("credenciales")
+}
+
+model ValidacionBeneficio {
+  id_validacion    String              @id @default(uuid())
+  id_comercio      String
+  id_usuario       String
+  id_beneficio     String
+  fecha_validacion DateTime            @default(now())
+  resultado        ResultadoValidacion
+
+  comercio   Comercio  @relation(fields: [id_comercio], references: [id_comercio])
+  usuario    Usuario   @relation(fields: [id_usuario], references: [id_usuario])
+  beneficio  Beneficio @relation(fields: [id_beneficio], references: [id_beneficio])
+
+  @@index([id_comercio, fecha_validacion])
+  @@map("validaciones_beneficios")
+}
+
+// ------------------------------------------------------------
+// AUDITORÍA
+// ------------------------------------------------------------
+
+model RegistroAuditoria {
+  id_registro   String   @id @default(uuid())
+  id_usuario    String?
+  accion        String   // ej: login, cambio_rol, cambio_membresia, validacion_qr
+  recurso       String?  // ej: "membresia", "programa"
+  id_recurso    String?
+  fecha         DateTime @default(now())
+  resultado     String?  // ej: "exito", "denegado"
+
+  usuario  Usuario? @relation(fields: [id_usuario], references: [id_usuario], onDelete: SetNull)
+
+  @@index([id_usuario, fecha])
+  @@index([accion, fecha])
+  @@map("registros_auditoria")
+}
