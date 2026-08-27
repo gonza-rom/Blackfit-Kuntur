@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { obtenerUsuarioActual, tieneRol } from "@/lib/auth";
 import { cerrarSesion } from "@/app/actions/auth";
+import { InstalarApp } from "@/components/instalar-app";
 import { BottomNav } from "./_components/bottom-nav";
 import { SidebarNav } from "./_components/sidebar-nav";
 
@@ -69,7 +70,12 @@ export default async function ComercioLayout({
         </form>
       </aside>
 
-      <div className="md:pl-[280px] flex-1 flex flex-col">{children}</div>
+      <div className="md:pl-[280px] flex-1 flex flex-col">
+        <div className="w-full max-w-3xl mx-auto px-5 md:px-10 pt-4">
+          <InstalarApp />
+        </div>
+        {children}
+      </div>
 
       {/* BottomNavBar (mobile) */}
       <BottomNav />

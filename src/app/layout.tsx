@@ -37,6 +37,13 @@ export const metadata: Metadata = {
   title: "BLACK HUB",
   description: "Entrá al Hub. El rendimiento elite empieza acá.",
   manifest: "/manifest.json",
+  // iOS no lee el manifest para el ícono de "Agregar a inicio" — necesita
+  // el <link rel="apple-touch-icon"> que genera esto. Sin esto, Safari cae
+  // a una captura de pantalla de la página como ícono.
+  icons: {
+    icon: "/icons/icon-192.png",
+    apple: "/icons/icon-192.png",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",

@@ -4,6 +4,7 @@ import { obtenerUsuarioActual, tieneRol } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { OfflineSyncBanner } from "@/components/offline-sync-banner";
 import { ActivarPush } from "@/components/activar-push";
+import { InstalarApp } from "@/components/instalar-app";
 import { verificarRecordatorioMembresia } from "@/lib/membresia";
 import { BottomNav } from "./_components/bottom-nav";
 import { SidebarNav } from "./_components/sidebar-nav";
@@ -95,7 +96,8 @@ export default async function PanelLayout({
 
       <div className="md:pl-[280px] flex-1 flex flex-col">
         <OfflineSyncBanner />
-        <div className="w-full max-w-md md:max-w-3xl mx-auto px-5 md:px-10 pt-4">
+        <div className="w-full max-w-md md:max-w-3xl mx-auto px-5 md:px-10 pt-4 flex flex-col gap-3">
+          <InstalarApp />
           <ActivarPush />
         </div>
         {children}

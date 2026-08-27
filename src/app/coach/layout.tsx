@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { obtenerUsuarioActual, tieneRol } from "@/lib/auth";
 import { cerrarSesion } from "@/app/actions/auth";
 import { ActivarPush } from "@/components/activar-push";
+import { InstalarApp } from "@/components/instalar-app";
 import { BottomNav } from "./_components/bottom-nav";
 import { SidebarNav } from "./_components/sidebar-nav";
 
@@ -69,7 +70,8 @@ export default async function CoachLayout({
       </aside>
 
       <div className="md:pl-[280px] flex-1 flex flex-col">
-        <div className="w-full max-w-3xl mx-auto px-5 md:px-10 pt-4">
+        <div className="w-full max-w-3xl mx-auto px-5 md:px-10 pt-4 flex flex-col gap-3">
+          <InstalarApp />
           <ActivarPush />
         </div>
         {children}
