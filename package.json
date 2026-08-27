@@ -16,12 +16,8 @@
     "next": "16.3.0",
     "qrcode": "^1.5.4",
     "react": "19.2.8",
-<<<<<<< HEAD
     "react-dom": "19.2.8",
     "web-push": "^3.6.7"
-=======
-    "react-dom": "19.2.8"
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -29,10 +25,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-<<<<<<< HEAD
     "@types/web-push": "^3.6.4",
-=======
->>>>>>> f2e2a915f8dd2dda0d05c16563da3c249ecbc4e5
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
     "prisma": "^6.19.3",
