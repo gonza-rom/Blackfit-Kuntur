@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { obtenerPlanesMembresia } from "@/lib/catalogos";
 import { asignarRol, quitarRol, cambiarEstadoMembresia } from "@/app/actions/admin";
 import { FormActivarMembresia } from "./_components/form-activar-membresia";
 
@@ -35,7 +36,7 @@ export default async function AdminUsuarioDetallePage(
         },
       },
     }),
-    prisma.planMembresia.findMany({ orderBy: { nombre: "asc" } }),
+    obtenerPlanesMembresia(),
   ]);
 
   if (!usuario) notFound();

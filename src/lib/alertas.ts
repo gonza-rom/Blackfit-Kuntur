@@ -23,6 +23,7 @@ async function obtenerBloqueActual(id_alumno: string): Promise<BloqueActual> {
   const programas = await prisma.programaEntrenamiento.findMany({
     where: { id_alumno, estado_programa: "activo" },
     include: { bloques: true },
+    relationLoadStrategy: "join",
   });
 
   for (const programa of programas) {
@@ -65,6 +66,7 @@ export async function detectarAlertas(id_alumno: string): Promise<Alerta[]> {
       where: { id_alumno, fecha: { gte: hace30 } },
       include: { series: true },
       orderBy: { fecha: "desc" },
+      relationLoadStrategy: "join",
     }),
     prisma.feedbackDiario.findMany({ where: { id_alumno, fecha: { gte: hace14 } } }),
     prisma.habito.count({ where: { id_alumno, fecha: { gte: hace14 } } }),

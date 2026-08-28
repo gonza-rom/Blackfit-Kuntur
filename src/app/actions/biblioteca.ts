@@ -1,10 +1,11 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import type { CategoriaBiblioteca } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual, obtenerAdministradorActual } from "@/lib/auth";
 import { registrarAuditoria } from "@/lib/auditoria";
+import { TAG_CATALOGO_BIBLIOTECA } from "@/lib/catalogos";
 
 export type EstadoBiblioteca = { error?: string; message?: string } | undefined;
 
@@ -56,6 +57,7 @@ export async function crearRecursoBiblioteca(
     resultado: `creado:${recurso.titulo}`,
   });
 
+  updateTag(TAG_CATALOGO_BIBLIOTECA);
   revalidatePath("/coach/biblioteca");
   revalidatePath("/panel/biblioteca");
   return { message: "Recurso publicado." };
@@ -78,6 +80,7 @@ export async function eliminarRecursoBiblioteca(formData: FormData): Promise<voi
     resultado: "eliminado",
   });
 
+  updateTag(TAG_CATALOGO_BIBLIOTECA);
   revalidatePath("/coach/biblioteca");
   revalidatePath("/panel/biblioteca");
 }

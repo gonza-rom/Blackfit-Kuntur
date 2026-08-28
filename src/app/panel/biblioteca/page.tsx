@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { prisma } from "@/lib/prisma";
+import type { CategoriaBiblioteca } from "@prisma/client";
+import { obtenerBibliotecaCatalogo } from "@/lib/catalogos";
 
 const CATEGORIAS = [
   { value: "todas", label: "Todas" },
@@ -28,12 +29,9 @@ export default async function PanelBibliotecaPage({
   if (!user) redirect("/iniciar-sesion");
 
   const { categoria } = await searchParams;
-  const filtro = categoria && categoria !== "todas" ? categoria : undefined;
+  const filtro = categoria && categoria !== "todas" ? (categoria as CategoriaBiblioteca) : undefined;
 
-  const recursos = await prisma.biblioteca.findMany({
-    where: filtro ? { categoria: filtro as never } : undefined,
-    orderBy: { fecha_creacion: "desc" },
-  });
+  const recursos = await obtenerBibliotecaCatalogo(filtro);
 
   return (
     <main className="flex-1 w-full max-w-3xl mx-auto px-5 md:px-10 py-8 flex flex-col gap-6">

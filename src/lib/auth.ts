@@ -28,9 +28,24 @@ export type UsuarioActual = Usuario & {
 export const obtenerUsuarioActual = cache(
   async (): Promise<UsuarioActual | null> => {
     const supabase = await createClient();
+    // `proxy.ts` ya corrió `auth.getUser()` — la verificación real contra
+    // el servidor de Supabase — para esta misma request antes de llegar
+    // acá (ver RUTAS_PROTEGIDAS). Repetir esa ida y vuelta de red en cada
+    // Server Component que pide la identidad no suma seguridad, solo
+    // duplica el costo: la cookie de sesión ya fue validada server-side
+    // para este request. `getSession()` la lee local (sin red, salvo que
+    // el token esté vencido y haga falta refrescarlo).
+    //
+    // Lo único que se pierde respecto a `getUser()` acá: si alguien
+    // revoca la sesión de este usuario en Supabase Auth a mitad de su
+    // token todavía vigente (borrado forzado, "cerrar sesión en todos
+    // los dispositivos"), esta capa no se entera hasta que el token
+    // expire — el próximo `getUser()` del proxy en su siguiente
+    // navegación sí lo va a detectar.
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user;
 
     if (!user) return null;
 

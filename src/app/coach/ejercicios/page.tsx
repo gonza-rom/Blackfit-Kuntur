@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
+import { obtenerEjerciciosCatalogo } from "@/lib/catalogos";
 
 export default async function EjerciciosPage() {
   const contexto = await obtenerEntrenadorActual();
   if (!contexto) redirect("/panel");
 
-  const ejercicios = await prisma.ejercicio.findMany({ orderBy: { nombre: "asc" } });
+  const ejercicios = await obtenerEjerciciosCatalogo();
 
   const detalleDefault = (e: (typeof ejercicios)[number]) => {
     if (!e.series_default && !e.repeticiones_default) return null;

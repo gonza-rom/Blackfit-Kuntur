@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { obtenerPlanesMembresia } from "@/lib/catalogos";
 import { cambiarEstadoComercio, cambiarEstadoBeneficio } from "@/app/actions/admin";
 import { PlanesBeneficio } from "./_components/planes-beneficio";
 
@@ -29,7 +30,7 @@ export default async function AdminComercioDetallePage(
         },
       },
     }),
-    prisma.planMembresia.findMany({ orderBy: { nombre: "asc" } }),
+    obtenerPlanesMembresia(),
   ]);
 
   if (!comercio) notFound();

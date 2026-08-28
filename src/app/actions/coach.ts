@@ -1,11 +1,12 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import type { EstadoPrograma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
 import { crearNotificacion } from "@/lib/notificaciones";
+import { TAG_CATALOGO_EJERCICIOS } from "@/lib/catalogos";
 
 export type EstadoCoach = { error?: string; message?: string } | undefined;
 
@@ -103,6 +104,7 @@ export async function crearEjercicio(
     },
   });
 
+  updateTag(TAG_CATALOGO_EJERCICIOS);
   redirect("/coach/ejercicios");
 }
 

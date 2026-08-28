@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
+import { obtenerEjerciciosCatalogoConDefaults } from "@/lib/catalogos";
 import { eliminarBloque, duplicarBloque, avisarAlumnoRutinaLista } from "@/app/actions/coach";
 import { FormNuevoBloque } from "./_components/form-nuevo-bloque";
 import { FormNuevoEjercicioBloque } from "./_components/form-nuevo-ejercicio-bloque";
@@ -14,7 +15,7 @@ export default async function ProgramaDetallePage(
 
   const { id_programa } = await props.params;
 
-  const [programa, biblioteca] = await Promise.all([
+  const [programa, bibliotecaSerializable] = await Promise.all([
     prisma.programaEntrenamiento.findUnique({
       where: { id_programa },
       include: {
@@ -30,33 +31,12 @@ export default async function ProgramaDetallePage(
         },
       },
     }),
-    prisma.ejercicio.findMany({
-      orderBy: { nombre: "asc" },
-      select: {
-        id_ejercicio: true,
-        nombre: true,
-        series_default: true,
-        repeticiones_default: true,
-        peso_sugerido_default: true,
-        tempo_default: true,
-        descanso_default: true,
-        metodo_entrenamiento_default: true,
-        tiempo_bajo_tension_default: true,
-      },
-    }),
+    obtenerEjerciciosCatalogoConDefaults(),
   ]);
 
   if (!programa || programa.id_entrenador !== contexto.id_entrenador) {
     notFound();
   }
-
-  // Decimal de Prisma no es serializable tal cual hacia un client
-  // component — se pasa como string, igual que se hace más abajo con
-  // ep.peso_sugerido.
-  const bibliotecaSerializable = biblioteca.map((e) => ({
-    ...e,
-    peso_sugerido_default: e.peso_sugerido_default ? e.peso_sugerido_default.toString() : null,
-  }));
 
   return (
     <main className="flex-1 w-full max-w-3xl mx-auto px-5 md:px-10 py-8 flex flex-col gap-8">

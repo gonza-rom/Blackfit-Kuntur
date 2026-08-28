@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { obtenerEntrenadorActual } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { obtenerBibliotecaCatalogo } from "@/lib/catalogos";
 import { eliminarRecursoBiblioteca } from "@/app/actions/biblioteca";
 import { FormNuevoRecurso } from "./_components/form-nuevo-recurso";
 
@@ -17,9 +17,7 @@ export default async function CoachBibliotecaPage() {
   const contexto = await obtenerEntrenadorActual();
   if (!contexto) redirect("/panel");
 
-  const recursos = await prisma.biblioteca.findMany({
-    orderBy: { fecha_creacion: "desc" },
-  });
+  const recursos = await obtenerBibliotecaCatalogo();
 
   return (
     <main className="flex-1 w-full max-w-3xl mx-auto px-5 md:px-10 py-8 flex flex-col gap-8">

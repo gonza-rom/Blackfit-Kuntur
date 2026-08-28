@@ -1,13 +1,14 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
 import type {
   RolUsuario,
   EstadoMembresia,
   EstadoComercio,
   EstadoBeneficio,
 } from "@prisma/client";
+import { TAG_CATALOGO_PLANES } from "@/lib/catalogos";
 import { prisma } from "@/lib/prisma";
 import { obtenerAdministradorActual } from "@/lib/auth";
 import { registrarAuditoria } from "@/lib/auditoria";
@@ -135,6 +136,7 @@ export async function crearPlanMembresia(
     },
   });
 
+  updateTag(TAG_CATALOGO_PLANES);
   redirect("/admin/planes");
 }
 

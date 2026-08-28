@@ -20,6 +20,7 @@ export default async function CoachPage() {
       where: { id_entrenador, estado_relacion: "activa" },
       include: { alumno: { include: { usuario: true } } },
       orderBy: { fecha_inicio: "desc" },
+      relationLoadStrategy: "join",
     }),
   ]);
   const ultimosAlumnos = relacionesActivas.slice(0, 5);

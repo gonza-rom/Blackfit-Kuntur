@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import { obtenerPlanesMembresia } from "@/lib/catalogos";
 
 export default async function AdminPlanesPage() {
-  const planes = await prisma.planMembresia.findMany({ orderBy: { nombre: "asc" } });
+  const planes = await obtenerPlanesMembresia();
 
   return (
     <main className="flex-1 w-full max-w-3xl mx-auto px-5 md:px-10 py-8 flex flex-col gap-6">
