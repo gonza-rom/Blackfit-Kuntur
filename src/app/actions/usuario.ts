@@ -28,5 +28,6 @@ export async function actualizarInformacionPersonal(
 
   revalidatePath("/panel/perfil");
   revalidatePath("/panel/perfil/informacion-personal");
+  revalidatePath("/beneficiario/perfil");
   return { message: "Tus datos se actualizaron." };
 }

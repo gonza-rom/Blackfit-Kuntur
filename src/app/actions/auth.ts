@@ -36,6 +36,10 @@ export async function registrarse(
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   const confirmPassword = String(formData.get("confirmPassword") ?? "");
+  // Diferencia el alta de un alumno Black Fit del alta de un beneficiario
+  // Kuntur puro. Cualquier valor que no sea "beneficiario" cae en el alta
+  // de alumno (comportamiento por defecto de siempre).
+  const esBeneficiario = String(formData.get("tipo") ?? "") === "beneficiario";
 
   if (!nombre || !apellido || !email || !password) {
     return { error: "Completá todos los campos." };
@@ -67,8 +71,10 @@ export async function registrarse(
       email,
       nombre,
       apellido,
-      roles: { create: { rol: "alumno" } },
-      alumno: { create: {} },
+      // El beneficiario NO recibe perfil de Alumno ni ningún rol de Black
+      // Fit: solo el rol "beneficiario".
+      roles: { create: { rol: esBeneficiario ? "beneficiario" : "alumno" } },
+      ...(esBeneficiario ? {} : { alumno: { create: {} } }),
     },
   });
 
@@ -76,7 +82,7 @@ export async function registrarse(
     return { message: "Cuenta creada. Revisá tu email para confirmarla." };
   }
 
-  redirect("/panel");
+  redirect(esBeneficiario ? "/beneficiario" : "/panel");
 }
 
 export async function cerrarSesion() {

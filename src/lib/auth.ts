@@ -88,6 +88,32 @@ export const obtenerAlumnoActual = cache(
   }
 );
 
+// Un "beneficiario" es Kuntur puro: solo accede a /beneficiario (beneficios
+// + su perfil). No tiene perfil de Alumno/Entrenador ni debe tener otros
+// roles de Black Fit — si los tuviera, esos otros roles mandan y el usuario
+// entra por /panel|/coach|/admin como corresponda.
+export const obtenerBeneficiarioActual = cache(
+  async (): Promise<{ usuario: UsuarioActual } | null> => {
+    const usuario = await obtenerUsuarioActual();
+    if (!usuario || !tieneRol(usuario, "beneficiario")) {
+      return null;
+    }
+    return { usuario };
+  }
+);
+
+// True si el usuario es beneficiario y NO tiene ningún rol de Black Fit ni
+// operativo: en ese caso su única casa es /beneficiario.
+export function soloBeneficiario(usuario: UsuarioActual | null): boolean {
+  if (!usuario || !tieneRol(usuario, "beneficiario")) return false;
+  return !(
+    tieneRol(usuario, "alumno") ||
+    tieneRol(usuario, "entrenador") ||
+    tieneRol(usuario, "administrador") ||
+    tieneRol(usuario, "comercio")
+  );
+}
+
 export const obtenerAdministradorActual = cache(
   async (): Promise<{ usuario: UsuarioActual } | null> => {
     const usuario = await obtenerUsuarioActual();

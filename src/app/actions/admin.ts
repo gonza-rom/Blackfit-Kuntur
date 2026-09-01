@@ -19,6 +19,7 @@ const ROLES_ASIGNABLES: RolUsuario[] = [
   "alumno",
   "entrenador",
   "miembro_kuntur",
+  "beneficiario",
   "administrador",
 ];
 

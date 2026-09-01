@@ -27,7 +27,8 @@ datasource db {
 enum RolUsuario {
   alumno          // Black Fit
   entrenador      // Black Fit
-  miembro_kuntur  // Kuntur (habilita el módulo de Beneficios)
+  miembro_kuntur  // Kuntur — módulo de Beneficios como ADD-ON de un usuario Black Fit
+  beneficiario    // Kuntur puro — SOLO beneficios + perfil, sin nada de Black Fit
   comercio        // Operativo — asignado por el administrador
   administrador   // Operativo — asignado por el administrador
 }

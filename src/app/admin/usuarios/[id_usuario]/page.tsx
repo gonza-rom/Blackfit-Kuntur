@@ -4,7 +4,13 @@ import { obtenerPlanesMembresia } from "@/lib/catalogos";
 import { asignarRol, quitarRol, cambiarEstadoMembresia } from "@/app/actions/admin";
 import { FormActivarMembresia } from "./_components/form-activar-membresia";
 
-const ROLES_ASIGNABLES = ["alumno", "entrenador", "miembro_kuntur", "administrador"] as const;
+const ROLES_ASIGNABLES = [
+  "alumno",
+  "entrenador",
+  "miembro_kuntur",
+  "beneficiario",
+  "administrador",
+] as const;
 
 const ESTADOS_MEMBRESIA = [
   "activa",

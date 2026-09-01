@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { obtenerUsuarioActual, tieneRol } from "@/lib/auth";
+import { obtenerUsuarioActual, tieneRol, soloBeneficiario } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { OfflineSyncBanner } from "@/components/offline-sync-banner";
 import { ActivarPush } from "@/components/activar-push";
@@ -18,6 +18,12 @@ export default async function PanelLayout({
 
   if (!usuario) {
     redirect("/iniciar-sesion");
+  }
+
+  // Beneficiario puro (Kuntur, sin nada de Black Fit): su única casa es
+  // /beneficiario. Se valida contra UsuarioRol en el servidor.
+  if (soloBeneficiario(usuario)) {
+    redirect("/beneficiario");
   }
 
   if (!tieneRol(usuario, "alumno") && tieneRol(usuario, "entrenador")) {
