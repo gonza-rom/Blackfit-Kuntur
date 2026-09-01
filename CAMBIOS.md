@@ -1,51 +1,155 @@
 # Cambios de esta entrega
 
-## 1. Motor de alertas — consciente del deload
-`src/lib/alertas.ts`: antes de marcar caída de volumen, revisa si el
-alumno está cursando un bloque `deload`/`descarga` en su programa activo
-(por semana) — si es así, la baja en "info" en vez de "advertencia".
-También distingue progresión de intensidad (menos volumen pero más peso
-promedio = no es retroceso).
+## 1. Gamificación — objetivos, puntos diarios y logros
+Sistema **independiente** del motor de alertas (`src/lib/alertas.ts`): no
+lo modifica ni depende de él. Vive aparte.
 
-## 2. Push notifications — funcional de punta a punta
-- VAPID keys reales ya generadas y cargadas en `.env` (no hace falta
-  darte de alta en ningún servicio externo).
-- Modelo `SuscripcionPush` + migración
-  `prisma/migrations/20260827000000_add_suscripciones_push/`.
-- `src/lib/push.ts` + `src/lib/notificaciones.ts` (punto único para
-  crear notificación in-app y push a la vez).
-- `public/sw.js` con listeners `push` y `notificationclick`.
-- Botón "Activar notificaciones" en el panel del alumno y del coach
-  (`src/components/activar-push.tsx`).
-- Ya conectado a: mensajes de chat, programa nuevo asignado, aviso de
-  rutina lista, recordatorio de vencimiento de membresía.
+- **Schema** (`prisma/schema.prisma`) + migración
+  `prisma/migrations/20260901000000_add_gamificacion/`. No toca datos
+  existentes — lo único que agrega a una tabla ya existente es
+  `alumnos.puntos_totales` (`INTEGER NOT NULL DEFAULT 0`, no reescribe
+  filas). Modelos nuevos:
+  - `Objetivo`: objetivos configurables por alumno (`tipo` enum
+    `TipoObjetivo`: volumen / frecuencia / habito / peso_corporal /
+    custom; `meta` y `progreso_actual` Decimal; `estado` enum
+    `EstadoObjetivo`: activo / cumplido / vencido / cancelado;
+    `fecha_inicio`, `fecha_objetivo`).
+  - `Logro`: catálogo maestro (`codigo` estable, `titulo`, `descripcion`,
+    `icono` = Material Symbol, `criterio` JSON con la regla evaluable, ej.
+    `{"tipo":"racha_dias","valor":7}`). La migración **siembra 9 logros**
+    con `ON CONFLICT DO NOTHING` (re-aplicarla es inocuo).
+  - `LogroAlumno`: N:N Alumno↔Logro con `fecha_obtenido` y
+    `@@unique(id_alumno, id_logro)`.
+  - `MovimientoPuntos`: historial de puntos ganados. El
+    `@@unique(id_alumno, motivo)` es la **garantía de idempotencia**:
+    `motivo` es una clave estable del evento (`entrenamiento:<id>`,
+    `habito:2026-09-01`, `feedback_diario:2026-09-01`), así el mismo
+    evento nunca suma puntos dos veces.
+  - RLS para las cuatro tablas siguiendo el patrón de
+    `20260814000000_enable_rls` (alumno ve lo suyo, entrenador vía
+    `entrenador_tiene_alumno`, admin todo; catálogo `logros` legible por
+    cualquier autenticado).
 
-## 3. Membresías
-Ya estaba resuelto (activación/renovación manual desde `/admin`, vigencia
-en tiempo real). Se agregó: recordatorio automático (in-app + push)
-cuando faltan ≤5 días para el vencimiento (`src/lib/membresia.ts`).
+- **Lógica** (`src/lib/gamificacion.ts`, mismo estilo que `alertas.ts` /
+  `membresia.ts`):
+  - `otorgarPuntos(id_alumno, motivo, cantidad)` — punto **único**: crea
+    el `MovimientoPuntos` y actualiza `puntos_totales` en una sola
+    transacción. Idempotente por `motivo` (si el evento ya sumó, no hace
+    nada y no lanza).
+  - `evaluarLogros(id_alumno)` — chequea cada `criterio` del catálogo
+    contra el estado real del alumno (racha de días, entrenamientos
+    completados, puntos totales, objetivos cumplidos, volumen acumulado)
+    y asigna los que correspondan vía `LogroAlumno`, disparando
+    notificación in-app + push con el mismo `crearNotificacion` de
+    `src/lib/notificaciones.ts`.
+  - `registrarActividad()` — otorga + reevalúa; nunca lanza (la
+    gamificación es un extra, no puede tumbar la acción que la disparó).
+  - Enganchada en los flujos que **ya** registran actividad del alumno,
+    sin cambiar su comportamiento:
+    - `guardarSesionEntrenamiento` (`src/lib/alumno.ts`) — al completar un
+      entrenamiento: **+20**.
+    - `registrarHabito` (`src/app/actions/alumno.ts`) — hábitos del día:
+      **+10**, una sola vez por día.
+    - `registrarFeedbackDiario` — feedback diario: **+5**, una sola vez
+      por día aunque cargue varios.
 
-## 4. Armador de rutinas — coach
-En `/coach/programas/[id]` ahora se puede, además de agregar ejercicios:
-- **Editar** cualquier ejercicio ya cargado (series, reps, peso, tempo,
-  descanso, método, TUT) sin borrarlo y recrearlo.
-- **Reordenar** con flechas arriba/abajo.
-- **Eliminar** un ejercicio individual.
-- **Duplicar un bloque completo** (con todos sus ejercicios) — para
-  armar "semana 2 = semana 1 con más peso" sin cargar todo de nuevo.
-- **Eliminar un bloque**.
-- **Avisar al alumno** (botón explícito, dispara notificación + push)
-  cuando la rutina ya está lista para arrancar.
+- **UI**:
+  - Alumno: nueva pantalla **`/panel/logros`** (objetivos activos con
+    barra de progreso, puntos totales + últimos movimientos, grilla de
+    logros obtenidos vs. bloqueados) + tarjeta resumen en el dashboard
+    (`/panel`). Los logros se reevalúan de forma **oportunista** al
+    visitar la pantalla (igual que el recordatorio de membresía en el
+    layout).
+  - Coach: sección **"Objetivos"** en la ficha del alumno
+    (`/coach/alumnos/[id_alumno]`) para crear y editar objetivos
+    (progreso, estado, meta, fecha). Acciones `crearObjetivo` /
+    `actualizarObjetivo` en `src/app/actions/coach.ts`, que validan en el
+    servidor que el alumno esté en la cartera **activa** del entrenador.
 
-## 5. Biblioteca de ejercicios — valores por defecto
-En `/coach/ejercicios/nuevo` ahora se pueden cargar series, repeticiones,
-peso sugerido, tempo, descanso, método y TUT **como plantilla** del
-ejercicio. `Ejercicio` en `prisma/schema.prisma` tiene 7 campos nuevos
-`*_default` (migración
-`20260827010000_add_valores_default_ejercicio`). No reemplazan nada de
-`EjercicioPrograma` — al elegir el ejercicio desde el selector en
-`/coach/programas/[id]`, esos valores precargan el formulario
-automáticamente y el coach los puede pisar antes de guardar.
+## 2. Mensajería — se retira el chat interno, entra WhatsApp
+**Diagnóstico del chat actual**: `ChatBox`
+(`src/components/chat-box.tsx`) recibe los mensajes como prop del server
+component y **no tiene capa de tiempo real ni polling** — un mensaje que
+manda la otra parte no aparece hasta recargar la página entera
+(`enviarMensaje` hacía `revalidatePath`, pero eso solo refresca la vista
+del que envía, y `useActionState` mantiene la lista vieja). Además duplica
+un canal que coaches y alumnos ya usan todos los días. En vez de
+construir infraestructura de realtime (Supabase Realtime + RLS, como
+anticipa el comentario de `20260814000000_enable_rls`), se reemplaza por
+un enlace directo a WhatsApp.
+
+- Los modelos `Conversacion` / `Mensaje` y sus migraciones **no se
+  tocan**: se conservan para no perder el historial ya cargado ni romper
+  las políticas RLS. Solo se deja de usarlos en la UI.
+- `src/lib/telefono.ts` (nuevo): `normalizarTelefonoWhatsapp()` /
+  `linkWhatsapp()` — limpieza best-effort para números argentinos (saca
+  espacios, guiones, el `0` nacional y el `15` de celular; agrega código
+  de país `54`/`549`). Si el número guardado está muy incompleto devuelve
+  `null` y la UI muestra el aviso en vez de un link roto.
+- Alumno: se elimina `/panel/chat`; nueva **`/panel/coach`** muestra la
+  ficha del entrenador con relación **activa**
+  (`RelacionEntrenadorAlumno.estado_relacion = activa`) y un botón
+  **"Escribir por WhatsApp"** armado con `Usuario.telefono` de ese coach.
+  Si el coach no cargó teléfono, el botón se reemplaza por un aviso.
+  Nunca se expone el contacto de ningún otro coach. La tarjeta
+  "Mensajes" del dashboard pasa a "Tu coach".
+- Coach: `/coach/mensajes` pasa a ser una lista de alumnos con botón de
+  WhatsApp (usa `Usuario.telefono` del alumno); se elimina el hilo
+  `/coach/mensajes/[id_alumno]`. El ítem de nav "Mensajes" pasa a
+  "WhatsApp".
+- `src/components/chat-box.tsx` eliminado.
+- `src/app/actions/comunicacion.ts`: se quitan `enviarMensaje`,
+  `obtenerOCrearConversacion` y `marcarConversacionLeida`. **Con eso se
+  retira el trigger de push `tipo: "mensaje"`** que figuraba en el punto
+  2 de la entrega anterior — el resto de los triggers de push (programa
+  nuevo, rutina lista, vencimiento de membresía) y las notificaciones de
+  logros nuevas siguen funcionando igual.
+
+## 3. Nuevo rol: `beneficiario`
+**Decisión: rol nuevo separado, no un alias de `miembro_kuntur`.** Motivo:
+`miembro_kuntur` hoy funciona como *add-on* sobre un usuario Black Fit (el
+propio schema lo documenta: "ej. alumno + miembro_kuntur") y las rutas
+`/panel` lo tratan así. El pedido es un usuario que **no** tenga nada que
+ver con Black Fit, así que conviene un rol propio con su layout aislado,
+que no pueda heredar rutas de Black Fit por accidente.
+
+- **Schema** + migración
+  `prisma/migrations/20260901010000_add_rol_beneficiario/`: solo
+  `ALTER TYPE "RolUsuario" ADD VALUE 'beneficiario'`. No toca datos.
+- **Control de acceso** (siempre server-side contra `UsuarioRol`, nunca
+  contra un valor del cliente — mismo patrón que el resto):
+  - `src/lib/auth.ts`: `obtenerBeneficiarioActual()` y
+    `soloBeneficiario()` (beneficiario sin ningún rol de Black Fit ni
+    operativo).
+  - `src/proxy.ts`: `/beneficiario` agregado a `RUTAS_PROTEGIDAS`.
+  - `/panel/layout.tsx`: si `soloBeneficiario(usuario)` → `redirect
+    "/beneficiario"`. Un beneficiario puro que caiga en
+    `/coach` / `/admin` / `/comercio` ya rebota a `/panel` (le falta el
+    rol) y de ahí a `/beneficiario`.
+  - `/beneficiario/layout.tsx`: exige el rol `beneficiario` o
+    `redirect "/panel"`.
+- **Rutas nuevas** (`/beneficiario`, con layout y navegación propios,
+  branding "KUNTUR", sin menú de Black Fit):
+  - `/beneficiario`: credencial (QR) + beneficios del plan de su
+    membresía **activa y vigente** (`estado = activa` AND
+    `fecha_vencimiento >= hoy`). Reusa `CredencialCard`.
+  - `/beneficiario/perfil`: datos de `Usuario` + cerrar sesión. Reusa
+    `FormInformacionPersonal`; `actualizarInformacionPersonal` ahora
+    también revalida `/beneficiario/perfil`.
+- **Alta**: el formulario de registro se extrajo a
+  `src/app/registro/_components/form-registro.tsx` (`tipo`:
+  `"alumno" | "beneficiario"`, campo `hidden`). Nueva
+  **`/registro/beneficiario`**. `registrarse()` lee `tipo`: si es
+  `"beneficiario"` crea el usuario **solo con el rol `beneficiario`**
+  (sin perfil de `Alumno`) y redirige a `/beneficiario`. Cualquier otro
+  valor = alta de alumno de siempre. Links cruzados entre ambas pantallas
+  de registro.
+- **Admin**: `beneficiario` agregado a `ROLES_ASIGNABLES` (acción
+  `asignarRol` / `quitarRol` y pantalla `/admin/usuarios/[id_usuario]`).
+- No hizo falta RLS nueva: los beneficios/credencial se leen vía Prisma
+  (`DATABASE_URL` / service role), que ya bypassa RLS, y las políticas
+  existentes de `beneficios` / `membresias` / `credenciales` dependen de
+  la membresía, no del rol.
 
 ---
 
@@ -53,45 +157,42 @@ automáticamente y el coach los puede pisar antes de guardar.
 
 ```bash
 npm install          # dispara "prisma generate" automáticamente (postinstall)
-npx prisma migrate deploy   # aplica la migración nueva contra Supabase
+npx prisma migrate deploy   # aplica las migraciones nuevas contra Supabase
 npm run dev           # http://localhost:3000
 ```
 
 Para producción: `npm run build && npm run start`, o desplegar en Vercel
 como ya lo tenías configurado.
 
-## ⚠️ Importante — no pude verificar esto acá
-Este sandbox no tiene salida de red a `binaries.prisma.sh` (de donde
-Prisma baja el motor nativo), así que no pude correr `prisma generate`
-ni `npm run build` completos acá adentro. Lo que sí hice para
-compensar:
-- Corrí `tsc --noEmit` sobre todo el proyecto: los únicos errores que
-  quedan son exactamente los que se esperan por no tener el cliente de
-  Prisma regenerado (`Property 'suscripcionPush' does not exist...`) —
-  desaparecen solos en cuanto corras `npm install` en tu máquina/CI con
-  salida de red normal.
-- Corrí `eslint` sobre todos los archivos nuevos/modificados: limpio.
-- Revisé a mano cada nombre de modelo/campo contra el `schema.prisma`.
-
-Por las dudas: después de `npm install`, corré `npm run build` una vez
-antes de deployar, para chequear en tu entorno real que compila
-limpio.
-
 ## Migración de base de datos
-Hay dos migraciones nuevas, ninguna toca datos existentes:
-- `20260827000000_add_suscripciones_push`
-- `20260827010000_add_valores_default_ejercicio`
+Dos migraciones nuevas, ninguna toca datos existentes:
+- `20260901000000_add_gamificacion` — enums + 4 tablas nuevas + la
+  columna `alumnos.puntos_totales` (`DEFAULT 0`, no reescribe filas) +
+  RLS + seed de 9 logros (`ON CONFLICT DO NOTHING`).
+- `20260901010000_add_rol_beneficiario` — `ALTER TYPE "RolUsuario" ADD
+  VALUE 'beneficiario'`. En Postgres 12+ (Supabase es 15+) corre sin
+  problema dentro de la transacción de la migración porque el valor
+  nuevo no se usa en esa misma transacción.
 
 `npx prisma migrate deploy` las aplica ambas sin downtime.
 
-## Nota sobre esta sesión de trabajo
-En este entorno de sandbox no tengo salida de red hacia
-`binaries.prisma.sh`, así que no pude correr `prisma generate` /
-`npm run build` de punta a punta para esta última tanda de cambios
-(el `npm install` de acá también falló en el paso `postinstall`).
-Verifiqué con `eslint` sobre cada archivo tocado (limpio) y revisé a
-mano cada nombre de modelo/campo contra `schema.prisma`. El zip que te
-dejo NO incluye `node_modules`, así que esto no te afecta a vos: tu
-`npm install` real (con salida de red normal) va a regenerar el
-cliente de Prisma sin problema. Igual, corré `npm run build` una vez
-en tu máquina antes de deployar, como chequeo final.
+## Verificación hecha en esta sesión
+En este entorno **sí** hubo salida de red a `binaries.prisma.sh`
+(el engine ya estaba cacheado), así que se pudo correr todo el flujo:
+- `npx prisma generate` — OK con el schema nuevo.
+- `npm run build` (`next build` de Next 16 con Turbopack) completo: la
+  compilación, el chequeo de **TypeScript** y el **lint** pasan limpios,
+  y las 44 rutas se generan sin error (incluidas `/panel/logros`,
+  `/panel/coach`, `/beneficiario`, `/beneficiario/perfil`,
+  `/registro/beneficiario`).
+
+Lo que **no** se pudo verificar acá y conviene que corras vos antes de
+deployar:
+- `npx prisma migrate deploy` contra tu base real de Supabase (acá no se
+  tocó la base).
+- Prueba de humo de los flujos nuevos con datos reales: sumar puntos al
+  completar un entrenamiento / cargar hábitos / feedback, desbloqueo de
+  logros y push, alta y login de un usuario `beneficiario`, y el botón de
+  WhatsApp con un teléfono de coach cargado (revisá que el número
+  normalizado sea el correcto para tu país si no es Argentina — el
+  código de país por defecto está en `src/lib/telefono.ts`).
