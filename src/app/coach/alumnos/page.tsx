@@ -7,8 +7,12 @@ export default async function CoachAlumnosPage() {
   const contexto = await obtenerEntrenadorActual();
   if (!contexto) redirect("/panel");
 
+  // Antes de que existiera "desvincular" esto nunca hacía falta: una
+  // relación, una vez vinculada, quedaba activa para siempre. Ahora que
+  // puede pasar a "finalizada" hay que filtrarla, o un alumno dado de
+  // baja seguiría apareciendo en la cartera.
   const relaciones = await prisma.relacionEntrenadorAlumno.findMany({
-    where: { id_entrenador: contexto.id_entrenador },
+    where: { id_entrenador: contexto.id_entrenador, estado_relacion: "activa" },
     include: { alumno: { include: { usuario: true } } },
     orderBy: { fecha_inicio: "desc" },
   });

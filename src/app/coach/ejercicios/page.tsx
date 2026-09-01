@@ -48,9 +48,18 @@ export default async function EjerciciosPage() {
               key={ejercicio.id_ejercicio}
               className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4"
             >
-              <p className="font-[family-name:var(--font-sora)] text-base font-semibold text-on-surface">
-                {ejercicio.nombre}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="font-[family-name:var(--font-sora)] text-base font-semibold text-on-surface">
+                  {ejercicio.nombre}
+                </p>
+                <Link
+                  href={`/coach/ejercicios/${ejercicio.id_ejercicio}/editar`}
+                  className="text-on-surface-variant hover:text-primary-container"
+                  aria-label="Editar ejercicio"
+                >
+                  <span className="material-symbols-outlined text-[16px]">edit</span>
+                </Link>
+              </div>
               {ejercicio.grupo_muscular && (
                 <p className="text-sm text-on-surface-variant">{ejercicio.grupo_muscular}</p>
               )}

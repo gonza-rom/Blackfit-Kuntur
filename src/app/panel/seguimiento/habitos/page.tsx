@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoActual } from "@/lib/auth";
+import { eliminarHabito } from "@/app/actions/alumno";
 import { FormHabito } from "./_components/form-habito";
 
 const FORMATEADOR_DIA = new Intl.DateTimeFormat("es-AR", {
@@ -65,17 +66,27 @@ export default async function HabitosPage() {
             {habitosSemana.map((h) => (
               <div
                 key={h.id_habito}
-                className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-3 flex items-center justify-between text-sm"
+                className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-3 flex items-center justify-between text-sm gap-3"
               >
-                <span className="text-on-surface-variant capitalize">
+                <span className="text-on-surface-variant capitalize shrink-0">
                   {FORMATEADOR_DIA.format(h.fecha)}
                 </span>
-                <span className="text-on-surface">
+                <span className="text-on-surface flex-1">
                   {h.sueno ? `${h.sueno}h sueño` : ""}
                   {h.agua ? ` · ${h.agua}L agua` : ""}
                   {h.cardio ? " · cardio" : ""}
                   {h.movilidad ? " · movilidad" : ""}
                 </span>
+                <form action={eliminarHabito}>
+                  <input type="hidden" name="id_habito" value={h.id_habito} />
+                  <button
+                    type="submit"
+                    aria-label="Eliminar hábitos de este día"
+                    className="text-on-surface-variant hover:text-[#ffb4ab] shrink-0"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">delete</span>
+                  </button>
+                </form>
               </div>
             ))}
           </div>

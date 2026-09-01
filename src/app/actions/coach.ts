@@ -25,6 +25,27 @@ const ESTADOS_OBJETIVO: EstadoObjetivo[] = [
 
 export type EstadoCoach = { error?: string; message?: string } | undefined;
 
+// especialidad/biografía son propias de Entrenador (no de Usuario, que ya
+// se edita con actualizarInformacionPersonal en actions/usuario.ts).
+export async function actualizarPerfilEntrenador(
+  _prev: EstadoCoach,
+  formData: FormData
+): Promise<EstadoCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const especialidad = String(formData.get("especialidad") ?? "").trim() || null;
+  const biografia = String(formData.get("biografia") ?? "").trim() || null;
+
+  await prisma.entrenador.update({
+    where: { id_entrenador: contexto.id_entrenador },
+    data: { especialidad, biografia },
+  });
+
+  revalidatePath("/coach/perfil");
+  return { message: "Perfil actualizado." };
+}
+
 export async function vincularAlumno(
   _prev: EstadoCoach,
   formData: FormData
@@ -78,6 +99,33 @@ export async function vincularAlumno(
   redirect("/coach/alumnos");
 }
 
+// No borra la relación ni el historial del alumno — solo corta el
+// vínculo activo (mismo criterio que ya usa el resto de la app: nunca
+// destruir datos reales por una acción de baja). vincularAlumno ya sabe
+// reactivar una relación "finalizada" si el alumno vuelve.
+export async function desvincularAlumno(formData: FormData): Promise<void> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return;
+
+  const id_alumno = String(formData.get("id_alumno") ?? "");
+  if (!id_alumno) return;
+
+  const relacion = await prisma.relacionEntrenadorAlumno.findUnique({
+    where: {
+      id_entrenador_id_alumno: { id_entrenador: contexto.id_entrenador, id_alumno },
+    },
+  });
+  if (!relacion || relacion.estado_relacion !== "activa") return;
+
+  await prisma.relacionEntrenadorAlumno.update({
+    where: { id_relacion: relacion.id_relacion },
+    data: { estado_relacion: "finalizada", fecha_fin: new Date() },
+  });
+
+  revalidatePath("/coach/alumnos");
+  redirect("/coach/alumnos");
+}
+
 export async function crearEjercicio(
   _prev: EstadoCoach,
   formData: FormData
@@ -119,6 +167,78 @@ export async function crearEjercicio(
     },
   });
 
+  updateTag(TAG_CATALOGO_EJERCICIOS);
+  redirect("/coach/ejercicios");
+}
+
+export async function editarEjercicio(
+  _prev: EstadoCoach,
+  formData: FormData
+): Promise<EstadoCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_ejercicio = String(formData.get("id_ejercicio") ?? "");
+  const nombre = String(formData.get("nombre") ?? "").trim();
+  if (!id_ejercicio || !nombre) return { error: "El nombre es obligatorio." };
+
+  const descripcion = String(formData.get("descripcion") ?? "").trim() || null;
+  const grupo_muscular = String(formData.get("grupo_muscular") ?? "").trim() || null;
+  const video_url = String(formData.get("video_url") ?? "").trim() || null;
+  const instrucciones = String(formData.get("instrucciones") ?? "").trim() || null;
+
+  const series_defaultRaw = String(formData.get("series_default") ?? "").trim();
+  const repeticiones_default = String(formData.get("repeticiones_default") ?? "").trim() || null;
+  const peso_sugerido_defaultRaw = String(formData.get("peso_sugerido_default") ?? "").trim();
+  const tempo_default = String(formData.get("tempo_default") ?? "").trim() || null;
+  const descanso_default = String(formData.get("descanso_default") ?? "").trim() || null;
+  const metodo_entrenamiento_default =
+    String(formData.get("metodo_entrenamiento_default") ?? "").trim() || null;
+  const tut_defaultRaw = String(formData.get("tiempo_bajo_tension_default") ?? "").trim();
+
+  await prisma.ejercicio.update({
+    where: { id_ejercicio },
+    data: {
+      nombre,
+      descripcion,
+      grupo_muscular,
+      video_url,
+      instrucciones,
+      series_default: series_defaultRaw ? Number(series_defaultRaw) : null,
+      repeticiones_default,
+      peso_sugerido_default: peso_sugerido_defaultRaw || null,
+      tempo_default,
+      descanso_default,
+      metodo_entrenamiento_default,
+      tiempo_bajo_tension_default: tut_defaultRaw ? Number(tut_defaultRaw) : null,
+    },
+  });
+
+  updateTag(TAG_CATALOGO_EJERCICIOS);
+  redirect("/coach/ejercicios");
+}
+
+// No se borra si ya se usó en algún bloque de algún programa (real o
+// plantilla) — eso rompería el historial de series ya registradas contra
+// ese ejercicio. Se puede seguir editando igual.
+export async function eliminarEjercicio(
+  _prev: EstadoCoach,
+  formData: FormData
+): Promise<EstadoCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_ejercicio = String(formData.get("id_ejercicio") ?? "");
+  if (!id_ejercicio) return { error: "Ejercicio inválido." };
+
+  const usos = await prisma.ejercicioPrograma.count({ where: { id_ejercicio } });
+  if (usos > 0) {
+    return {
+      error: `No se puede eliminar: ya se usó en ${usos} programa(s)/plantilla(s). Editalo si hace falta corregirlo.`,
+    };
+  }
+
+  await prisma.ejercicio.delete({ where: { id_ejercicio } });
   updateTag(TAG_CATALOGO_EJERCICIOS);
   redirect("/coach/ejercicios");
 }
@@ -169,6 +289,191 @@ export async function crearPrograma(
     id_usuario: relacion.alumno.usuario.id_usuario,
     titulo: "Tenés un programa nuevo",
     contenido: `${contexto.usuario.nombre} te asignó "${nombre}". Todavía no tiene ejercicios cargados — te va a avisar cuando esté lista.`,
+    tipo: "programa",
+    url: "/panel/entrenamientos",
+  });
+
+  redirect(`/coach/programas/${programa.id_programa}`);
+}
+
+export async function editarPrograma(
+  _prev: EstadoCoach,
+  formData: FormData
+): Promise<EstadoCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_programa = String(formData.get("id_programa") ?? "");
+  const nombre = String(formData.get("nombre") ?? "").trim();
+  const descripcion = String(formData.get("descripcion") ?? "").trim() || null;
+  const objetivo = String(formData.get("objetivo") ?? "").trim() || null;
+  const fecha_inicio = String(formData.get("fecha_inicio") ?? "");
+  const fecha_finRaw = String(formData.get("fecha_fin") ?? "");
+  const estado_programa = String(formData.get("estado_programa") ?? "activo") as EstadoPrograma;
+
+  if (!id_programa || !nombre || !fecha_inicio) {
+    return { error: "Completá nombre y fecha de inicio." };
+  }
+
+  const programa = await prisma.programaEntrenamiento.findUnique({
+    where: { id_programa },
+  });
+  if (!programa || programa.id_entrenador !== contexto.id_entrenador || programa.es_plantilla) {
+    return { error: "No autorizado sobre este programa." };
+  }
+
+  await prisma.programaEntrenamiento.update({
+    where: { id_programa },
+    data: {
+      nombre,
+      descripcion,
+      objetivo,
+      fecha_inicio: new Date(fecha_inicio),
+      fecha_fin: fecha_finRaw ? new Date(fecha_finRaw) : null,
+      estado_programa,
+    },
+  });
+
+  revalidatePath(`/coach/programas/${id_programa}`);
+  redirect(`/coach/programas/${id_programa}`);
+}
+
+// ------------------------------------------------------------
+// BIBLIOTECA DE PROGRAMAS (plantillas)
+// ------------------------------------------------------------
+// Una plantilla es un ProgramaEntrenamiento sin alumno todavía
+// (id_alumno null, es_plantilla true). Se arma una sola vez — con sus
+// bloques y ejercicios — y se "aplica" a cada alumno que la necesite, en
+// vez de rehacer todo desde cero para cada uno. crearBloque,
+// crearEjercicioPrograma, duplicarBloque, eliminarBloque, etc. funcionan
+// sin cambios sobre una plantilla: solo validan `programa.id_entrenador`,
+// nunca al alumno.
+
+export async function crearPlantillaPrograma(
+  _prev: EstadoCoach,
+  formData: FormData
+): Promise<EstadoCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const nombre = String(formData.get("nombre") ?? "").trim();
+  const descripcion = String(formData.get("descripcion") ?? "").trim() || null;
+  const objetivo = String(formData.get("objetivo") ?? "").trim() || null;
+
+  if (!nombre) return { error: "Completá el nombre de la plantilla." };
+
+  const plantilla = await prisma.programaEntrenamiento.create({
+    data: {
+      id_entrenador: contexto.id_entrenador,
+      nombre,
+      descripcion,
+      objetivo,
+      fecha_inicio: new Date(),
+      es_plantilla: true,
+    },
+  });
+
+  redirect(`/coach/programas/plantillas/${plantilla.id_programa}`);
+}
+
+export async function eliminarPlantilla(formData: FormData): Promise<void> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return;
+
+  const id_plantilla = String(formData.get("id_plantilla") ?? "");
+  if (!id_plantilla) return;
+
+  const plantilla = await prisma.programaEntrenamiento.findUnique({
+    where: { id_programa: id_plantilla },
+  });
+  if (!plantilla || plantilla.id_entrenador !== contexto.id_entrenador || !plantilla.es_plantilla) {
+    return;
+  }
+
+  await prisma.programaEntrenamiento.delete({ where: { id_programa: id_plantilla } });
+  revalidatePath("/coach/programas/plantillas");
+}
+
+/**
+ * Clona una plantilla (bloques + ejercicios incluidos) en un programa
+ * real para un alumno puntual. La plantilla original queda intacta,
+ * lista para aplicarse de nuevo con el próximo alumno.
+ */
+export async function aplicarPlantilla(
+  _prev: EstadoCoach,
+  formData: FormData
+): Promise<EstadoCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_plantilla = String(formData.get("id_plantilla") ?? "");
+  const id_alumno = String(formData.get("id_alumno") ?? "");
+  const fecha_inicioRaw = String(formData.get("fecha_inicio") ?? "");
+
+  if (!id_plantilla || !id_alumno) {
+    return { error: "Elegí un alumno." };
+  }
+
+  const [plantilla, relacion] = await Promise.all([
+    prisma.programaEntrenamiento.findUnique({
+      where: { id_programa: id_plantilla },
+      include: {
+        bloques: { include: { ejercicios_programa: true }, orderBy: { orden: "asc" } },
+      },
+    }),
+    prisma.relacionEntrenadorAlumno.findUnique({
+      where: {
+        id_entrenador_id_alumno: { id_entrenador: contexto.id_entrenador, id_alumno },
+      },
+      include: { alumno: { include: { usuario: true } } },
+    }),
+  ]);
+
+  if (!plantilla || plantilla.id_entrenador !== contexto.id_entrenador || !plantilla.es_plantilla) {
+    return { error: "Plantilla inválida." };
+  }
+  if (!relacion || relacion.estado_relacion !== "activa") {
+    return { error: "Ese alumno no está vinculado a tu cartera." };
+  }
+
+  const programa = await prisma.programaEntrenamiento.create({
+    data: {
+      id_alumno,
+      id_entrenador: contexto.id_entrenador,
+      nombre: plantilla.nombre,
+      descripcion: plantilla.descripcion,
+      objetivo: plantilla.objetivo,
+      fecha_inicio: fecha_inicioRaw ? new Date(fecha_inicioRaw) : new Date(),
+      estado_programa: "activo",
+      bloques: {
+        create: plantilla.bloques.map((b) => ({
+          nombre: b.nombre,
+          orden: b.orden,
+          semana_inicio: b.semana_inicio,
+          semana_fin: b.semana_fin,
+          tipo: b.tipo,
+          ejercicios_programa: {
+            create: b.ejercicios_programa.map((ep) => ({
+              id_ejercicio: ep.id_ejercicio,
+              series: ep.series,
+              repeticiones: ep.repeticiones,
+              peso_sugerido: ep.peso_sugerido,
+              tempo: ep.tempo,
+              descanso: ep.descanso,
+              metodo_entrenamiento: ep.metodo_entrenamiento,
+              tiempo_bajo_tension_sugerido: ep.tiempo_bajo_tension_sugerido,
+              orden: ep.orden,
+            })),
+          },
+        })),
+      },
+    },
+  });
+
+  await crearNotificacion({
+    id_usuario: relacion.alumno.usuario.id_usuario,
+    titulo: "Tenés un programa nuevo",
+    contenido: `${contexto.usuario.nombre} te asignó "${plantilla.nombre}", ya con los ejercicios cargados — arrancá cuando quieras.`,
     tipo: "programa",
     url: "/panel/entrenamientos",
   });
@@ -468,7 +773,10 @@ export async function avisarAlumnoRutinaLista(formData: FormData): Promise<void>
     where: { id_programa },
     include: { alumno: { include: { usuario: true } } },
   });
-  if (!programa || programa.id_entrenador !== contexto.id_entrenador) return;
+  // Una plantilla (alumno null) nunca debería llegar acá — el botón no se
+  // muestra en esa vista — pero se valida igual por si el id vino
+  // manipulado directamente.
+  if (!programa || programa.id_entrenador !== contexto.id_entrenador || !programa.alumno) return;
 
   await crearNotificacion({
     id_usuario: programa.alumno.usuario.id_usuario,

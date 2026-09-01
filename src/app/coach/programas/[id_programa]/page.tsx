@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
@@ -34,7 +35,9 @@ export default async function ProgramaDetallePage(
     obtenerEjerciciosCatalogoConDefaults(),
   ]);
 
-  if (!programa || programa.id_entrenador !== contexto.id_entrenador) {
+  // Una plantilla (sin alumno) vive en /coach/programas/plantillas/[id],
+  // no acá — esta página asume un programa real de punta a punta.
+  if (!programa || programa.id_entrenador !== contexto.id_entrenador || !programa.alumno) {
     notFound();
   }
 
@@ -43,9 +46,18 @@ export default async function ProgramaDetallePage(
       <section className="flex flex-col gap-1">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
-              {programa.nombre}
-            </h1>
+            <div className="flex items-center gap-2">
+              <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
+                {programa.nombre}
+              </h1>
+              <Link
+                href={`/coach/programas/${id_programa}/editar`}
+                className="text-on-surface-variant hover:text-primary-container"
+                aria-label="Editar programa"
+              >
+                <span className="material-symbols-outlined text-[20px]">edit</span>
+              </Link>
+            </div>
             <p className="text-sm text-on-surface-variant">
               {programa.alumno.usuario.nombre} {programa.alumno.usuario.apellido} ·{" "}
               {programa.estado_programa}

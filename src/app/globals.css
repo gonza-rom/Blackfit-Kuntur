@@ -30,3 +30,16 @@ body {
     'GRAD' 0,
     'opsz' 24;
 }
+
+/* Los dos logos del login (Black Fit / Kuntur) flotan fuera de fase, cada
+   uno con su propio glow — "dos negocios, un solo hub". */
+@keyframes flotar-marca {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+    box-shadow: 0 0 0 rgba(97, 237, 218, 0);
+  }
+  50% {
+    transform: translateY(-8px) scale(1.04);
+    box-shadow: 0 8px 24px rgba(97, 237, 218, 0.25);
+  }
+}

@@ -37,17 +37,26 @@ export default async function AdminComercioDetallePage(
 
   return (
     <main className="flex-1 w-full max-w-3xl mx-auto px-5 md:px-10 py-8 flex flex-col gap-8">
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
-            {comercio.nombre}
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
+              {comercio.nombre}
+            </h1>
+            <Link
+              href={`/admin/comercios/${id_comercio}/editar`}
+              className="text-on-surface-variant hover:text-primary-container"
+              aria-label="Editar comercio"
+            >
+              <span className="material-symbols-outlined text-[20px]">edit</span>
+            </Link>
+          </div>
           <p className="text-sm text-on-surface-variant">{comercio.usuario.email}</p>
           {comercio.categoria && (
             <p className="text-sm text-on-surface-variant">{comercio.categoria}</p>
           )}
         </div>
-        <form action={cambiarEstadoComercio} className="flex items-center gap-2">
+        <form action={cambiarEstadoComercio} className="flex items-center gap-2 shrink-0">
           <input type="hidden" name="id_comercio" value={id_comercio} />
           <select
             name="estado"
@@ -100,18 +109,27 @@ export default async function AdminComercioDetallePage(
                   key={beneficio.id_beneficio}
                   className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col gap-3"
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="font-[family-name:var(--font-sora)] text-base font-semibold text-on-surface">
-                        {beneficio.titulo}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-[family-name:var(--font-sora)] text-base font-semibold text-on-surface">
+                          {beneficio.titulo}
+                        </p>
+                        <Link
+                          href={`/admin/comercios/${id_comercio}/beneficios/${beneficio.id_beneficio}/editar`}
+                          className="text-on-surface-variant hover:text-primary-container"
+                          aria-label="Editar beneficio"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">edit</span>
+                        </Link>
+                      </div>
                       <p className="text-xs text-on-surface-variant">
                         Vigente hasta {FORMATEADOR_FECHA.format(beneficio.fecha_vencimiento)}
                       </p>
                     </div>
                     <form
                       action={cambiarEstadoBeneficio}
-                      className="flex items-center gap-2"
+                      className="flex items-center gap-2 shrink-0"
                     >
                       <input type="hidden" name="id_beneficio" value={beneficio.id_beneficio} />
                       <select

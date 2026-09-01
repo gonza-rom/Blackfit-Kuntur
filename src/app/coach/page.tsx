@@ -14,7 +14,7 @@ export default async function CoachPage() {
       where: { id_entrenador, estado_relacion: "activa" },
     }),
     prisma.programaEntrenamiento.count({
-      where: { id_entrenador, estado_programa: "activo" },
+      where: { id_entrenador, estado_programa: "activo", es_plantilla: false },
     }),
     prisma.relacionEntrenadorAlumno.findMany({
       where: { id_entrenador, estado_relacion: "activa" },

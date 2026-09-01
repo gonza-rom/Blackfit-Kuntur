@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoActual } from "@/lib/auth";
+import { BotonEliminarEntrenamiento } from "./_components/boton-eliminar-entrenamiento";
 
 const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
   day: "2-digit",
@@ -41,13 +42,16 @@ export default async function HistorialPage() {
               key={entrenamiento.id_entrenamiento}
               className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col gap-3"
             >
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <h3 className="font-[family-name:var(--font-sora)] text-lg font-semibold text-on-surface">
                   {entrenamiento.nombre ?? "Sesión"}
                 </h3>
-                <span className="text-xs text-on-surface-variant">
-                  {FORMATEADOR_FECHA.format(entrenamiento.fecha)}
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-xs text-on-surface-variant">
+                    {FORMATEADOR_FECHA.format(entrenamiento.fecha)}
+                  </span>
+                  <BotonEliminarEntrenamiento idEntrenamiento={entrenamiento.id_entrenamiento} />
+                </div>
               </div>
 
               {entrenamiento.comentarios && (

@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoActual } from "@/lib/auth";
 import { FormProgresoFisico } from "./_components/form-progreso-fisico";
 import { FormMedidaCorporal } from "./_components/form-medida-corporal";
+import { ProgresoFisicoItem } from "./_components/progreso-fisico-item";
+import { MedidaCorporalItem } from "./_components/medida-corporal-item";
 
 const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
   day: "2-digit",
@@ -98,32 +100,23 @@ export default async function ProgresoFisicoPage() {
         ) : (
           <div className="flex flex-col gap-1">
             {progresos.map((p) => (
-              <div
+              <ProgresoFisicoItem
                 key={p.id_progreso}
-                className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-3 flex items-center justify-between text-sm"
-              >
-                <span className="text-on-surface-variant">
-                  {FORMATEADOR_FECHA.format(p.fecha)}
-                </span>
-                <span className="text-on-surface">
-                  {p.peso_corporal ? `${p.peso_corporal}kg` : ""}
-                  {p.porcentaje_graso ? ` · ${p.porcentaje_graso}% graso` : ""}
-                  {p.masa_muscular ? ` · ${p.masa_muscular}kg masa musc.` : ""}
-                </span>
-              </div>
+                id={p.id_progreso}
+                fecha={FORMATEADOR_FECHA.format(p.fecha)}
+                pesoCorporal={p.peso_corporal ? p.peso_corporal.toString() : null}
+                porcentajeGraso={p.porcentaje_graso ? p.porcentaje_graso.toString() : null}
+                masaMuscular={p.masa_muscular ? p.masa_muscular.toString() : null}
+              />
             ))}
             {medidas.map((m) => (
-              <div
+              <MedidaCorporalItem
                 key={m.id_medida}
-                className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-3 flex items-center justify-between text-sm"
-              >
-                <span className="text-on-surface-variant">
-                  {FORMATEADOR_FECHA.format(m.fecha)}
-                </span>
-                <span className="text-on-surface capitalize">
-                  {m.tipo_medida}: {m.valor_cm.toString()}cm
-                </span>
-              </div>
+                id={m.id_medida}
+                fecha={FORMATEADOR_FECHA.format(m.fecha)}
+                tipoMedida={m.tipo_medida}
+                valorCm={m.valor_cm.toString()}
+              />
             ))}
           </div>
         )}

@@ -1,9 +1,9 @@
 "use client";
-"use client";
 
 import Link from "next/link";
 import { useActionState, useState } from "react";
 import { iniciarSesion } from "@/app/actions/auth";
+import { LogoMarca } from "@/components/logo-marca";
 
 export default function IniciarSesionPage() {
   const [state, action, pending] = useActionState(iniciarSesion, undefined);
@@ -28,6 +28,21 @@ export default function IniciarSesionPage() {
       <main className="relative z-10 w-full max-w-md px-5 md:px-0">
         {/* Header */}
         <div className="text-center mb-8">
+          <div className="flex items-center justify-center gap-4 mb-5">
+            <LogoMarca
+              marca="blackfit"
+              size={72}
+              className="border-2 border-[#262626] [animation:flotar-marca_3.4s_ease-in-out_infinite]"
+            />
+            <span className="font-[family-name:var(--font-sora)] text-on-surface-variant text-xl">
+              ×
+            </span>
+            <LogoMarca
+              marca="kuntur"
+              size={72}
+              className="border-2 border-[#262626] [animation:flotar-marca_3.4s_ease-in-out_infinite] [animation-delay:1.1s]"
+            />
+          </div>
           <h1 className="font-[family-name:var(--font-sora)] text-[36px] leading-[42px] tracking-[-0.02em] font-bold text-primary-container mb-2 md:text-[48px] md:leading-[56px]">
             BLACK HUB
           </h1>

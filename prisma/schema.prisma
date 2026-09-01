@@ -255,7 +255,10 @@ model Membresia {
 
 model ProgramaEntrenamiento {
   id_programa      String         @id @default(uuid())
-  id_alumno        String
+  // Nulo cuando es_plantilla = true: una plantilla es un programa sin
+  // alumno todavía, reusable. "Aplicarla" clona programa+bloques+
+  // ejercicios en un programa real con id_alumno seteado.
+  id_alumno        String?
   id_entrenador    String
   nombre           String
   descripcion      String?
@@ -263,12 +266,14 @@ model ProgramaEntrenamiento {
   fecha_inicio     DateTime
   fecha_fin        DateTime?
   estado_programa  EstadoPrograma @default(activo)
+  es_plantilla     Boolean        @default(false)
 
-  alumno           Alumno              @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+  alumno           Alumno?             @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
   entrenador       Entrenador          @relation(fields: [id_entrenador], references: [id_entrenador])
   bloques          BloqueEntrenamiento[]
   entrenamientos   Entrenamiento[]
 
+  @@index([id_entrenador, es_plantilla])
   @@map("programas_entrenamiento")
 }
 

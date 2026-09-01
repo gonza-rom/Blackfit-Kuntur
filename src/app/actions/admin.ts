@@ -141,6 +141,85 @@ export async function crearPlanMembresia(
   redirect("/admin/planes");
 }
 
+export async function editarPlanMembresia(
+  _prev: EstadoAdmin,
+  formData: FormData
+): Promise<EstadoAdmin> {
+  const contexto = await obtenerAdministradorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_plan_membresia = String(formData.get("id_plan_membresia") ?? "");
+  const nombre = String(formData.get("nombre") ?? "").trim();
+  const descripcion = String(formData.get("descripcion") ?? "").trim() || null;
+  const precio = String(formData.get("precio") ?? "").trim();
+  const duracion_diasRaw = String(formData.get("duracion_dias") ?? "").trim();
+
+  if (!id_plan_membresia || !nombre || !precio || !duracion_diasRaw) {
+    return { error: "Completá nombre, precio y duración." };
+  }
+
+  await prisma.planMembresia.update({
+    where: { id_plan_membresia },
+    data: { nombre, descripcion, precio, duracion_dias: Number(duracion_diasRaw) },
+  });
+
+  await registrarAuditoria({
+    id_usuario_actor: contexto.usuario.id_usuario,
+    accion: "modificacion_admin",
+    recurso: "plan_membresia",
+    id_recurso: id_plan_membresia,
+    resultado: `editado:${nombre}`,
+  });
+
+  updateTag(TAG_CATALOGO_PLANES);
+  revalidatePath(`/admin/planes/${id_plan_membresia}`);
+  redirect("/admin/planes");
+}
+
+// Un plan nunca se borra si alguna vez tuvo una membresía real asociada
+// — eso destruiría el historial de esa membresía (activa o vencida). Las
+// asociaciones a beneficios (beneficios_planes) sí se limpian solas: son
+// solo el mapeo "vivo" de qué beneficio aplica a qué plan, no un registro
+// histórico.
+export async function eliminarPlanMembresia(
+  _prev: EstadoAdmin,
+  formData: FormData
+): Promise<EstadoAdmin> {
+  const contexto = await obtenerAdministradorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_plan_membresia = String(formData.get("id_plan_membresia") ?? "");
+  if (!id_plan_membresia) return { error: "Plan inválido." };
+
+  const plan = await prisma.planMembresia.findUnique({
+    where: { id_plan_membresia },
+    include: { _count: { select: { membresias: true } } },
+  });
+  if (!plan) return { error: "Plan inválido." };
+
+  if (plan._count.membresias > 0) {
+    return {
+      error: `No se puede eliminar: ${plan._count.membresias} membresía(s) ya usaron este plan. Editalo si hace falta corregirlo, o dejá de ofrecerlo desde /admin/planes en vez de borrarlo.`,
+    };
+  }
+
+  await prisma.$transaction([
+    prisma.beneficioPlan.deleteMany({ where: { id_plan_membresia } }),
+    prisma.planMembresia.delete({ where: { id_plan_membresia } }),
+  ]);
+
+  await registrarAuditoria({
+    id_usuario_actor: contexto.usuario.id_usuario,
+    accion: "modificacion_admin",
+    recurso: "plan_membresia",
+    id_recurso: id_plan_membresia,
+    resultado: `eliminado:${plan.nombre}`,
+  });
+
+  updateTag(TAG_CATALOGO_PLANES);
+  redirect("/admin/planes");
+}
+
 export async function activarMembresia(
   _prev: EstadoAdmin,
   formData: FormData
@@ -316,6 +395,42 @@ export async function cambiarEstadoComercio(formData: FormData): Promise<void> {
   revalidatePath("/admin/comercios");
 }
 
+export async function editarComercio(
+  _prev: EstadoAdmin,
+  formData: FormData
+): Promise<EstadoAdmin> {
+  const contexto = await obtenerAdministradorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_comercio = String(formData.get("id_comercio") ?? "");
+  const nombre = String(formData.get("nombre") ?? "").trim();
+  const descripcion = String(formData.get("descripcion") ?? "").trim() || null;
+  const direccion = String(formData.get("direccion") ?? "").trim() || null;
+  const telefono = String(formData.get("telefono") ?? "").trim() || null;
+  const categoria = String(formData.get("categoria") ?? "").trim() || null;
+
+  if (!id_comercio || !nombre) {
+    return { error: "Completá el nombre del comercio." };
+  }
+
+  const comercio = await prisma.comercio.update({
+    where: { id_comercio },
+    data: { nombre, descripcion, direccion, telefono, categoria },
+  });
+
+  await registrarAuditoria({
+    id_usuario_actor: contexto.usuario.id_usuario,
+    accion: "cambio_comercio",
+    recurso: "comercio",
+    id_recurso: id_comercio,
+    resultado: `editado:${comercio.nombre}`,
+  });
+
+  revalidatePath(`/admin/comercios/${id_comercio}`);
+  revalidatePath("/admin/comercios");
+  redirect(`/admin/comercios/${id_comercio}`);
+}
+
 export async function crearBeneficio(
   _prev: EstadoAdmin,
   formData: FormData
@@ -385,6 +500,49 @@ export async function cambiarEstadoBeneficio(formData: FormData): Promise<void> 
   });
 
   revalidatePath(`/admin/comercios/${beneficio.id_comercio}`);
+}
+
+export async function editarBeneficio(
+  _prev: EstadoAdmin,
+  formData: FormData
+): Promise<EstadoAdmin> {
+  const contexto = await obtenerAdministradorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_beneficio = String(formData.get("id_beneficio") ?? "");
+  const titulo = String(formData.get("titulo") ?? "").trim();
+  const descripcion = String(formData.get("descripcion") ?? "").trim() || null;
+  const descuento = String(formData.get("descuento") ?? "").trim() || null;
+  const condiciones = String(formData.get("condiciones") ?? "").trim() || null;
+  const fecha_inicioRaw = String(formData.get("fecha_inicio") ?? "");
+  const fecha_vencimientoRaw = String(formData.get("fecha_vencimiento") ?? "");
+
+  if (!id_beneficio || !titulo || !fecha_inicioRaw || !fecha_vencimientoRaw) {
+    return { error: "Completá título y vigencia del beneficio." };
+  }
+
+  const beneficio = await prisma.beneficio.update({
+    where: { id_beneficio },
+    data: {
+      titulo,
+      descripcion,
+      descuento,
+      condiciones,
+      fecha_inicio: new Date(fecha_inicioRaw),
+      fecha_vencimiento: new Date(fecha_vencimientoRaw),
+    },
+  });
+
+  await registrarAuditoria({
+    id_usuario_actor: contexto.usuario.id_usuario,
+    accion: "cambio_beneficio",
+    recurso: "beneficio",
+    id_recurso: id_beneficio,
+    resultado: `editado:${beneficio.titulo}`,
+  });
+
+  revalidatePath(`/admin/comercios/${beneficio.id_comercio}`);
+  redirect(`/admin/comercios/${beneficio.id_comercio}`);
 }
 
 export async function asignarBeneficioPlan(formData: FormData): Promise<void> {

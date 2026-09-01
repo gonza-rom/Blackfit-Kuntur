@@ -26,9 +26,10 @@ export default async function AdminPlanesPage() {
       ) : (
         <div className="flex flex-col gap-1">
           {planes.map((plan) => (
-            <div
+            <Link
               key={plan.id_plan_membresia}
-              className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4"
+              href={`/admin/planes/${plan.id_plan_membresia}`}
+              className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 hover:border-primary-container/50 transition-colors"
             >
               <p className="font-[family-name:var(--font-sora)] text-base font-semibold text-on-surface">
                 {plan.nombre}
@@ -39,7 +40,7 @@ export default async function AdminPlanesPage() {
               {plan.descripcion && (
                 <p className="text-sm text-on-surface-variant mt-1">{plan.descripcion}</p>
               )}
-            </div>
+            </Link>
           ))}
         </div>
       )}

@@ -65,6 +65,27 @@ export async function registrarEntrenamiento(
   redirect("/panel/entrenamientos");
 }
 
+// Solo borra — editar una sesión ya registrada (con sus series por
+// ejercicio) es un form mucho más grande que el resto de este archivo;
+// si se cargó mal, se borra y se vuelve a registrar. Cascade se lleva
+// las series solas (ver onDelete: Cascade en SerieEntrenamiento).
+export async function eliminarEntrenamiento(formData: FormData): Promise<void> {
+  const contexto = await obtenerAlumnoActual();
+  if (!contexto) return;
+
+  const id_entrenamiento = String(formData.get("id_entrenamiento") ?? "");
+  if (!id_entrenamiento) return;
+
+  const entrenamiento = await prisma.entrenamiento.findUnique({
+    where: { id_entrenamiento },
+  });
+  if (!entrenamiento || entrenamiento.id_alumno !== contexto.id_alumno) return;
+
+  await prisma.entrenamiento.delete({ where: { id_entrenamiento } });
+  revalidatePath("/panel/entrenamientos/historial");
+  revalidatePath("/panel/entrenamientos");
+}
+
 export async function registrarHabito(
   _prev: EstadoAlumno,
   formData: FormData
@@ -112,6 +133,23 @@ export async function registrarHabito(
   return { message: "Hábitos de hoy guardados." };
 }
 
+// No hace falta un "editar" separado: registrarHabito ya hace upsert por
+// día (id_alumno_fecha), así que volver a cargar el form de un día lo
+// sobreescribe. Esto es solo para borrar un día cargado mal.
+export async function eliminarHabito(formData: FormData): Promise<void> {
+  const contexto = await obtenerAlumnoActual();
+  if (!contexto) return;
+
+  const id_habito = String(formData.get("id_habito") ?? "");
+  if (!id_habito) return;
+
+  const habito = await prisma.habito.findUnique({ where: { id_habito } });
+  if (!habito || habito.id_alumno !== contexto.id_alumno) return;
+
+  await prisma.habito.delete({ where: { id_habito } });
+  revalidatePath("/panel/seguimiento/habitos");
+}
+
 export async function registrarFeedbackDiario(
   _prev: EstadoAlumno,
   formData: FormData
@@ -138,6 +176,47 @@ export async function registrarFeedbackDiario(
   return { message: "Feedback diario guardado." };
 }
 
+export async function editarFeedbackDiario(
+  _prev: EstadoAlumno,
+  formData: FormData
+): Promise<EstadoAlumno> {
+  const contexto = await obtenerAlumnoActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_feedback_diario = String(formData.get("id_feedback_diario") ?? "");
+  const comentario_diario = String(formData.get("comentario_diario") ?? "").trim();
+  if (!id_feedback_diario || !comentario_diario) {
+    return { error: "Escribí algo antes de guardar." };
+  }
+
+  const existente = await prisma.feedbackDiario.findUnique({ where: { id_feedback_diario } });
+  if (!existente || existente.id_alumno !== contexto.id_alumno) {
+    return { error: "No autorizado." };
+  }
+
+  await prisma.feedbackDiario.update({
+    where: { id_feedback_diario },
+    data: { comentario_diario },
+  });
+
+  revalidatePath("/panel/seguimiento/feedback");
+  return { message: "Feedback actualizado." };
+}
+
+export async function eliminarFeedbackDiario(formData: FormData): Promise<void> {
+  const contexto = await obtenerAlumnoActual();
+  if (!contexto) return;
+
+  const id_feedback_diario = String(formData.get("id_feedback_diario") ?? "");
+  if (!id_feedback_diario) return;
+
+  const existente = await prisma.feedbackDiario.findUnique({ where: { id_feedback_diario } });
+  if (!existente || existente.id_alumno !== contexto.id_alumno) return;
+
+  await prisma.feedbackDiario.delete({ where: { id_feedback_diario } });
+  revalidatePath("/panel/seguimiento/feedback");
+}
+
 export async function registrarFeedbackSemanal(
   _prev: EstadoAlumno,
   formData: FormData
@@ -161,6 +240,47 @@ export async function registrarFeedbackSemanal(
 
   revalidatePath("/panel/seguimiento/feedback");
   return { message: "Feedback semanal guardado." };
+}
+
+export async function editarFeedbackSemanal(
+  _prev: EstadoAlumno,
+  formData: FormData
+): Promise<EstadoAlumno> {
+  const contexto = await obtenerAlumnoActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_feedback_semanal = String(formData.get("id_feedback_semanal") ?? "");
+  const comentario_semanal = String(formData.get("comentario_semanal") ?? "").trim();
+  if (!id_feedback_semanal || !comentario_semanal) {
+    return { error: "Escribí un comentario." };
+  }
+
+  const existente = await prisma.feedbackSemanal.findUnique({ where: { id_feedback_semanal } });
+  if (!existente || existente.id_alumno !== contexto.id_alumno) {
+    return { error: "No autorizado." };
+  }
+
+  await prisma.feedbackSemanal.update({
+    where: { id_feedback_semanal },
+    data: { comentario_semanal },
+  });
+
+  revalidatePath("/panel/seguimiento/feedback");
+  return { message: "Feedback actualizado." };
+}
+
+export async function eliminarFeedbackSemanal(formData: FormData): Promise<void> {
+  const contexto = await obtenerAlumnoActual();
+  if (!contexto) return;
+
+  const id_feedback_semanal = String(formData.get("id_feedback_semanal") ?? "");
+  if (!id_feedback_semanal) return;
+
+  const existente = await prisma.feedbackSemanal.findUnique({ where: { id_feedback_semanal } });
+  if (!existente || existente.id_alumno !== contexto.id_alumno) return;
+
+  await prisma.feedbackSemanal.delete({ where: { id_feedback_semanal } });
+  revalidatePath("/panel/seguimiento/feedback");
 }
 
 export async function registrarProgresoFisico(
@@ -191,6 +311,52 @@ export async function registrarProgresoFisico(
   return { message: "Progreso físico guardado." };
 }
 
+export async function editarProgresoFisico(
+  _prev: EstadoAlumno,
+  formData: FormData
+): Promise<EstadoAlumno> {
+  const contexto = await obtenerAlumnoActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_progreso = String(formData.get("id_progreso") ?? "");
+  if (!id_progreso) return { error: "Registro inválido." };
+
+  const peso_corporal = textoOpcional(formData.get("peso_corporal"));
+  const porcentaje_graso = textoOpcional(formData.get("porcentaje_graso"));
+  const masa_muscular = textoOpcional(formData.get("masa_muscular"));
+
+  if (!peso_corporal && !porcentaje_graso && !masa_muscular) {
+    return { error: "Cargá al menos un dato." };
+  }
+
+  const existente = await prisma.progresoFisico.findUnique({ where: { id_progreso } });
+  if (!existente || existente.id_alumno !== contexto.id_alumno) {
+    return { error: "No autorizado." };
+  }
+
+  await prisma.progresoFisico.update({
+    where: { id_progreso },
+    data: { peso_corporal, porcentaje_graso, masa_muscular },
+  });
+
+  revalidatePath("/panel/seguimiento/progreso");
+  return { message: "Progreso actualizado." };
+}
+
+export async function eliminarProgresoFisico(formData: FormData): Promise<void> {
+  const contexto = await obtenerAlumnoActual();
+  if (!contexto) return;
+
+  const id_progreso = String(formData.get("id_progreso") ?? "");
+  if (!id_progreso) return;
+
+  const existente = await prisma.progresoFisico.findUnique({ where: { id_progreso } });
+  if (!existente || existente.id_alumno !== contexto.id_alumno) return;
+
+  await prisma.progresoFisico.delete({ where: { id_progreso } });
+  revalidatePath("/panel/seguimiento/progreso");
+}
+
 export async function registrarMedidaCorporal(
   _prev: EstadoAlumno,
   formData: FormData
@@ -211,4 +377,47 @@ export async function registrarMedidaCorporal(
 
   revalidatePath("/panel/seguimiento/progreso");
   return { message: "Medida guardada." };
+}
+
+export async function editarMedidaCorporal(
+  _prev: EstadoAlumno,
+  formData: FormData
+): Promise<EstadoAlumno> {
+  const contexto = await obtenerAlumnoActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_medida = String(formData.get("id_medida") ?? "");
+  const tipo_medida = String(formData.get("tipo_medida") ?? "").trim();
+  const valor_cm = textoOpcional(formData.get("valor_cm"));
+
+  if (!id_medida || !tipo_medida || !valor_cm) {
+    return { error: "Completá el tipo de medida y el valor." };
+  }
+
+  const existente = await prisma.medidaCorporal.findUnique({ where: { id_medida } });
+  if (!existente || existente.id_alumno !== contexto.id_alumno) {
+    return { error: "No autorizado." };
+  }
+
+  await prisma.medidaCorporal.update({
+    where: { id_medida },
+    data: { tipo_medida, valor_cm },
+  });
+
+  revalidatePath("/panel/seguimiento/progreso");
+  return { message: "Medida actualizada." };
+}
+
+export async function eliminarMedidaCorporal(formData: FormData): Promise<void> {
+  const contexto = await obtenerAlumnoActual();
+  if (!contexto) return;
+
+  const id_medida = String(formData.get("id_medida") ?? "");
+  if (!id_medida) return;
+
+  const existente = await prisma.medidaCorporal.findUnique({ where: { id_medida } });
+  if (!existente || existente.id_alumno !== contexto.id_alumno) return;
+
+  await prisma.medidaCorporal.delete({ where: { id_medida } });
+  revalidatePath("/panel/seguimiento/progreso");
 }

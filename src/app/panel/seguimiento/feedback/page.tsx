@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoActual } from "@/lib/auth";
 import { FormFeedbackDiario } from "./_components/form-feedback-diario";
 import { FormFeedbackSemanal } from "./_components/form-feedback-semanal";
+import { FeedbackDiarioItem } from "./_components/feedback-diario-item";
+import { FeedbackSemanalItem } from "./_components/feedback-semanal-item";
 
 const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
   day: "2-digit",
@@ -42,15 +44,12 @@ export default async function FeedbackPage() {
         {diarios.length > 0 && (
           <div className="flex flex-col gap-1">
             {diarios.map((f) => (
-              <div
+              <FeedbackDiarioItem
                 key={f.id_feedback_diario}
-                className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-3 text-sm"
-              >
-                <span className="text-on-surface-variant">
-                  {FORMATEADOR_FECHA.format(f.fecha)}
-                </span>
-                <p className="text-on-surface mt-1">{f.comentario_diario}</p>
-              </div>
+                id={f.id_feedback_diario}
+                fecha={FORMATEADOR_FECHA.format(f.fecha)}
+                comentario={f.comentario_diario}
+              />
             ))}
           </div>
         )}
@@ -66,15 +65,12 @@ export default async function FeedbackPage() {
         {semanales.length > 0 && (
           <div className="flex flex-col gap-1">
             {semanales.map((f) => (
-              <div
+              <FeedbackSemanalItem
                 key={f.id_feedback_semanal}
-                className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-3 text-sm"
-              >
-                <span className="text-on-surface-variant">
-                  Semana del {FORMATEADOR_FECHA.format(f.semana_inicio)}
-                </span>
-                <p className="text-on-surface mt-1">{f.comentario_semanal}</p>
-              </div>
+                id={f.id_feedback_semanal}
+                semana={FORMATEADOR_FECHA.format(f.semana_inicio)}
+                comentario={f.comentario_semanal}
+              />
             ))}
           </div>
         )}

@@ -5,6 +5,7 @@ import { obtenerEntrenadorActual } from "@/lib/auth";
 import { detectarAlertas } from "@/lib/alertas";
 import { SugerenciaIA } from "./_components/sugerencia-ia";
 import { ObjetivosAlumno, type ObjetivoSerializado } from "./_components/objetivos-alumno";
+import { BotonDesvincular } from "./_components/boton-desvincular";
 
 const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
   day: "2-digit",
@@ -153,16 +154,22 @@ export default async function AlumnoDetallePage(
 
   return (
     <main className="flex-1 w-full max-w-3xl mx-auto px-5 md:px-10 py-8 flex flex-col gap-8">
-      <section className="flex flex-col gap-1">
-        <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
-          {usuario.nombre} {usuario.apellido}
-        </h1>
-        <p className="text-sm text-on-surface-variant">{usuario.email}</p>
-        {relacion.alumno.objetivo && (
-          <p className="text-sm text-on-surface-variant">
-            Objetivo: {relacion.alumno.objetivo}
-          </p>
-        )}
+      <section className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
+            {usuario.nombre} {usuario.apellido}
+          </h1>
+          <p className="text-sm text-on-surface-variant">{usuario.email}</p>
+          {relacion.alumno.objetivo && (
+            <p className="text-sm text-on-surface-variant">
+              Objetivo: {relacion.alumno.objetivo}
+            </p>
+          )}
+        </div>
+        <BotonDesvincular
+          idAlumno={id_alumno}
+          nombreCompleto={`${usuario.nombre} ${usuario.apellido}`}
+        />
       </section>
 
       {alertas.length > 0 && (

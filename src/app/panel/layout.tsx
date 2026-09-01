@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { OfflineSyncBanner } from "@/components/offline-sync-banner";
 import { ActivarPush } from "@/components/activar-push";
 import { InstalarApp } from "@/components/instalar-app";
+import { LogoMarcaPanel } from "@/components/logo-marca-panel";
 import { verificarRecordatorioMembresia } from "@/lib/membresia";
 import { BottomNav } from "./_components/bottom-nav";
 import { SidebarNav } from "./_components/sidebar-nav";
@@ -48,8 +49,6 @@ export default async function PanelLayout({
     redirect("/comercio");
   }
 
-  const nombre = usuario.nombre;
-  const inicial = nombre.charAt(0).toUpperCase();
   const noLeidas = await prisma.notificacion.count({
     where: { id_usuario: usuario.id_usuario, leido: false },
   });
@@ -63,11 +62,7 @@ export default async function PanelLayout({
       {/* TopAppBar (mobile) */}
       <header className="bg-surface border-b border-outline-variant fixed top-0 w-full z-50 flex justify-between items-center px-5 h-16 md:hidden">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full overflow-hidden border border-[#262626] bg-[#1A1A1A] flex items-center justify-center">
-            <span className="font-[family-name:var(--font-sora)] text-[13px] font-bold text-primary-container">
-              {inicial}
-            </span>
-          </div>
+          <LogoMarcaPanel size={32} className="border border-[#262626]" />
           <span className="font-[family-name:var(--font-sora)] text-primary-container tracking-tighter text-xl font-bold">
             BLACK HUB
           </span>
@@ -92,7 +87,8 @@ export default async function PanelLayout({
 
       {/* Sidebar (desktop) */}
       <aside className="hidden md:flex flex-col w-[280px] bg-surface-container/80 backdrop-blur-xl border-r border-outline-variant fixed h-full left-0 top-0 pt-8 z-40">
-        <div className="px-6 pb-8">
+        <div className="px-6 pb-8 flex items-center gap-2">
+          <LogoMarcaPanel size={36} className="border border-[#262626]" />
           <span className="font-[family-name:var(--font-sora)] text-primary-container tracking-tighter text-3xl font-bold">
             BLACK HUB
           </span>

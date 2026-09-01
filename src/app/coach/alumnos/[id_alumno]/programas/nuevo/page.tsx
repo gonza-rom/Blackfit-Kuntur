@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
@@ -36,6 +37,17 @@ export default async function NuevoProgramaPage(
       <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 md:p-6">
         <FormNuevoPrograma idAlumno={id_alumno} />
       </div>
+
+      <p className="text-sm text-on-surface-variant text-center">
+        ¿Ya tenés una rutina armada?{" "}
+        <Link
+          href="/coach/programas/plantillas"
+          className="text-primary-container underline underline-offset-2"
+        >
+          Aplicá una plantilla
+        </Link>{" "}
+        en vez de repetirla desde cero.
+      </p>
     </main>
   );
 }
