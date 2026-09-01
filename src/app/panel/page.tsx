@@ -207,14 +207,14 @@ export default async function PanelPage() {
           </span>
         </Link>
         <Link
-          href="/panel/chat"
+          href="/panel/coach"
           className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col gap-2"
         >
           <span className="material-symbols-outlined text-primary-container text-[22px]">
-            chat
+            forum
           </span>
           <span className="font-[family-name:var(--font-sora)] text-sm font-semibold text-on-surface">
-            Mensajes
+            Tu coach
           </span>
         </Link>
       </section>
