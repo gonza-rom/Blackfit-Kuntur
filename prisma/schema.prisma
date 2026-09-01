@@ -89,6 +89,22 @@ enum CategoriaBiblioteca {
   metodologia
 }
 
+// Gamificación (sistema aparte del motor de alertas de src/lib/alertas.ts).
+enum TipoObjetivo {
+  volumen         // volumen de entrenamiento acumulado (kg levantados)
+  frecuencia      // cantidad de entrenamientos / sesiones
+  habito          // días con hábitos registrados
+  peso_corporal   // peso corporal objetivo
+  custom          // meta libre, la carga el coach
+}
+
+enum EstadoObjetivo {
+  activo
+  cumplido
+  vencido
+  cancelado
+}
+
 // ------------------------------------------------------------
 // USUARIOS Y ROLES
 // ------------------------------------------------------------
@@ -148,6 +164,10 @@ model Alumno {
   objetivo          String?
   fecha_alta        DateTime @default(now())
 
+  // Gamificación: total denormalizado (la fuente de verdad es la suma de
+  // movimientos_puntos; este campo se mantiene al día vía otorgarPuntos()).
+  puntos_totales    Int      @default(0)
+
   relaciones            RelacionEntrenadorAlumno[]
   programas             ProgramaEntrenamiento[]
   entrenamientos        Entrenamiento[]
@@ -156,6 +176,9 @@ model Alumno {
   habitos               Habito[]
   feedback_diario       FeedbackDiario[]
   feedback_semanal      FeedbackSemanal[]
+  objetivos             Objetivo[]
+  logros                LogroAlumno[]
+  movimientos_puntos    MovimientoPuntos[]
 
   @@map("alumnos")
 }
@@ -581,6 +604,86 @@ model ValidacionBeneficio {
 
   @@index([id_comercio, fecha_validacion])
   @@map("validaciones_beneficios")
+}
+
+// ------------------------------------------------------------
+// GAMIFICACIÓN
+// ------------------------------------------------------------
+// Sistema independiente del motor de alertas (src/lib/alertas.ts): no lo
+// modifica ni depende de él. Objetivos configurables por alumno, puntos
+// por actividad diaria y logros desbloqueables.
+
+model Objetivo {
+  id_objetivo          String         @id @default(uuid())
+  id_alumno            String
+  titulo               String
+  descripcion          String?
+  tipo                 TipoObjetivo   @default(custom)
+  // meta y progreso_actual son Decimal para cubrir todos los tipos con un
+  // solo campo (frecuencia usa enteros, peso_corporal usa 1 decimal, etc.).
+  meta                 Decimal        @db.Decimal(10, 2)
+  progreso_actual      Decimal        @default(0) @db.Decimal(10, 2)
+  fecha_inicio         DateTime       @default(now())
+  fecha_objetivo       DateTime?
+  estado               EstadoObjetivo @default(activo)
+  fecha_creacion       DateTime       @default(now())
+  fecha_actualizacion  DateTime       @updatedAt
+
+  alumno  Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+
+  @@index([id_alumno, estado])
+  @@map("objetivos")
+}
+
+// Catálogo maestro de logros disponibles. `criterio` es JSON con la regla
+// evaluable por evaluarLogros(), ej: {"tipo":"racha_dias","valor":7}.
+model Logro {
+  id_logro        String   @id @default(uuid())
+  // Clave estable para referirse al logro desde código/seed sin depender
+  // del uuid generado.
+  codigo          String   @unique
+  titulo          String
+  descripcion     String
+  icono           String?  // nombre de Material Symbol, ej "local_fire_department"
+  criterio        Json
+  activo          Boolean  @default(true)
+  fecha_creacion  DateTime @default(now())
+
+  alumnos  LogroAlumno[]
+
+  @@map("logros")
+}
+
+model LogroAlumno {
+  id_logro_alumno String   @id @default(uuid())
+  id_alumno       String
+  id_logro        String
+  fecha_obtenido  DateTime @default(now())
+
+  alumno  Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+  logro   Logro  @relation(fields: [id_logro], references: [id_logro], onDelete: Cascade)
+
+  @@unique([id_alumno, id_logro], name: "logro_alumno_unico")
+  @@map("logros_alumno")
+}
+
+// Historial de puntos ganados. El @@unique(id_alumno, motivo) es la
+// garantía de idempotencia: `motivo` es una clave estable del evento
+// (ej "entrenamiento:<id>", "habito:2026-09-01"), así el mismo evento
+// nunca suma puntos dos veces aunque otorgarPuntos() se llame de nuevo.
+model MovimientoPuntos {
+  id_movimiento String   @id @default(uuid())
+  id_alumno     String
+  cantidad      Int
+  motivo        String
+  descripcion   String?
+  fecha         DateTime @default(now())
+
+  alumno  Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+
+  @@unique([id_alumno, motivo], name: "movimiento_puntos_unico")
+  @@index([id_alumno, fecha])
+  @@map("movimientos_puntos")
 }
 
 // ------------------------------------------------------------

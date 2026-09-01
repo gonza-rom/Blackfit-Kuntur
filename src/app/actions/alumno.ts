@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoActual } from "@/lib/auth";
 import { guardarSesionEntrenamiento, type SerieRegistrada } from "@/lib/alumno";
+import { registrarActividad, PUNTOS, claveDia } from "@/lib/gamificacion";
 
 export type EstadoAlumno = { error?: string; message?: string } | undefined;
 
@@ -99,6 +100,14 @@ export async function registrarHabito(
     },
   });
 
+  // Gamificación: puntos una sola vez por día (el `motivo` lleva la fecha).
+  await registrarActividad(
+    contexto.id_alumno,
+    `habito:${claveDia(hoy)}`,
+    PUNTOS.habito_registrado,
+    "Hábitos del día registrados"
+  );
+
   revalidatePath("/panel/seguimiento/habitos");
   return { message: "Hábitos de hoy guardados." };
 }
@@ -116,6 +125,14 @@ export async function registrarFeedbackDiario(
   await prisma.feedbackDiario.create({
     data: { id_alumno: contexto.id_alumno, comentario_diario },
   });
+
+  // Gamificación: puntos una sola vez por día aunque cargue varios feedbacks.
+  await registrarActividad(
+    contexto.id_alumno,
+    `feedback_diario:${claveDia()}`,
+    PUNTOS.feedback_diario,
+    "Feedback diario cargado"
+  );
 
   revalidatePath("/panel/seguimiento/feedback");
   return { message: "Feedback diario guardado." };

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
+import { registrarActividad, PUNTOS } from "@/lib/gamificacion";
 
 const PROGRAMA_ACTIVO_INCLUDE = {
   bloques: {
@@ -148,7 +149,7 @@ export async function guardarSesionEntrenamiento(
 
   const idsValidos = new Set(bloque.ejercicios_programa.map((ep) => ep.id_ejercicio_programa));
 
-  await prisma.$transaction(async (tx) => {
+  const id_entrenamiento = await prisma.$transaction(async (tx) => {
     const entrenamiento = await tx.entrenamiento.create({
       data: {
         id_alumno,
@@ -191,7 +192,19 @@ export async function guardarSesionEntrenamiento(
         },
       });
     }
+
+    return entrenamiento.id_entrenamiento;
   });
+
+  // Gamificación: puntos por el entrenamiento completado + re-evaluación de
+  // logros. `motivo` incluye el id del entrenamiento => nunca suma dos veces
+  // por la misma sesión. No bloquea ni puede romper el guardado.
+  await registrarActividad(
+    id_alumno,
+    `entrenamiento:${id_entrenamiento}`,
+    PUNTOS.entrenamiento_completado,
+    "Entrenamiento completado"
+  );
 
   return {};
 }

@@ -24,23 +24,35 @@ export default async function PanelPage() {
 
   const programa = await obtenerProgramaActivo(id_alumno);
 
-  const [ultimosProgresos, habitosEstaSemana, entrenamientosPrograma] =
-    await Promise.all([
-      prisma.progresoFisico.findMany({
-        where: { id_alumno },
-        orderBy: { fecha: "desc" },
-        take: 2,
-      }),
-      prisma.habito.count({
-        where: { id_alumno, fecha: { gte: inicioSemana } },
-      }),
-      programa
-        ? prisma.entrenamiento.findMany({
-            where: { id_programa: programa.id_programa },
-            select: { estado: true },
-          })
-        : Promise.resolve([]),
-    ]);
+  const [
+    ultimosProgresos,
+    habitosEstaSemana,
+    entrenamientosPrograma,
+    alumnoPuntos,
+    objetivosActivos,
+    logrosObtenidos,
+  ] = await Promise.all([
+    prisma.progresoFisico.findMany({
+      where: { id_alumno },
+      orderBy: { fecha: "desc" },
+      take: 2,
+    }),
+    prisma.habito.count({
+      where: { id_alumno, fecha: { gte: inicioSemana } },
+    }),
+    programa
+      ? prisma.entrenamiento.findMany({
+          where: { id_programa: programa.id_programa },
+          select: { estado: true },
+        })
+      : Promise.resolve([]),
+    prisma.alumno.findUnique({
+      where: { id_alumno },
+      select: { puntos_totales: true },
+    }),
+    prisma.objetivo.count({ where: { id_alumno, estado: "activo" } }),
+    prisma.logroAlumno.count({ where: { id_alumno } }),
+  ]);
 
   const bloqueActual = programa ? calcularBloqueActual(programa) : null;
 
@@ -203,6 +215,41 @@ export default async function PanelPage() {
           </span>
           <span className="font-[family-name:var(--font-sora)] text-sm font-semibold text-on-surface">
             Mensajes
+          </span>
+        </Link>
+      </section>
+
+      {/* Objetivos y logros (gamificación) */}
+      <section className="flex flex-col gap-2">
+        <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
+          Objetivos y Logros
+        </h2>
+        <Link
+          href="/panel/logros"
+          className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex items-center justify-between"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full border border-primary-container flex items-center justify-center bg-[#131313]">
+              <span
+                className="material-symbols-outlined text-primary-container text-[20px]"
+                style={{ fontVariationSettings: "'FILL' 1" }}
+              >
+                emoji_events
+              </span>
+            </div>
+            <div>
+              <p className="font-[family-name:var(--font-sora)] text-base font-semibold text-on-surface">
+                {alumnoPuntos?.puntos_totales ?? 0} puntos
+              </p>
+              <p className="font-[family-name:var(--font-inter)] text-[12px] text-on-surface-variant">
+                {objetivosActivos} objetivo{objetivosActivos === 1 ? "" : "s"} activo
+                {objetivosActivos === 1 ? "" : "s"} · {logrosObtenidos} logro
+                {logrosObtenidos === 1 ? "" : "s"}
+              </p>
+            </div>
+          </div>
+          <span className="material-symbols-outlined text-on-surface-variant text-[20px]">
+            chevron_right
           </span>
         </Link>
       </section>

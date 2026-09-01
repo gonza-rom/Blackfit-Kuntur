@@ -2,11 +2,26 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath, updateTag } from "next/cache";
-import type { EstadoPrograma } from "@prisma/client";
+import type { EstadoPrograma, TipoObjetivo, EstadoObjetivo } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
 import { crearNotificacion } from "@/lib/notificaciones";
+import { evaluarLogros } from "@/lib/gamificacion";
 import { TAG_CATALOGO_EJERCICIOS } from "@/lib/catalogos";
+
+const TIPOS_OBJETIVO: TipoObjetivo[] = [
+  "volumen",
+  "frecuencia",
+  "habito",
+  "peso_corporal",
+  "custom",
+];
+const ESTADOS_OBJETIVO: EstadoObjetivo[] = [
+  "activo",
+  "cumplido",
+  "vencido",
+  "cancelado",
+];
 
 export type EstadoCoach = { error?: string; message?: string } | undefined;
 
@@ -464,4 +479,133 @@ export async function avisarAlumnoRutinaLista(formData: FormData): Promise<void>
   });
 
   revalidatePath(`/coach/programas/${id_programa}`);
+}
+
+// ------------------------------------------------------------
+// GAMIFICACIÓN — objetivos del alumno (los crea/edita el coach)
+// ------------------------------------------------------------
+
+/** Valida que el alumno esté en la cartera activa del entrenador logueado. */
+async function alumnoDelEntrenador(id_alumno: string, id_entrenador: string) {
+  const relacion = await prisma.relacionEntrenadorAlumno.findUnique({
+    where: { id_entrenador_id_alumno: { id_entrenador, id_alumno } },
+  });
+  return relacion?.estado_relacion === "activa" ? relacion : null;
+}
+
+export async function crearObjetivo(
+  _prev: EstadoCoach,
+  formData: FormData
+): Promise<EstadoCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_alumno = String(formData.get("id_alumno") ?? "");
+  const titulo = String(formData.get("titulo") ?? "").trim();
+  const descripcion = String(formData.get("descripcion") ?? "").trim() || null;
+  const tipo = String(formData.get("tipo") ?? "custom") as TipoObjetivo;
+  const metaRaw = String(formData.get("meta") ?? "").trim();
+  const fecha_objetivoRaw = String(formData.get("fecha_objetivo") ?? "").trim();
+
+  if (!id_alumno || !titulo || !metaRaw) {
+    return { error: "Completá alumno, título y meta." };
+  }
+  if (!TIPOS_OBJETIVO.includes(tipo)) {
+    return { error: "Tipo de objetivo inválido." };
+  }
+  const meta = Number(metaRaw);
+  if (!Number.isFinite(meta) || meta <= 0) {
+    return { error: "La meta tiene que ser un número mayor a 0." };
+  }
+
+  if (!(await alumnoDelEntrenador(id_alumno, contexto.id_entrenador))) {
+    return { error: "Ese alumno no está vinculado a tu cartera." };
+  }
+
+  await prisma.objetivo.create({
+    data: {
+      id_alumno,
+      titulo,
+      descripcion,
+      tipo,
+      meta: metaRaw,
+      fecha_objetivo: fecha_objetivoRaw ? new Date(fecha_objetivoRaw) : null,
+    },
+  });
+
+  revalidatePath(`/coach/alumnos/${id_alumno}`);
+  return { message: "Objetivo creado." };
+}
+
+export async function actualizarObjetivo(
+  _prev: EstadoCoach,
+  formData: FormData
+): Promise<EstadoCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_objetivo = String(formData.get("id_objetivo") ?? "");
+  const titulo = String(formData.get("titulo") ?? "").trim();
+  const descripcion = String(formData.get("descripcion") ?? "").trim() || null;
+  const tipo = String(formData.get("tipo") ?? "custom") as TipoObjetivo;
+  const metaRaw = String(formData.get("meta") ?? "").trim();
+  const progresoRaw = String(formData.get("progreso_actual") ?? "").trim();
+  const estado = String(formData.get("estado") ?? "activo") as EstadoObjetivo;
+  const fecha_objetivoRaw = String(formData.get("fecha_objetivo") ?? "").trim();
+
+  if (!id_objetivo || !titulo || !metaRaw) {
+    return { error: "Completá título y meta." };
+  }
+  if (!TIPOS_OBJETIVO.includes(tipo) || !ESTADOS_OBJETIVO.includes(estado)) {
+    return { error: "Tipo o estado inválido." };
+  }
+  const meta = Number(metaRaw);
+  const progreso = progresoRaw ? Number(progresoRaw) : 0;
+  if (!Number.isFinite(meta) || meta <= 0 || !Number.isFinite(progreso) || progreso < 0) {
+    return { error: "Meta y progreso tienen que ser números válidos." };
+  }
+
+  const objetivo = await prisma.objetivo.findUnique({
+    where: { id_objetivo },
+  });
+  if (
+    !objetivo ||
+    !(await alumnoDelEntrenador(objetivo.id_alumno, contexto.id_entrenador))
+  ) {
+    return { error: "No autorizado sobre este objetivo." };
+  }
+
+  await prisma.objetivo.update({
+    where: { id_objetivo },
+    data: {
+      titulo,
+      descripcion,
+      tipo,
+      meta: metaRaw,
+      progreso_actual: progresoRaw || "0",
+      estado,
+      fecha_objetivo: fecha_objetivoRaw ? new Date(fecha_objetivoRaw) : null,
+    },
+  });
+
+  // Si el objetivo pasó a "cumplido", puede haber destrabado un logro.
+  if (estado === "cumplido" && objetivo.estado !== "cumplido") {
+    await evaluarLogros(objetivo.id_alumno).catch(() => {});
+    const alumno = await prisma.alumno.findUnique({
+      where: { id_alumno: objetivo.id_alumno },
+      select: { id_usuario: true },
+    });
+    if (alumno) {
+      await crearNotificacion({
+        id_usuario: alumno.id_usuario,
+        titulo: "Objetivo cumplido",
+        contenido: `Marcaste "${titulo}" como cumplido. ¡Bien ahí!`,
+        tipo: "objetivo",
+        url: "/panel/logros",
+      }).catch(() => {});
+    }
+  }
+
+  revalidatePath(`/coach/alumnos/${objetivo.id_alumno}`);
+  return { message: "Objetivo actualizado." };
 }

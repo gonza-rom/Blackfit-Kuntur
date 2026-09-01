@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
 import { detectarAlertas } from "@/lib/alertas";
 import { SugerenciaIA } from "./_components/sugerencia-ia";
+import { ObjetivosAlumno, type ObjetivoSerializado } from "./_components/objetivos-alumno";
 
 const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
   day: "2-digit",
@@ -79,6 +80,7 @@ export default async function AlumnoDetallePage(
     feedbackDiarios,
     feedbackSemanales,
     alertas,
+    objetivos,
   ] = await Promise.all([
     prisma.programaEntrenamiento.findMany({
       where: { id_alumno, id_entrenador: contexto.id_entrenador },
@@ -122,9 +124,26 @@ export default async function AlumnoDetallePage(
       take: 5,
     }),
     detectarAlertas(id_alumno),
+    prisma.objetivo.findMany({
+      where: { id_alumno },
+      orderBy: [{ estado: "asc" }, { fecha_creacion: "desc" }],
+    }),
   ]);
 
   const { usuario } = relacion.alumno;
+
+  const objetivosSerializados: ObjetivoSerializado[] = objetivos.map((o) => ({
+    id_objetivo: o.id_objetivo,
+    titulo: o.titulo,
+    descripcion: o.descripcion,
+    tipo: o.tipo,
+    meta: Number(o.meta),
+    progreso_actual: Number(o.progreso_actual),
+    estado: o.estado,
+    fecha_objetivo: o.fecha_objetivo
+      ? o.fecha_objetivo.toISOString().slice(0, 10)
+      : null,
+  }));
 
   const pesosOrdenados = [...progresos]
     .reverse()
@@ -220,6 +239,8 @@ export default async function AlumnoDetallePage(
           </div>
         )}
       </section>
+
+      <ObjetivosAlumno idAlumno={id_alumno} objetivos={objetivosSerializados} />
 
       <section className="flex flex-col gap-2">
         <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
