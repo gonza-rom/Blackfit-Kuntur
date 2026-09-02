@@ -3,9 +3,11 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
 import { detectarAlertas } from "@/lib/alertas";
+import { urlesFirmadasFotos } from "@/lib/storage";
 import { SugerenciaIA } from "./_components/sugerencia-ia";
 import { ObjetivosAlumno, type ObjetivoSerializado } from "./_components/objetivos-alumno";
 import { BotonDesvincular } from "./_components/boton-desvincular";
+import { DatosAlumno } from "./_components/datos-alumno";
 
 const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
   day: "2-digit",
@@ -133,6 +135,8 @@ export default async function AlumnoDetallePage(
 
   const { usuario } = relacion.alumno;
 
+  const urlesFotos = await urlesFirmadasFotos(medidas.map((m) => m.foto_url));
+
   const objetivosSerializados: ObjetivoSerializado[] = objetivos.map((o) => ({
     id_objetivo: o.id_objetivo,
     titulo: o.titulo,
@@ -160,11 +164,15 @@ export default async function AlumnoDetallePage(
             {usuario.nombre} {usuario.apellido}
           </h1>
           <p className="text-sm text-on-surface-variant">{usuario.email}</p>
-          {relacion.alumno.objetivo && (
-            <p className="text-sm text-on-surface-variant">
-              Objetivo: {relacion.alumno.objetivo}
-            </p>
-          )}
+          <DatosAlumno
+            idAlumno={id_alumno}
+            objetivo={relacion.alumno.objetivo}
+            fechaNacimiento={
+              relacion.alumno.fecha_nacimiento
+                ? relacion.alumno.fecha_nacimiento.toISOString().slice(0, 10)
+                : null
+            }
+          />
         </div>
         <BotonDesvincular
           idAlumno={id_alumno}
@@ -325,19 +333,31 @@ export default async function AlumnoDetallePage(
                 </span>
               </div>
             ))}
-            {medidas.map((m) => (
-              <div
-                key={m.id_medida}
-                className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-3 flex items-center justify-between text-sm"
-              >
-                <span className="text-on-surface-variant">
-                  {FORMATEADOR_FECHA.format(m.fecha)}
-                </span>
-                <span className="text-on-surface capitalize">
-                  {m.tipo_medida}: {m.valor_cm.toString()}cm
-                </span>
-              </div>
-            ))}
+            {medidas.map((m) => {
+              const foto = m.foto_url ? urlesFotos.get(m.foto_url) ?? null : null;
+              return (
+                <div
+                  key={m.id_medida}
+                  className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-3 flex items-center justify-between gap-3 text-sm"
+                >
+                  <span className="text-on-surface-variant shrink-0">
+                    {FORMATEADOR_FECHA.format(m.fecha)}
+                  </span>
+                  <span className="text-on-surface capitalize flex items-center gap-2 text-right">
+                    {foto && (
+                      <a href={foto} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                        <img
+                          src={foto}
+                          alt={`Foto de ${m.tipo_medida}`}
+                          className="w-9 h-9 rounded object-cover border border-[#262626]"
+                        />
+                      </a>
+                    )}
+                    {m.tipo_medida}: {m.valor_cm.toString()}cm
+                  </span>
+                </div>
+              );
+            })}
           </div>
         )}
       </section>

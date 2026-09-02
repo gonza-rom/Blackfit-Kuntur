@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoActual } from "@/lib/auth";
+import { urlesFirmadasFotos } from "@/lib/storage";
 import { FormProgresoFisico } from "./_components/form-progreso-fisico";
 import { FormMedidaCorporal } from "./_components/form-medida-corporal";
 import { ProgresoFisicoItem } from "./_components/progreso-fisico-item";
@@ -50,6 +51,8 @@ export default async function ProgresoFisicoPage() {
     .reverse()
     .filter((p) => p.peso_corporal !== null)
     .map((p) => Number(p.peso_corporal));
+
+  const urlesFotos = await urlesFirmadasFotos(medidas.map((m) => m.foto_url));
 
   return (
     <main className="flex-1 w-full max-w-3xl mx-auto px-5 md:px-10 py-8 flex flex-col gap-8">
@@ -116,6 +119,7 @@ export default async function ProgresoFisicoPage() {
                 fecha={FORMATEADOR_FECHA.format(m.fecha)}
                 tipoMedida={m.tipo_medida}
                 valorCm={m.valor_cm.toString()}
+                fotoUrl={m.foto_url ? urlesFotos.get(m.foto_url) ?? null : null}
               />
             ))}
           </div>

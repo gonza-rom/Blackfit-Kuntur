@@ -63,6 +63,46 @@ export async function crearRecursoBiblioteca(
   return { message: "Recurso publicado." };
 }
 
+export async function editarRecursoBiblioteca(
+  _prev: EstadoBiblioteca,
+  formData: FormData
+): Promise<EstadoBiblioteca> {
+  const idActor = await obtenerActorConPermiso();
+  if (!idActor) return { error: "No autorizado." };
+
+  const id_recurso = String(formData.get("id_recurso") ?? "");
+  const titulo = String(formData.get("titulo") ?? "").trim();
+  const descripcion = String(formData.get("descripcion") ?? "").trim() || null;
+  const categoria = String(formData.get("categoria") ?? "") as CategoriaBiblioteca;
+  const tipo_contenido = String(formData.get("tipo_contenido") ?? "").trim() || null;
+  const url_contenido = String(formData.get("url_contenido") ?? "").trim() || null;
+
+  if (!id_recurso || !titulo || !CATEGORIAS.includes(categoria)) {
+    return { error: "Completá título y categoría." };
+  }
+
+  const existente = await prisma.biblioteca.findUnique({ where: { id_recurso } });
+  if (!existente) return { error: "Ese recurso no existe." };
+
+  await prisma.biblioteca.update({
+    where: { id_recurso },
+    data: { titulo, descripcion, categoria, tipo_contenido, url_contenido },
+  });
+
+  await registrarAuditoria({
+    id_usuario_actor: idActor,
+    accion: "modificacion_admin",
+    recurso: "biblioteca",
+    id_recurso,
+    resultado: `editado:${titulo}`,
+  });
+
+  updateTag(TAG_CATALOGO_BIBLIOTECA);
+  revalidatePath("/coach/biblioteca");
+  revalidatePath("/panel/biblioteca");
+  return { message: "Recurso actualizado." };
+}
+
 export async function eliminarRecursoBiblioteca(formData: FormData): Promise<void> {
   const idActor = await obtenerActorConPermiso();
   if (!idActor) return;

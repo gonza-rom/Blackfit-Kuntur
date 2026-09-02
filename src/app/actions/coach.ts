@@ -801,6 +801,43 @@ async function alumnoDelEntrenador(id_alumno: string, id_entrenador: string) {
   return relacion?.estado_relacion === "activa" ? relacion : null;
 }
 
+// Datos básicos del alumno que hoy solo se mostraban en la ficha y nunca
+// se editaban desde ningún lado: el objetivo (texto libre) y la fecha de
+// nacimiento. Los edita el coach desde la ficha del alumno.
+export async function actualizarDatosAlumno(
+  _prev: EstadoCoach,
+  formData: FormData
+): Promise<EstadoCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_alumno = String(formData.get("id_alumno") ?? "");
+  const objetivo = String(formData.get("objetivo") ?? "").trim() || null;
+  const fechaNacimientoRaw = String(formData.get("fecha_nacimiento") ?? "").trim();
+
+  if (!id_alumno) return { error: "Falta el alumno." };
+  if (!(await alumnoDelEntrenador(id_alumno, contexto.id_entrenador))) {
+    return { error: "Ese alumno no está vinculado a tu cartera." };
+  }
+
+  let fecha_nacimiento: Date | null = null;
+  if (fechaNacimientoRaw) {
+    const d = new Date(fechaNacimientoRaw);
+    if (Number.isNaN(d.getTime())) {
+      return { error: "Fecha de nacimiento inválida." };
+    }
+    fecha_nacimiento = d;
+  }
+
+  await prisma.alumno.update({
+    where: { id_alumno },
+    data: { objetivo, fecha_nacimiento },
+  });
+
+  revalidatePath(`/coach/alumnos/${id_alumno}`);
+  return { message: "Datos del alumno actualizados." };
+}
+
 export async function crearObjetivo(
   _prev: EstadoCoach,
   formData: FormData
