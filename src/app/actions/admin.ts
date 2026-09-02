@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath, updateTag } from "next/cache";
 import type {
   RolUsuario,
+  EstadoUsuario,
   EstadoMembresia,
   EstadoComercio,
   EstadoBeneficio,
@@ -22,6 +23,8 @@ const ROLES_ASIGNABLES: RolUsuario[] = [
   "beneficiario",
   "administrador",
 ];
+
+const ESTADOS_USUARIO: EstadoUsuario[] = ["activo", "inactivo", "suspendido"];
 
 const ESTADOS_MEMBRESIA: EstadoMembresia[] = [
   "activa",
@@ -110,6 +113,39 @@ export async function quitarRol(formData: FormData): Promise<void> {
   });
 
   revalidatePath(`/admin/usuarios/${id_usuario}`);
+}
+
+// Baja "blanda" de un usuario: cambia estado_usuario a inactivo/suspendido
+// sin borrar nada. Un usuario que no esté "activo" no puede iniciar sesión
+// (ver iniciarSesion en actions/auth.ts) y es expulsado de cualquier
+// sección protegida (ver cuentaActiva() usado en los layouts).
+export async function cambiarEstadoUsuario(formData: FormData): Promise<void> {
+  const contexto = await obtenerAdministradorActual();
+  if (!contexto) return;
+
+  const id_usuario = String(formData.get("id_usuario") ?? "");
+  const estado_usuario = String(formData.get("estado_usuario") ?? "") as EstadoUsuario;
+
+  if (!id_usuario || !ESTADOS_USUARIO.includes(estado_usuario)) return;
+  // Un admin no puede desactivarse a sí mismo (se quedaría sin poder
+  // volver a entrar para revertirlo).
+  if (id_usuario === contexto.usuario.id_usuario) return;
+
+  await prisma.usuario.update({
+    where: { id_usuario },
+    data: { estado_usuario },
+  });
+
+  await registrarAuditoria({
+    id_usuario_actor: contexto.usuario.id_usuario,
+    accion: "cambio_estado_usuario",
+    recurso: "usuario",
+    id_recurso: id_usuario,
+    resultado: estado_usuario,
+  });
+
+  revalidatePath(`/admin/usuarios/${id_usuario}`);
+  revalidatePath("/admin/usuarios");
 }
 
 export async function crearPlanMembresia(

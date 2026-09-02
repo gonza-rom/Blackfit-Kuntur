@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { obtenerUsuarioActual, tieneRol } from "@/lib/auth";
+import { obtenerUsuarioActual, tieneRol, cuentaActiva } from "@/lib/auth";
 import { cerrarSesion } from "@/app/actions/auth";
 import { ActivarPush } from "@/components/activar-push";
 import { InstalarApp } from "@/components/instalar-app";
@@ -16,6 +16,10 @@ export default async function CoachLayout({
 
   if (!usuario) {
     redirect("/iniciar-sesion");
+  }
+
+  if (!cuentaActiva(usuario)) {
+    redirect("/cuenta-inactiva");
   }
 
   if (!tieneRol(usuario, "entrenador")) {

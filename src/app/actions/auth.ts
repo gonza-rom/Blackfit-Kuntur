@@ -18,10 +18,29 @@ export async function iniciarSesion(
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
     return { error: "Email o contraseña incorrectos." };
+  }
+
+  // Un usuario dado de baja (inactivo/suspendido) tiene credenciales
+  // válidas pero no puede entrar: se cierra la sesión que se acaba de
+  // abrir y se devuelve el motivo.
+  if (data.user) {
+    const perfil = await prisma.usuario.findUnique({
+      where: { id_usuario: data.user.id },
+      select: { estado_usuario: true },
+    });
+    if (perfil && perfil.estado_usuario !== "activo") {
+      await supabase.auth.signOut();
+      return {
+        error:
+          perfil.estado_usuario === "suspendido"
+            ? "Tu cuenta está suspendida. Contactá al equipo de Black Hub."
+            : "Tu cuenta está inactiva. Contactá al equipo de Black Hub.",
+      };
+    }
   }
 
   redirect("/panel");

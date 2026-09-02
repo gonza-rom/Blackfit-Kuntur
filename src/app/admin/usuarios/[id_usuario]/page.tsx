@@ -1,8 +1,21 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerPlanesMembresia } from "@/lib/catalogos";
-import { asignarRol, quitarRol, cambiarEstadoMembresia } from "@/app/actions/admin";
+import {
+  asignarRol,
+  quitarRol,
+  cambiarEstadoMembresia,
+  cambiarEstadoUsuario,
+} from "@/app/actions/admin";
 import { FormActivarMembresia } from "./_components/form-activar-membresia";
+
+const ESTADOS_USUARIO = ["activo", "inactivo", "suspendido"] as const;
+
+const ETIQUETA_ESTADO_USUARIO: Record<string, string> = {
+  activo: "Activo",
+  inactivo: "Inactivo",
+  suspendido: "Suspendido",
+};
 
 const ROLES_ASIGNABLES = [
   "alumno",
@@ -57,6 +70,48 @@ export default async function AdminUsuarioDetallePage(
         </h1>
         <p className="text-sm text-on-surface-variant">{usuario.email}</p>
       </div>
+
+      <section className="flex flex-col gap-2">
+        <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
+          Estado de la cuenta
+        </h2>
+        <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col gap-2">
+          <p className="text-sm text-on-surface-variant">
+            Estado actual:{" "}
+            <span
+              className={
+                usuario.estado_usuario === "activo"
+                  ? "text-primary-container"
+                  : "text-[#ffb4ab]"
+              }
+            >
+              {ETIQUETA_ESTADO_USUARIO[usuario.estado_usuario] ?? usuario.estado_usuario}
+            </span>
+            . Un usuario que no esté activo no puede iniciar sesión ni entrar a
+            ninguna sección. No se borra ningún dato.
+          </p>
+          <form action={cambiarEstadoUsuario} className="flex items-center gap-2">
+            <input type="hidden" name="id_usuario" value={id_usuario} />
+            <select
+              name="estado_usuario"
+              defaultValue={usuario.estado_usuario}
+              className="bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface text-xs p-2"
+            >
+              {ESTADOS_USUARIO.map((estado) => (
+                <option key={estado} value={estado}>
+                  {ETIQUETA_ESTADO_USUARIO[estado]}
+                </option>
+              ))}
+            </select>
+            <button
+              type="submit"
+              className="font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] uppercase px-3 py-1.5 rounded-full border border-outline-variant text-on-surface-variant"
+            >
+              Aplicar
+            </button>
+          </form>
+        </div>
+      </section>
 
       <section className="flex flex-col gap-2">
         <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">

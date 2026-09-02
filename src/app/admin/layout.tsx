@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { obtenerUsuarioActual, tieneRol } from "@/lib/auth";
+import { obtenerUsuarioActual, tieneRol, cuentaActiva } from "@/lib/auth";
 import { cerrarSesion } from "@/app/actions/auth";
 import { InstalarApp } from "@/components/instalar-app";
 import { BottomNav } from "./_components/bottom-nav";
@@ -14,6 +14,10 @@ export default async function AdminLayout({
 
   if (!usuario) {
     redirect("/iniciar-sesion");
+  }
+
+  if (!cuentaActiva(usuario)) {
+    redirect("/cuenta-inactiva");
   }
 
   if (!tieneRol(usuario, "administrador")) {

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { obtenerUsuarioActual, tieneRol } from "@/lib/auth";
+import { obtenerUsuarioActual, tieneRol, cuentaActiva } from "@/lib/auth";
 import { cerrarSesion } from "@/app/actions/auth";
 import { InstalarApp } from "@/components/instalar-app";
 import { LogoMarca } from "@/components/logo-marca";
@@ -15,6 +15,10 @@ export default async function BeneficiarioLayout({
 
   if (!usuario) {
     redirect("/iniciar-sesion");
+  }
+
+  if (!cuentaActiva(usuario)) {
+    redirect("/cuenta-inactiva");
   }
 
   // El rol se valida SIEMPRE contra UsuarioRol en el servidor, nunca contra
