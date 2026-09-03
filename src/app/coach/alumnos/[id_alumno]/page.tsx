@@ -8,6 +8,28 @@ import { SugerenciaIA } from "./_components/sugerencia-ia";
 import { ObjetivosAlumno, type ObjetivoSerializado } from "./_components/objetivos-alumno";
 import { BotonDesvincular } from "./_components/boton-desvincular";
 import { DatosAlumno } from "./_components/datos-alumno";
+import {
+  ProgresoFisicoCoach,
+  type ProgresoSerializado,
+} from "./_components/progreso-fisico-coach";
+
+const CAMPOS_PROGRESO = [
+  "peso_corporal",
+  "imc",
+  "pulso",
+  "porcentaje_graso",
+  "porcentaje_agua",
+  "porcentaje_musculo",
+  "masa_osea",
+  "metabolismo_basal",
+  "metabolismo_activo",
+  "grasa_visceral",
+  "edad_metabolica",
+  "soft_lean_mass",
+  "lean_body_mass",
+  "proteina",
+  "masa_muscular",
+] as const;
 
 const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
   day: "2-digit",
@@ -136,6 +158,21 @@ export default async function AlumnoDetallePage(
   const { usuario } = relacion.alumno;
 
   const urlesFotos = await urlesFirmadasFotos(medidas.map((m) => m.foto_url));
+
+  const progresosSerializados: ProgresoSerializado[] = progresos.map((p) => {
+    const valores: Record<string, string | null> = {};
+    for (const campo of CAMPOS_PROGRESO) {
+      const v = (p as Record<string, unknown>)[campo];
+      valores[campo] = v === null || v === undefined ? null : String(v);
+    }
+    return {
+      id_progreso: p.id_progreso,
+      fecha: p.fecha.toISOString().slice(0, 10),
+      fechaLabel: FORMATEADOR_FECHA.format(p.fecha),
+      origen: p.origen,
+      valores: valores as ProgresoSerializado["valores"],
+    };
+  });
 
   const objetivosSerializados: ObjetivoSerializado[] = objetivos.map((o) => ({
     id_objetivo: o.id_objetivo,
@@ -312,27 +349,13 @@ export default async function AlumnoDetallePage(
             </svg>
           </div>
         )}
-        {progresos.length === 0 && medidas.length === 0 ? (
-          <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 text-on-surface-variant text-sm">
-            Todavía no cargó datos de progreso físico.
-          </div>
-        ) : (
-          <div className="flex flex-col gap-1">
-            {progresos.slice(0, 5).map((p) => (
-              <div
-                key={p.id_progreso}
-                className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-3 flex items-center justify-between text-sm"
-              >
-                <span className="text-on-surface-variant">
-                  {FORMATEADOR_FECHA.format(p.fecha)}
-                </span>
-                <span className="text-on-surface">
-                  {p.peso_corporal ? `${p.peso_corporal}kg` : ""}
-                  {p.porcentaje_graso ? ` · ${p.porcentaje_graso}% graso` : ""}
-                  {p.masa_muscular ? ` · ${p.masa_muscular}kg masa musc.` : ""}
-                </span>
-              </div>
-            ))}
+        <ProgresoFisicoCoach idAlumno={id_alumno} entradas={progresosSerializados} />
+
+        {medidas.length > 0 && (
+          <div className="flex flex-col gap-1 mt-2">
+            <h3 className="font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] text-on-surface-variant uppercase">
+              Medidas corporales
+            </h3>
             {medidas.map((m) => {
               const foto = m.foto_url ? urlesFotos.get(m.foto_url) ?? null : null;
               return (

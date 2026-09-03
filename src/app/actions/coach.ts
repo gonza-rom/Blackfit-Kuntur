@@ -954,3 +954,151 @@ export async function actualizarObjetivo(
   revalidatePath(`/coach/alumnos/${objetivo.id_alumno}`);
   return { message: "Objetivo actualizado." };
 }
+
+// ------------------------------------------------------------
+// COMPOSICIÓN CORPORAL — el coach carga la medición completa de
+// balanza/InBody de cada alumno de su cartera.
+// ------------------------------------------------------------
+
+// Campos numéricos de ProgresoFisico y su tipo. Los "decimal" se pasan
+// como string (Prisma lo acepta para columnas Decimal); los "entero" van
+// como number.
+const CAMPOS_COMPOSICION = {
+  peso_corporal: "decimal",
+  porcentaje_graso: "decimal",
+  masa_muscular: "decimal",
+  imc: "decimal",
+  pulso: "entero",
+  porcentaje_agua: "decimal",
+  porcentaje_musculo: "decimal",
+  masa_osea: "decimal",
+  metabolismo_basal: "entero",
+  metabolismo_activo: "entero",
+  grasa_visceral: "entero",
+  edad_metabolica: "entero",
+  soft_lean_mass: "decimal",
+  lean_body_mass: "decimal",
+  proteina: "decimal",
+} as const;
+
+type DatosComposicion = {
+  peso_corporal: string | null;
+  porcentaje_graso: string | null;
+  masa_muscular: string | null;
+  imc: string | null;
+  pulso: number | null;
+  porcentaje_agua: string | null;
+  porcentaje_musculo: string | null;
+  masa_osea: string | null;
+  metabolismo_basal: number | null;
+  metabolismo_activo: number | null;
+  grasa_visceral: number | null;
+  edad_metabolica: number | null;
+  soft_lean_mass: string | null;
+  lean_body_mass: string | null;
+  proteina: string | null;
+};
+
+function parsearComposicion(
+  formData: FormData
+): { datos: DatosComposicion; algunDato: boolean } | { error: string } {
+  const datos = {} as DatosComposicion;
+  let algunDato = false;
+
+  for (const [campo, tipo] of Object.entries(CAMPOS_COMPOSICION)) {
+    const bruto = String(formData.get(campo) ?? "").trim();
+    if (!bruto) {
+      (datos as Record<string, unknown>)[campo] = null;
+      continue;
+    }
+    const n = Number(bruto.replace(",", "."));
+    if (!Number.isFinite(n) || n < 0) {
+      return { error: `Revisá el valor de "${campo}": tiene que ser un número válido.` };
+    }
+    algunDato = true;
+    (datos as Record<string, unknown>)[campo] =
+      tipo === "entero" ? Math.round(n) : bruto.replace(",", ".");
+  }
+
+  return { datos, algunDato };
+}
+
+/** id_alumno del ProgresoFisico si pertenece a un alumno de la cartera activa del coach. */
+async function progresoDelEntrenador(id_progreso: string, id_entrenador: string) {
+  const progreso = await prisma.progresoFisico.findUnique({ where: { id_progreso } });
+  if (!progreso) return null;
+  return (await alumnoDelEntrenador(progreso.id_alumno, id_entrenador)) ? progreso : null;
+}
+
+export async function crearProgresoFisicoAlumno(
+  _prev: EstadoCoach,
+  formData: FormData
+): Promise<EstadoCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_alumno = String(formData.get("id_alumno") ?? "");
+  if (!id_alumno) return { error: "Falta el alumno." };
+  if (!(await alumnoDelEntrenador(id_alumno, contexto.id_entrenador))) {
+    return { error: "Ese alumno no está vinculado a tu cartera." };
+  }
+
+  const parsed = parsearComposicion(formData);
+  if ("error" in parsed) return { error: parsed.error };
+  if (!parsed.algunDato) return { error: "Cargá al menos un dato." };
+
+  const fechaRaw = String(formData.get("fecha") ?? "").trim();
+
+  await prisma.progresoFisico.create({
+    data: {
+      id_alumno,
+      origen: "coach",
+      ...(fechaRaw ? { fecha: new Date(fechaRaw) } : {}),
+      ...parsed.datos,
+    },
+  });
+
+  revalidatePath(`/coach/alumnos/${id_alumno}`);
+  return { message: "Medición cargada." };
+}
+
+export async function editarProgresoFisicoAlumno(
+  _prev: EstadoCoach,
+  formData: FormData
+): Promise<EstadoCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_progreso = String(formData.get("id_progreso") ?? "");
+  const progreso = await progresoDelEntrenador(id_progreso, contexto.id_entrenador);
+  if (!progreso) return { error: "No autorizado sobre esta medición." };
+
+  const parsed = parsearComposicion(formData);
+  if ("error" in parsed) return { error: parsed.error };
+  if (!parsed.algunDato) return { error: "Cargá al menos un dato." };
+
+  const fechaRaw = String(formData.get("fecha") ?? "").trim();
+
+  await prisma.progresoFisico.update({
+    where: { id_progreso },
+    data: {
+      ...(fechaRaw ? { fecha: new Date(fechaRaw) } : {}),
+      ...parsed.datos,
+    },
+  });
+
+  revalidatePath(`/coach/alumnos/${progreso.id_alumno}`);
+  return { message: "Medición actualizada." };
+}
+
+export async function eliminarProgresoFisicoAlumno(formData: FormData): Promise<void> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return;
+
+  const id_progreso = String(formData.get("id_progreso") ?? "");
+  const progreso = await progresoDelEntrenador(id_progreso, contexto.id_entrenador);
+  if (!progreso) return;
+
+  await prisma.progresoFisico.delete({ where: { id_progreso } });
+  revalidatePath(`/coach/alumnos/${progreso.id_alumno}`);
+}

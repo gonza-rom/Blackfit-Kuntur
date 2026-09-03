@@ -388,6 +388,23 @@ model ProgresoFisico {
   porcentaje_graso      Decimal? @db.Decimal(4, 2)
   masa_muscular         Decimal? @db.Decimal(5, 2)
 
+  // Composición corporal completa que carga el coach desde su panel a
+  // partir de la balanza/InBody del gimnasio. Todos opcionales — el
+  // alumno sigue pudiendo cargar solo peso/graso/masa desde su panel.
+  imc                  Decimal? @db.Decimal(4, 2)
+  pulso                Int?     // lpm
+  porcentaje_agua      Decimal? @db.Decimal(4, 2)
+  porcentaje_musculo   Decimal? @db.Decimal(4, 2)
+  masa_osea            Decimal? @db.Decimal(4, 2) // kg (huesos)
+  metabolismo_basal    Int?     // kcal
+  metabolismo_activo   Int?     // kcal
+  grasa_visceral       Int?     // nivel
+  edad_metabolica      Int?     // años
+  soft_lean_mass       Decimal? @db.Decimal(5, 2) // kg
+  lean_body_mass       Decimal? @db.Decimal(5, 2) // kg
+  proteina             Decimal? @db.Decimal(5, 2) // kg
+  origen               String?  // "alumno" | "coach" — quién cargó la medición
+
   alumno   Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
 
   @@index([id_alumno, fecha])

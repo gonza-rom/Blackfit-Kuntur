@@ -12,6 +12,23 @@ const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
   month: "short",
 });
 
+// Campos extra de composición corporal que carga el coach desde su panel
+// (el alumno los ve pero no los edita acá).
+const CAMPOS_EXTRA: { campo: string; label: string; unit: string }[] = [
+  { campo: "imc", label: "IMC", unit: "" },
+  { campo: "pulso", label: "Pulso", unit: "lpm" },
+  { campo: "porcentaje_agua", label: "Agua", unit: "%" },
+  { campo: "porcentaje_musculo", label: "Músculos", unit: "%" },
+  { campo: "masa_osea", label: "Huesos", unit: "kg" },
+  { campo: "metabolismo_basal", label: "Metabolismo basal", unit: "kcal" },
+  { campo: "metabolismo_activo", label: "Metabolismo activo", unit: "kcal" },
+  { campo: "grasa_visceral", label: "Grasa visceral", unit: "" },
+  { campo: "edad_metabolica", label: "Edad metabólica", unit: "años" },
+  { campo: "soft_lean_mass", label: "Soft Lean Mass", unit: "kg" },
+  { campo: "lean_body_mass", label: "Lean Body Mass", unit: "kg" },
+  { campo: "proteina", label: "Proteína", unit: "kg" },
+];
+
 const ANCHO_SPARKLINE = 280;
 const ALTO_SPARKLINE = 60;
 
@@ -102,16 +119,26 @@ export default async function ProgresoFisicoPage() {
           </div>
         ) : (
           <div className="flex flex-col gap-1">
-            {progresos.map((p) => (
-              <ProgresoFisicoItem
-                key={p.id_progreso}
-                id={p.id_progreso}
-                fecha={FORMATEADOR_FECHA.format(p.fecha)}
-                pesoCorporal={p.peso_corporal ? p.peso_corporal.toString() : null}
-                porcentajeGraso={p.porcentaje_graso ? p.porcentaje_graso.toString() : null}
-                masaMuscular={p.masa_muscular ? p.masa_muscular.toString() : null}
-              />
-            ))}
+            {progresos.map((p) => {
+              const extra = CAMPOS_EXTRA.map(({ campo, label, unit }) => {
+                const v = (p as Record<string, unknown>)[campo];
+                return v === null || v === undefined
+                  ? null
+                  : { label, valor: `${String(v)}${unit ? ` ${unit}` : ""}` };
+              }).filter((x): x is { label: string; valor: string } => x !== null);
+              return (
+                <ProgresoFisicoItem
+                  key={p.id_progreso}
+                  id={p.id_progreso}
+                  fecha={FORMATEADOR_FECHA.format(p.fecha)}
+                  pesoCorporal={p.peso_corporal ? p.peso_corporal.toString() : null}
+                  porcentajeGraso={p.porcentaje_graso ? p.porcentaje_graso.toString() : null}
+                  masaMuscular={p.masa_muscular ? p.masa_muscular.toString() : null}
+                  extra={extra}
+                  cargadoPorCoach={p.origen === "coach"}
+                />
+              );
+            })}
             {medidas.map((m) => (
               <MedidaCorporalItem
                 key={m.id_medida}
