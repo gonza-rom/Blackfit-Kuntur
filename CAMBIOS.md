@@ -197,6 +197,26 @@ cascada ningún dato).
 - UI de admin: sección "Estado de la cuenta" en `/admin/usuarios/[id]` +
   chip de estado en el listado.
 
+## 7. Composición corporal — la carga el coach por alumno
+El coach puede cargar la medición completa de balanza/InBody de cada
+alumno de su cartera, con los mismos campos que devuelve una balanza
+smart: peso, IMC, pulso, grasa corporal, agua, músculos, huesos,
+metabolismo basal y activo, grasa visceral, edad metabólica, Soft Lean
+Mass, Lean Body Mass y proteína.
+
+- **Schema** + migración `20260903000000_add_composicion_corporal`: solo
+  agrega 12 columnas **nullable** a `progreso_fisico` + `origen`
+  (`"alumno"` / `"coach"`). No reescribe ninguna fila.
+- Acciones `crearProgresoFisicoAlumno` / `editarProgresoFisicoAlumno` /
+  `eliminarProgresoFisicoAlumno` en `src/app/actions/coach.ts` — validan
+  la relación entrenador-alumno activa y que los valores sean números.
+- UI del coach: sección **"Mediciones de composición corporal"** en la
+  ficha del alumno (formulario de carga con los 15 campos, lista con
+  resumen + detalle expandible, editar/eliminar por entrada).
+- El alumno ve estas mediciones en `/panel/seguimiento/progreso` con un
+  "Ver composición completa" (solo lectura) y un chip "coach". Su
+  formulario de carga sigue siendo el de siempre (peso / graso / masa).
+
 ---
 
 # Instalar y correr
@@ -220,7 +240,11 @@ Dos migraciones nuevas, ninguna toca datos existentes:
   problema dentro de la transacción de la migración porque el valor
   nuevo no se usa en esa misma transacción.
 
-`npx prisma migrate deploy` las aplica ambas sin downtime.
+- `20260903000000_add_composicion_corporal` (punto 7) — solo `ALTER TABLE
+  "progreso_fisico" ADD COLUMN ...` con 13 columnas nullable. No toca
+  datos.
+
+`npx prisma migrate deploy` las aplica sin downtime.
 
 Los puntos 4, 5 y 6 **no traen migraciones nuevas**: `MedidaCorporal.foto_url`
 y `Usuario.estado_usuario` ya existían en el schema.
