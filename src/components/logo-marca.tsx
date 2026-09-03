@@ -1,7 +1,7 @@
 import Image from "next/image";
 
 const LOGOS = {
-  blackfit: { src: "/blackfit.jpeg", alt: "Black Fit" },
+  blackfit: { src: "/blackfit.png", alt: "Black Fit" },
   kuntur: { src: "/kutnur.jpeg", alt: "Kuntur" },
 } as const;
 
