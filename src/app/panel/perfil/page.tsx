@@ -63,7 +63,7 @@ export default async function PerfilPage() {
   );
 
   return (
-    <main className="flex-1 w-full max-w-3xl mx-auto px-5 md:px-10 py-8">
+    <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8">
       {/* Encabezado de perfil */}
       <section className="flex flex-col items-center text-center mb-8">
         <div className="relative mb-4">
@@ -95,7 +95,7 @@ export default async function PerfilPage() {
       {/* Fila de estadísticas */}
       <section className="grid grid-cols-3 gap-4 mb-8">
         <div className="bg-[#1f1f1f] border border-[#262626] rounded-xl p-4 flex flex-col items-center justify-center relative overflow-hidden group">
-          <span className="font-[family-name:var(--font-sora)] text-[32px] leading-10 font-bold text-on-surface mb-1 group-hover:text-primary-container transition-colors">
+          <span className="font-[family-name:var(--font-sora)] text-[clamp(1.375rem,6vw,2rem)] leading-tight tabular-nums font-bold text-on-surface mb-1 group-hover:text-primary-container transition-colors">
             {estadisticas ? estadisticas.sesiones : "—"}
           </span>
           <span className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
@@ -103,7 +103,7 @@ export default async function PerfilPage() {
           </span>
         </div>
         <div className="bg-[#1f1f1f] border border-[#262626] rounded-xl p-4 flex flex-col items-center justify-center relative overflow-hidden group">
-          <span className="font-[family-name:var(--font-sora)] text-[32px] leading-10 font-bold text-on-surface mb-1 group-hover:text-primary-container transition-colors">
+          <span className="font-[family-name:var(--font-sora)] text-[clamp(1.375rem,6vw,2rem)] leading-tight tabular-nums font-bold text-on-surface mb-1 group-hover:text-primary-container transition-colors">
             {estadisticas ? estadisticas.rachaDias : "—"}
           </span>
           <span className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
@@ -111,7 +111,7 @@ export default async function PerfilPage() {
           </span>
         </div>
         <div className="bg-[#1f1f1f] border border-[#262626] rounded-xl p-4 flex flex-col items-center justify-center relative overflow-hidden group">
-          <span className="font-[family-name:var(--font-sora)] text-[32px] leading-10 font-bold text-on-surface mb-1 group-hover:text-primary-container transition-colors">
+          <span className="font-[family-name:var(--font-sora)] text-[clamp(1.375rem,6vw,2rem)] leading-tight tabular-nums font-bold text-on-surface mb-1 group-hover:text-primary-container transition-colors">
             {estadisticas ? estadisticas.nuevosRecords : "—"}
           </span>
           <span className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">

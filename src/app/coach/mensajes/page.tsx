@@ -23,7 +23,7 @@ export default async function CoachMensajesPage() {
   });
 
   return (
-    <main className="flex-1 w-full max-w-2xl mx-auto px-5 md:px-10 py-8 flex flex-col gap-4">
+    <main className="flex-1 w-full max-w-2xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-4">
       <div className="flex flex-col gap-1">
         <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
           WhatsApp
@@ -45,7 +45,7 @@ export default async function CoachMensajesPage() {
               key={f.id_alumno}
               className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex items-center justify-between gap-3"
             >
-              <p className="text-sm text-on-surface font-medium">{f.nombre}</p>
+              <p className="text-sm text-on-surface font-medium min-w-0 truncate">{f.nombre}</p>
               {f.wa ? (
                 <a
                   href={f.wa}

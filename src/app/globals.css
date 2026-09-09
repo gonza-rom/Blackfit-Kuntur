@@ -23,6 +23,35 @@ body {
   color: var(--foreground);
 }
 
+/* Corta el scroll horizontal accidental (un texto largo en una fila flex sin
+   min-w-0 empuja el ancho de toda la página). `clip` en vez de `hidden` para
+   no romper position: sticky. */
+html,
+body {
+  overflow-x: clip;
+}
+
+html {
+  /* iOS infla el texto en landscape sin esto. */
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Saca el flash gris al tocar botones/links en Android/iOS. */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* iOS hace zoom automático al enfocar un input con font-size < 16px. Varios
+   formularios usan text-sm/text-xs; esto lo neutraliza solo en pantallas
+   chicas sin tocar cada campo. */
+@media (max-width: 640px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 .material-symbols-outlined {
   font-variation-settings:
     'FILL' 0,

@@ -194,7 +194,7 @@ export default async function AlumnoDetallePage(
   const maxSesionesSemana = Math.max(1, ...sesionesPorSemana);
 
   return (
-    <main className="flex-1 w-full max-w-3xl mx-auto px-5 md:px-10 py-8 flex flex-col gap-8">
+    <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-8">
       <section className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
           <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">

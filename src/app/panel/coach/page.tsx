@@ -16,7 +16,7 @@ export default async function PanelCoachPage() {
 
   if (!relacion) {
     return (
-      <main className="flex-1 w-full max-w-2xl mx-auto px-5 py-8">
+      <main className="flex-1 w-full max-w-2xl mx-auto px-4 sm:px-6 py-8">
         <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 text-on-surface-variant text-sm">
           Todavía no tenés un entrenador asignado — cuando el equipo de Kuntur te
           asigne uno, vas a poder contactarlo desde acá.
@@ -34,14 +34,14 @@ export default async function PanelCoachPage() {
   );
 
   return (
-    <main className="flex-1 w-full max-w-2xl mx-auto px-5 md:px-10 py-8 flex flex-col gap-6">
+    <main className="flex-1 w-full max-w-2xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-6">
       <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
         Tu coach
       </h1>
 
       <section className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-6 flex flex-col items-center text-center gap-3">
         <div className="w-20 h-20 rounded-full border border-[#262626] bg-[#131313] flex items-center justify-center">
-          <span className="font-[family-name:var(--font-sora)] text-[32px] font-bold text-primary-container">
+          <span className="font-[family-name:var(--font-sora)] text-[clamp(1.375rem,6vw,2rem)] leading-tight tabular-nums font-bold text-primary-container">
             {inicial}
           </span>
         </div>

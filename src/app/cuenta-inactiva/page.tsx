@@ -13,7 +13,7 @@ export default async function CuentaInactivaPage() {
   const suspendida = usuario.estado_usuario === "suspendido";
 
   return (
-    <div className="min-h-screen flex flex-1 items-center justify-center bg-black px-5">
+    <div className="min-h-dvh flex flex-1 items-center justify-center bg-black px-[max(1.25rem,env(safe-area-inset-left))] py-10">
       <main className="w-full max-w-md text-center flex flex-col items-center gap-4">
         <span className="material-symbols-outlined text-[#ffb4ab] text-5xl">
           {suspendida ? "gpp_bad" : "person_off"}

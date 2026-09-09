@@ -8,7 +8,7 @@ export default async function PanelPage() {
 
   if (!contexto) {
     return (
-      <main className="flex-1 w-full max-w-3xl mx-auto px-5 md:px-10 py-8">
+      <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8">
         <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 text-on-surface-variant text-sm">
           Tu cuenta todavía no tiene un perfil de alumno activo.
         </div>
@@ -73,7 +73,7 @@ export default async function PanelPage() {
     totalEntrenamientos > 0 ? Math.round((completados / totalEntrenamientos) * 100) : 0;
 
   return (
-    <main className="flex-1 w-full max-w-3xl mx-auto px-5 md:px-10 py-8 flex flex-col gap-8">
+    <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-8">
       {/* Protocolo de hoy */}
       <section className="flex flex-col gap-2">
         <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
@@ -122,9 +122,9 @@ export default async function PanelPage() {
         <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
           Métricas de Rendimiento
         </h2>
-        <div className="grid grid-cols-3 gap-1">
+        <div className="grid grid-cols-3 gap-2">
           {/* Peso */}
-          <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col justify-between aspect-square relative overflow-hidden">
+          <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col justify-between aspect-square min-w-0 relative overflow-hidden">
             <span className="material-symbols-outlined text-on-surface-variant absolute top-4 right-4 text-[20px]">
               monitor_weight
             </span>
@@ -132,7 +132,7 @@ export default async function PanelPage() {
               PESO ACTUAL
             </span>
             <div>
-              <div className="font-[family-name:var(--font-sora)] text-[32px] leading-10 font-bold text-on-surface">
+              <div className="font-[family-name:var(--font-sora)] text-[clamp(1.375rem,6vw,2rem)] leading-tight tabular-nums font-bold text-on-surface">
                 {pesoActual !== null ? (
                   <>
                     {pesoActual}
@@ -152,7 +152,7 @@ export default async function PanelPage() {
           </div>
 
           {/* Adherencia */}
-          <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col justify-between aspect-square relative overflow-hidden">
+          <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col justify-between aspect-square min-w-0 relative overflow-hidden">
             <span className="material-symbols-outlined text-on-surface-variant absolute top-4 right-4 text-[20px]">
               track_changes
             </span>
@@ -160,7 +160,7 @@ export default async function PanelPage() {
               ADHERENCIA
             </span>
             <div>
-              <div className="font-[family-name:var(--font-sora)] text-[32px] leading-10 font-bold text-on-surface">
+              <div className="font-[family-name:var(--font-sora)] text-[clamp(1.375rem,6vw,2rem)] leading-tight tabular-nums font-bold text-on-surface">
                 {adherencia}
                 <span className="text-[16px] text-on-surface-variant">%</span>
               </div>
@@ -174,7 +174,7 @@ export default async function PanelPage() {
           </div>
 
           {/* Hábitos */}
-          <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col justify-between aspect-square relative overflow-hidden">
+          <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col justify-between aspect-square min-w-0 relative overflow-hidden">
             <span className="material-symbols-outlined text-on-surface-variant absolute top-4 right-4 text-[20px]">
               check_circle
             </span>
@@ -182,7 +182,7 @@ export default async function PanelPage() {
               HÁBITOS
             </span>
             <div>
-              <div className="font-[family-name:var(--font-sora)] text-[32px] leading-10 font-bold text-on-surface">
+              <div className="font-[family-name:var(--font-sora)] text-[clamp(1.375rem,6vw,2rem)] leading-tight tabular-nums font-bold text-on-surface">
                 {habitosEstaSemana}
                 <span className="text-[16px] text-on-surface-variant">/7</span>
               </div>

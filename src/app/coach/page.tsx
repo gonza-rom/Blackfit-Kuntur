@@ -37,13 +37,13 @@ export default async function CoachPage() {
     .slice(0, 5);
 
   return (
-    <main className="flex-1 w-full max-w-3xl mx-auto px-5 md:px-10 py-8 flex flex-col gap-8">
+    <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-8">
       <section className="grid grid-cols-2 gap-3">
         <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col gap-1">
           <span className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
             Alumnos activos
           </span>
-          <span className="font-[family-name:var(--font-sora)] text-[32px] leading-10 font-bold text-on-surface">
+          <span className="font-[family-name:var(--font-sora)] text-[clamp(1.375rem,6vw,2rem)] leading-tight tabular-nums font-bold text-on-surface">
             {alumnosActivos}
           </span>
         </div>
@@ -51,7 +51,7 @@ export default async function CoachPage() {
           <span className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
             Programas activos
           </span>
-          <span className="font-[family-name:var(--font-sora)] text-[32px] leading-10 font-bold text-on-surface">
+          <span className="font-[family-name:var(--font-sora)] text-[clamp(1.375rem,6vw,2rem)] leading-tight tabular-nums font-bold text-on-surface">
             {programasActivos}
           </span>
         </div>

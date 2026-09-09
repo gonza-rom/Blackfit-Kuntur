@@ -65,7 +65,7 @@ export default async function AdminPage() {
     .slice(0, 6);
 
   return (
-    <main className="flex-1 w-full max-w-3xl mx-auto px-5 md:px-10 py-8 flex flex-col gap-8">
+    <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-8">
       <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
         Panel de administrador
       </h1>
@@ -75,7 +75,7 @@ export default async function AdminPage() {
           <span className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
             Membresías activas
           </span>
-          <div className="font-[family-name:var(--font-sora)] text-[32px] leading-10 font-bold text-on-surface">
+          <div className="font-[family-name:var(--font-sora)] text-[clamp(1.375rem,6vw,2rem)] leading-tight tabular-nums font-bold text-on-surface">
             {activas}
           </div>
         </div>
@@ -83,7 +83,7 @@ export default async function AdminPage() {
           <span className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
             Membresías vencidas
           </span>
-          <div className="font-[family-name:var(--font-sora)] text-[32px] leading-10 font-bold text-on-surface">
+          <div className="font-[family-name:var(--font-sora)] text-[clamp(1.375rem,6vw,2rem)] leading-tight tabular-nums font-bold text-on-surface">
             {vencidas}
           </div>
         </div>
