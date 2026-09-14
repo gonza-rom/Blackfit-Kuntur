@@ -12,6 +12,11 @@ import { TAG_CATALOGO_PLANES } from "@/lib/catalogos";
 import { prisma } from "@/lib/prisma";
 import { obtenerAdministradorActual } from "@/lib/auth";
 import { registrarAuditoria } from "@/lib/auditoria";
+import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  emailSinteticoBeneficiario,
+  type FilaBeneficiarioParseada,
+} from "@/lib/importarBeneficiarios";
 
 export type EstadoAdmin = { error?: string; message?: string } | undefined;
 
@@ -302,6 +307,171 @@ export async function cambiarEstadoMembresia(formData: FormData): Promise<void> 
   });
 
   revalidatePath(`/admin/usuarios/${membresia.id_usuario}`);
+}
+
+// ------------------------------------------------------------
+// IMPORTACIÓN DE BENEFICIARIOS (Kuntur)
+// ------------------------------------------------------------
+// Kuntur manda periódicamente un CSV de sus socios (nombre, DNI y
+// vencimiento — sin email). No pasan por el registro normal: el admin los
+// importa acá. Cada fila nueva se convierte en un Usuario con rol
+// "beneficiario", con un email sintético (nunca se envía correo ahí) y
+// contraseña = DNI — el login real de estos usuarios es por DNI, ver
+// iniciarSesion() en src/app/actions/auth.ts. Una fila cuyo DNI ya existe
+// actualiza nombre/apellido y renueva la membresía en vez de duplicar la
+// cuenta, así el mismo botón sirve tanto para el alta inicial como para
+// las actualizaciones que mande Kuntur más adelante.
+//
+// El procesamiento se dispara fila por fila desde el cliente (ver
+// src/app/admin/usuarios/importar/page.tsx), no en una sola acción que
+// procese las 200+ filas de un tirón: así la persona que lo corre ve una
+// barra de progreso real en vez de un botón "Importando..." colgado.
+// parsearCsvBeneficiarios() (src/lib/importarBeneficiarios.ts) es pura —
+// sin nada server-only — así que corre directo en el browser para tener
+// el total de filas al instante, sin ida y vuelta al servidor solo para
+// contarlas.
+
+export type ResultadoFilaImport =
+  | { tipo: "creado" }
+  | { tipo: "actualizado" }
+  | { tipo: "error"; motivo: string };
+
+const NOMBRE_PLAN_BENEFICIARIO_KUNTUR = "Kuntur — Beneficiario";
+
+async function obtenerOCrearPlanBeneficiarioKuntur() {
+  const existente = await prisma.planMembresia.findFirst({
+    where: { nombre: NOMBRE_PLAN_BENEFICIARIO_KUNTUR },
+  });
+  if (existente) return existente;
+
+  return prisma.planMembresia.create({
+    data: {
+      nombre: NOMBRE_PLAN_BENEFICIARIO_KUNTUR,
+      descripcion:
+        "Plan generado automáticamente para los socios de Kuntur importados por CSV desde /admin/usuarios/importar.",
+      precio: 0,
+      duracion_dias: 30,
+    },
+  });
+}
+
+// Primer paso del import: valida que quien lo corre sea admin y
+// resuelve/crea el plan una sola vez (evita que cada una de las 200+
+// llamadas de importarFilaBeneficiario tenga que buscarlo o crearlo).
+export async function iniciarImportBeneficiarios(): Promise<
+  { id_plan_membresia: string } | { error: string }
+> {
+  const contexto = await obtenerAdministradorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const plan = await obtenerOCrearPlanBeneficiarioKuntur();
+  return { id_plan_membresia: plan.id_plan_membresia };
+}
+
+// Procesa UNA fila. El cliente la llama en secuencia, una fila a la vez
+// (nunca en paralelo — el orden importa para no pisar el numero_socio
+// entre filas), y actualiza su barra de progreso con cada resultado.
+export async function importarFilaBeneficiario(
+  fila: FilaBeneficiarioParseada,
+  id_plan_membresia: string
+): Promise<ResultadoFilaImport> {
+  const contexto = await obtenerAdministradorActual();
+  if (!contexto) return { tipo: "error", motivo: "No autorizado." };
+
+  const nombreCompleto = `${fila.nombre} ${fila.apellido}`.trim();
+
+  try {
+    const existente = await prisma.usuario.findUnique({ where: { dni: fila.dni } });
+
+    let id_usuario: string;
+    if (existente) {
+      id_usuario = existente.id_usuario;
+      await prisma.usuario.update({
+        where: { id_usuario },
+        data: { nombre: fila.nombre, apellido: fila.apellido },
+      });
+    } else {
+      const supabaseAdmin = createAdminClient();
+      const email = emailSinteticoBeneficiario(fila.dni);
+      const { data, error } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password: fila.dni,
+        email_confirm: true,
+        user_metadata: { nombre: fila.nombre, apellido: fila.apellido, dni: fila.dni },
+      });
+      if (error || !data.user) {
+        return {
+          tipo: "error",
+          motivo: `${nombreCompleto}: ${error?.message ?? "no se pudo crear la cuenta"}`,
+        };
+      }
+
+      id_usuario = data.user.id;
+      await prisma.usuario.create({
+        data: {
+          id_usuario,
+          email,
+          dni: fila.dni,
+          nombre: fila.nombre,
+          apellido: fila.apellido,
+          roles: { create: { rol: "beneficiario" } },
+        },
+      });
+    }
+
+    // Si el usuario ya existía (ej. re-importación), asegura el rol sin
+    // pisar otros roles que ya pudiera tener.
+    await prisma.usuarioRol.upsert({
+      where: { usuario_rol_unico: { id_usuario, rol: "beneficiario" } },
+      update: {},
+      create: { id_usuario, rol: "beneficiario" },
+    });
+
+    await prisma.membresia.create({
+      data: {
+        id_usuario,
+        id_plan_membresia,
+        estado_membresia: "activa",
+        fecha_inicio_membresia: new Date(),
+        fecha_vencimiento_membresia: fila.fecha_vencimiento_membresia,
+      },
+    });
+
+    const credencialExistente = await prisma.credencial.findUnique({ where: { id_usuario } });
+    if (!credencialExistente) {
+      await prisma.credencial.create({
+        data: { id_usuario, numero_socio: await generarNumeroSocio() },
+      });
+    }
+
+    return existente ? { tipo: "actualizado" } : { tipo: "creado" };
+  } catch (err) {
+    return {
+      tipo: "error",
+      motivo: `${nombreCompleto}: ${err instanceof Error ? err.message : "error inesperado"}`,
+    };
+  }
+}
+
+// Último paso: el cliente lo llama una vez que terminó de recorrer todas
+// las filas, con los totales que fue acumulando.
+export async function finalizarImportBeneficiarios(resumen: {
+  creados: number;
+  actualizados: number;
+  omitidos: number;
+  errores: number;
+}): Promise<void> {
+  const contexto = await obtenerAdministradorActual();
+  if (!contexto) return;
+
+  await registrarAuditoria({
+    id_usuario_actor: contexto.usuario.id_usuario,
+    accion: "importar_beneficiarios",
+    recurso: "usuario",
+    resultado: `creados:${resumen.creados},actualizados:${resumen.actualizados},omitidos:${resumen.omitidos},errores:${resumen.errores}`,
+  });
+
+  revalidatePath("/admin/usuarios");
 }
 
 // ------------------------------------------------------------

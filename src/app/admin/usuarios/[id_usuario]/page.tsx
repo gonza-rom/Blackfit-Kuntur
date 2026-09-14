@@ -56,6 +56,9 @@ export default async function AdminUsuarioDetallePage(
           {usuario.nombre} {usuario.apellido}
         </h1>
         <p className="text-sm text-on-surface-variant">{usuario.email}</p>
+        {usuario.dni && (
+          <p className="text-sm text-on-surface-variant">DNI {usuario.dni}</p>
+        )}
       </div>
 
       <section className="flex flex-col gap-2">

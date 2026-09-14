@@ -62,16 +62,16 @@ export default function IniciarSesionPage() {
                 htmlFor="email"
                 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface"
               >
-                Correo electrónico
+                Correo electrónico o DNI
               </label>
               <div className="relative">
                 <input
                   id="email"
                   name="email"
-                  type="email"
-                  autoComplete="email"
+                  type="text"
+                  autoComplete="username"
                   required
-                  placeholder="atleta@blackhub.com"
+                  placeholder="atleta@blackhub.com o tu DNI"
                   className="w-full bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface font-[family-name:var(--font-inter)] text-base p-3 transition-colors peer"
                 />
                 <span className="material-symbols-outlined absolute right-3 top-3 text-on-surface-variant peer-focus:text-primary-container transition-colors pointer-events-none">

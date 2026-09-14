@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { emailSinteticoBeneficiario } from "@/lib/importarBeneficiarios";
 
 export type EstadoAuth = { error?: string; message?: string } | undefined;
 
@@ -10,12 +11,20 @@ export async function iniciarSesion(
   _prevState: EstadoAuth,
   formData: FormData
 ): Promise<EstadoAuth> {
-  const email = String(formData.get("email") ?? "").trim();
+  const identificador = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
 
-  if (!email || !password) {
-    return { error: "Completá email y contraseña." };
+  if (!identificador || !password) {
+    return { error: "Completá email/DNI y contraseña." };
   }
+
+  // Los beneficiarios importados de Kuntur (ver importarBeneficiarios en
+  // src/app/actions/admin.ts) no tienen email propio: se loguean con su
+  // DNI, que se resuelve acá al email sintético con el que se creó su
+  // cuenta. Cualquier valor sin "@" se trata como DNI.
+  const email = identificador.includes("@")
+    ? identificador
+    : emailSinteticoBeneficiario(identificador.replace(/\D/g, ""));
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword({ email, password });

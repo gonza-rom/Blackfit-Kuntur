@@ -114,6 +114,11 @@ model Usuario {
   id_usuario          String        @id @default(uuid())
   // Debe coincidir con el auth.uid() de Supabase Auth
   email                String        @unique
+  // DNI del socio. Solo se completa para altas administrativas (ej.
+  // beneficiarios importados de Kuntur, que no tienen email propio y se
+  // identifican por DNI). Sirve además como login alternativo: ver
+  // iniciarSesion() en src/app/actions/auth.ts.
+  dni                  String?       @unique
   nombre               String
   apellido             String
   telefono             String?
