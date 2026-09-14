@@ -68,6 +68,13 @@ export function tieneRol(usuario: UsuarioActual | null, rol: RolUsuario): boolea
   return usuario?.roles.some((r) => r.rol === rol) ?? false;
 }
 
+// Un usuario con estado inactivo/suspendido conserva su sesión de Supabase
+// Auth pero no debe poder usar la app. Los layouts protegidos lo mandan a
+// /cuenta-inactiva; el login lo rechaza de entrada (ver actions/auth.ts).
+export function cuentaActiva(usuario: UsuarioActual | null): boolean {
+  return usuario?.estado_usuario === "activo";
+}
+
 export const obtenerEntrenadorActual = cache(
   async (): Promise<{ usuario: UsuarioActual; id_entrenador: string } | null> => {
     const usuario = await obtenerUsuarioActual();

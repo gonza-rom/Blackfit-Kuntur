@@ -54,7 +54,7 @@ export default async function EntrenamientosPage() {
   const bloqueActual = programaActivo ? calcularBloqueActual(programaActivo) : null;
 
   return (
-    <main className="flex-1 w-full md:pl-0 px-5 md:px-10 py-8 flex flex-col gap-8 max-w-6xl mx-auto">
+    <main className="flex-1 w-full md:pl-0 px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-8 max-w-6xl mx-auto">
       {/* Encabezado desktop */}
       <div className="hidden md:flex justify-between items-end border-b border-outline-variant pb-4">
         <h2 className="font-[family-name:var(--font-sora)] text-[36px] leading-[42px] tracking-tighter font-bold text-on-surface uppercase">

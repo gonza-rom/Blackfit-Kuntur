@@ -7,7 +7,7 @@ import { FormRegistro } from "../_components/form-registro";
 // tipo="beneficiario">, y el servidor la valida en registrarse().
 export default function RegistroBeneficiarioPage() {
   return (
-    <div className="min-h-screen flex flex-1 items-center justify-center bg-black overflow-hidden relative py-16">
+    <div className="min-h-dvh flex flex-1 items-center justify-center bg-black overflow-hidden relative py-16">
       <div className="absolute inset-0 z-0 opacity-30">
         <div className="bg-cover bg-center w-full h-full grayscale bg-[#0a0a0a]" />
         <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/50 to-black" />

@@ -21,7 +21,7 @@ export default async function PanelNotificacionesPage() {
   });
 
   return (
-    <main className="flex-1 w-full max-w-2xl mx-auto px-5 md:px-10 py-8 flex flex-col gap-4">
+    <main className="flex-1 w-full max-w-2xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
           Notificaciones
@@ -57,9 +57,9 @@ export default async function PanelNotificacionesPage() {
                 {!n.leido && (
                   <span className="w-2 h-2 rounded-full bg-primary-container mt-1.5 shrink-0" />
                 )}
-                <div className={n.leido ? "" : "flex-1"}>
-                  <p className="text-sm font-medium text-on-surface">{n.titulo}</p>
-                  <p className="text-sm text-on-surface-variant mt-0.5">{n.contenido}</p>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-on-surface break-words">{n.titulo}</p>
+                  <p className="text-sm text-on-surface-variant mt-0.5 break-words">{n.contenido}</p>
                   <p className="text-[11px] text-on-surface-variant mt-1">
                     {FORMATEADOR_FECHA.format(n.fecha_creacion)}
                   </p>

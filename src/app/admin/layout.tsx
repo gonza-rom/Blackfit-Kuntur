@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { obtenerUsuarioActual, tieneRol } from "@/lib/auth";
+import { obtenerUsuarioActual, tieneRol, cuentaActiva } from "@/lib/auth";
 import { cerrarSesion } from "@/app/actions/auth";
 import { InstalarApp } from "@/components/instalar-app";
 import { BottomNav } from "./_components/bottom-nav";
@@ -16,6 +16,10 @@ export default async function AdminLayout({
     redirect("/iniciar-sesion");
   }
 
+  if (!cuentaActiva(usuario)) {
+    redirect("/cuenta-inactiva");
+  }
+
   if (!tieneRol(usuario, "administrador")) {
     redirect("/panel");
   }
@@ -24,9 +28,9 @@ export default async function AdminLayout({
   const inicial = nombre.charAt(0).toUpperCase();
 
   return (
-    <div className="bg-background text-on-surface antialiased min-h-screen flex flex-col pt-16 pb-20 md:pb-0 font-[family-name:var(--font-inter)]">
+    <div className="bg-background text-on-surface antialiased min-h-dvh flex flex-col pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(5rem+env(safe-area-inset-bottom))] md:pt-0 md:pb-0 font-[family-name:var(--font-inter)]">
       {/* TopAppBar (mobile) */}
-      <header className="bg-surface border-b border-outline-variant fixed top-0 w-full z-50 flex justify-between items-center px-5 h-16 md:hidden">
+      <header className="bg-surface border-b border-outline-variant fixed top-0 w-full z-50 flex justify-between items-center pl-[max(1.25rem,env(safe-area-inset-left))] pr-[max(1.25rem,env(safe-area-inset-right))] h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] box-border md:hidden">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-full overflow-hidden border border-[#262626] bg-[#1A1A1A] flex items-center justify-center">
             <span className="font-[family-name:var(--font-sora)] text-[13px] font-bold text-primary-container">
@@ -48,7 +52,7 @@ export default async function AdminLayout({
       </header>
 
       {/* Sidebar (desktop) */}
-      <aside className="hidden md:flex flex-col w-[280px] bg-surface-container/80 backdrop-blur-xl border-r border-outline-variant fixed h-full left-0 top-0 pt-8 z-40">
+      <aside className="hidden md:flex flex-col md:w-[240px] lg:w-[280px] bg-surface-container/80 backdrop-blur-xl border-r border-outline-variant fixed h-full left-0 top-0 pt-8 z-40 overflow-y-auto pb-[env(safe-area-inset-bottom)]">
         <div className="px-6 pb-8">
           <span className="font-[family-name:var(--font-sora)] text-primary-container tracking-tighter text-2xl font-bold">
             BLACK HUB ADMIN
@@ -68,8 +72,8 @@ export default async function AdminLayout({
         </form>
       </aside>
 
-      <div className="md:pl-[280px] flex-1 flex flex-col">
-        <div className="w-full max-w-3xl mx-auto px-5 md:px-10 pt-4">
+      <div className="md:pl-[240px] lg:pl-[280px] flex-1 flex flex-col">
+        <div className="w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 pt-4">
           <InstalarApp />
         </div>
         {children}

@@ -53,6 +53,9 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: "#0A0A0A",
+  // Sin esto, env(safe-area-inset-*) resuelve a 0 en iOS y el header de la PWA
+  // (statusBarStyle "black-translucent") queda debajo del notch / la hora.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -67,7 +70,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
         />
       </head>
-      <body className="min-h-full flex flex-col bg-black font-[family-name:var(--font-inter)]">
+      <body className="min-h-dvh flex flex-col bg-black font-[family-name:var(--font-inter)]">
         <RegistroServiceWorker />
         {children}
       </body>

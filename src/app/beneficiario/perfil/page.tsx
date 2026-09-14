@@ -11,7 +11,7 @@ export default async function BeneficiarioPerfilPage() {
   const inicial = usuario.nombre.charAt(0).toUpperCase();
 
   return (
-    <main className="flex-1 w-full max-w-md mx-auto px-5 md:px-10 py-8 flex flex-col gap-6">
+    <main className="flex-1 w-full max-w-md mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-6">
       <section className="flex flex-col items-center text-center gap-3">
         <div className="w-24 h-24 rounded-full border border-[#262626] bg-[#1A1A1A] flex items-center justify-center">
           <span className="font-[family-name:var(--font-sora)] text-[40px] font-bold text-primary-container">

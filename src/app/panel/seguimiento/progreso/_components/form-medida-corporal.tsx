@@ -34,6 +34,18 @@ export function FormMedidaCorporal() {
         />
       </div>
 
+      <label className="flex flex-col gap-1">
+        <span className="font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] text-on-surface-variant uppercase">
+          Foto de progreso (opcional)
+        </span>
+        <input
+          name="foto"
+          type="file"
+          accept="image/*"
+          className="text-sm text-on-surface-variant file:mr-3 file:rounded file:border-0 file:bg-[#262626] file:px-3 file:py-1.5 file:text-on-surface file:text-sm"
+        />
+      </label>
+
       {state?.error && (
         <p className="font-[family-name:var(--font-inter)] text-sm text-[#ffb4ab]">
           {state.error}

@@ -8,7 +8,7 @@ export function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="bg-surface-container/80 backdrop-blur-xl fixed bottom-0 w-full z-50 rounded-t-xl border-t border-outline-variant flex items-center h-20 pb-[env(safe-area-inset-bottom)] px-2 md:hidden">
+    <nav className="bg-surface-container/80 backdrop-blur-xl fixed bottom-0 w-full z-50 rounded-t-xl border-t border-outline-variant flex items-center h-[calc(5rem+env(safe-area-inset-bottom))] pb-[env(safe-area-inset-bottom)] pl-[max(0.5rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] select-none md:hidden">
       {NAV_ITEMS_COACH.map((item) => {
         const activo =
           item.href === "/coach"

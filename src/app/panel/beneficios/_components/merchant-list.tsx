@@ -86,7 +86,7 @@ export function MerchantList({ comercios }: { comercios: ComercioConBeneficio[] 
                 )}
               </div>
               <div className="p-4 flex flex-col gap-2">
-                <h4 className="font-[family-name:var(--font-sora)] text-[20px] font-semibold text-on-surface">
+                <h4 className="font-[family-name:var(--font-sora)] text-[20px] font-semibold text-on-surface break-words">
                   {comercio.nombre}
                 </h4>
                 <p className="font-[family-name:var(--font-inter)] text-sm text-on-surface-variant mb-2">

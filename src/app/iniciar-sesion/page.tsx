@@ -10,7 +10,7 @@ export default function IniciarSesionPage() {
   const [mostrarPassword, setMostrarPassword] = useState(false);
 
   return (
-    <div className="min-h-screen flex flex-1 items-center justify-center bg-black overflow-hidden relative">
+    <div className="min-h-dvh flex flex-1 items-center justify-center bg-black overflow-hidden relative py-10">
       {/* Imagen de fondo */}
       <div className="absolute inset-0 z-0 opacity-40">
         <div

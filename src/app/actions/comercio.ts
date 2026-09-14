@@ -1,5 +1,6 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { obtenerComercioActual } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { registrarAuditoria } from "@/lib/auditoria";
@@ -9,6 +10,44 @@ import { registrarAuditoria } from "@/lib/auditoria";
 // físico, hábitos ni feedback del socio: solo lo mínimo para validar
 // la membresía y el beneficio (ver punto 43 del brief del proyecto).
 // ------------------------------------------------------------
+
+export type EstadoPerfilComercio = { error?: string; message?: string } | undefined;
+
+// El comercio edita su propia ficha (nombre, dirección, teléfono, etc.).
+// Antes esto dependía 100% de que lo cargara el administrador.
+export async function actualizarPerfilComercio(
+  _prev: EstadoPerfilComercio,
+  formData: FormData
+): Promise<EstadoPerfilComercio> {
+  const contexto = await obtenerComercioActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const nombre = String(formData.get("nombre") ?? "").trim();
+  const descripcion = String(formData.get("descripcion") ?? "").trim() || null;
+  const direccion = String(formData.get("direccion") ?? "").trim() || null;
+  const telefono = String(formData.get("telefono") ?? "").trim() || null;
+  const email = String(formData.get("email") ?? "").trim() || null;
+  const categoria = String(formData.get("categoria") ?? "").trim() || null;
+
+  if (!nombre) return { error: "El nombre del comercio es obligatorio." };
+
+  await prisma.comercio.update({
+    where: { id_comercio: contexto.id_comercio },
+    data: { nombre, descripcion, direccion, telefono, email, categoria },
+  });
+
+  await registrarAuditoria({
+    id_usuario_actor: contexto.usuario.id_usuario,
+    accion: "modificacion_perfil",
+    recurso: "comercio",
+    id_recurso: contexto.id_comercio,
+    resultado: "actualizado",
+  });
+
+  revalidatePath("/comercio/perfil");
+  revalidatePath("/comercio");
+  return { message: "Perfil actualizado." };
+}
 
 export type BeneficioDisponible = {
   id_beneficio: string;

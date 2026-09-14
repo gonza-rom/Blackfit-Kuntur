@@ -99,7 +99,7 @@ export default async function AdminUsuariosPage(
   }
 
   return (
-    <main className="flex-1 w-full max-w-3xl mx-auto px-5 md:px-10 py-8 flex flex-col gap-6">
+    <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
@@ -186,6 +186,11 @@ export default async function AdminUsuariosPage(
                     {usuario.dni ? `DNI ${usuario.dni}` : usuario.email}
                   </p>
                   <div className="flex gap-1 mt-1 flex-wrap">
+                    {usuario.estado_usuario !== "activo" && (
+                      <span className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] uppercase px-2 py-0.5 rounded-full border border-[#ffb4ab] text-[#ffb4ab]">
+                        {usuario.estado_usuario}
+                      </span>
+                    )}
                     {usuario.roles.map((r) => (
                       <span
                         key={r.id_rol_usuario}

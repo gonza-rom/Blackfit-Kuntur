@@ -11,13 +11,16 @@ export function MedidaCorporalItem({
   fecha,
   tipoMedida,
   valorCm,
+  fotoUrl,
 }: {
   id: string;
   fecha: string;
   tipoMedida: string;
   valorCm: string;
+  fotoUrl: string | null;
 }) {
   const [editar, setEditar] = useState(false);
+  const [ampliada, setAmpliada] = useState(false);
   const [state, action, pending] = useActionState(editarMedidaCorporal, undefined);
 
   return (
@@ -25,8 +28,24 @@ export function MedidaCorporalItem({
       <div className="flex items-center justify-between gap-2">
         <span className="text-on-surface-variant shrink-0">{fecha}</span>
         {!editar && (
-          <span className="text-on-surface flex-1 text-right capitalize">
-            {tipoMedida}: {valorCm}cm
+          <span className="text-on-surface flex-1 text-right capitalize flex items-center justify-end gap-2">
+            {fotoUrl && (
+              <button
+                type="button"
+                onClick={() => setAmpliada((v) => !v)}
+                className="shrink-0"
+                aria-label="Ver foto"
+              >
+                <img
+                  src={fotoUrl}
+                  alt={`Foto de ${tipoMedida}`}
+                  className="w-9 h-9 rounded object-cover border border-[#262626]"
+                />
+              </button>
+            )}
+            <span>
+              {tipoMedida}: {valorCm}cm
+            </span>
           </span>
         )}
         <div className="flex items-center gap-1 shrink-0">
@@ -53,6 +72,14 @@ export function MedidaCorporalItem({
         </div>
       </div>
 
+      {ampliada && fotoUrl && !editar && (
+        <img
+          src={fotoUrl}
+          alt={`Foto de ${tipoMedida}`}
+          className="mt-2 w-full max-h-80 object-contain rounded border border-[#262626]"
+        />
+      )}
+
       {editar && (
         <form action={action} className="grid grid-cols-2 gap-2 mt-2">
           <input type="hidden" name="id_medida" value={id} />
@@ -71,6 +98,23 @@ export function MedidaCorporalItem({
             placeholder="cm"
             className={INPUT}
           />
+          <label className="col-span-2 flex flex-col gap-1">
+            <span className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] text-on-surface-variant uppercase">
+              {fotoUrl ? "Reemplazar foto" : "Agregar foto"}
+            </span>
+            <input
+              name="foto"
+              type="file"
+              accept="image/*"
+              className="text-xs text-on-surface-variant file:mr-2 file:rounded file:border-0 file:bg-[#262626] file:px-2 file:py-1 file:text-on-surface file:text-xs"
+            />
+          </label>
+          {fotoUrl && (
+            <label className="col-span-2 flex items-center gap-2 text-xs text-on-surface-variant">
+              <input type="checkbox" name="quitar_foto" />
+              Quitar la foto actual
+            </label>
+          )}
           {state?.error && (
             <p className="col-span-2 text-[#ffb4ab] text-xs">{state.error}</p>
           )}

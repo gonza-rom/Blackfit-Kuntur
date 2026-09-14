@@ -34,7 +34,7 @@ export default async function ComercioPage() {
     ]);
 
   return (
-    <main className="flex-1 w-full max-w-3xl mx-auto px-5 md:px-10 py-8 flex flex-col gap-8">
+    <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-8">
       <div>
         <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
           {contexto.usuario.comercio?.nombre}
@@ -55,7 +55,7 @@ export default async function ComercioPage() {
           <span className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
             Validaciones hoy
           </span>
-          <div className="font-[family-name:var(--font-sora)] text-[32px] leading-10 font-bold text-on-surface">
+          <div className="font-[family-name:var(--font-sora)] text-[clamp(1.375rem,6vw,2rem)] leading-tight tabular-nums font-bold text-on-surface">
             {validacionesHoy}
           </div>
         </div>
@@ -63,7 +63,7 @@ export default async function ComercioPage() {
           <span className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
             Validaciones totales
           </span>
-          <div className="font-[family-name:var(--font-sora)] text-[32px] leading-10 font-bold text-on-surface">
+          <div className="font-[family-name:var(--font-sora)] text-[clamp(1.375rem,6vw,2rem)] leading-tight tabular-nums font-bold text-on-surface">
             {validacionesTotales}
           </div>
         </div>
@@ -71,7 +71,7 @@ export default async function ComercioPage() {
           <span className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
             Beneficios activos
           </span>
-          <div className="font-[family-name:var(--font-sora)] text-[32px] leading-10 font-bold text-on-surface">
+          <div className="font-[family-name:var(--font-sora)] text-[clamp(1.375rem,6vw,2rem)] leading-tight tabular-nums font-bold text-on-surface">
             {beneficiosActivos}
           </div>
         </div>
@@ -79,7 +79,7 @@ export default async function ComercioPage() {
           <span className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
             Socios atendidos
           </span>
-          <div className="font-[family-name:var(--font-sora)] text-[32px] leading-10 font-bold text-on-surface">
+          <div className="font-[family-name:var(--font-sora)] text-[clamp(1.375rem,6vw,2rem)] leading-tight tabular-nums font-bold text-on-surface">
             {sociosDistintos.length}
           </div>
         </div>

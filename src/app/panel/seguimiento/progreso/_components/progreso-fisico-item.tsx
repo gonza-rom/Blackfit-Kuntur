@@ -12,20 +12,32 @@ export function ProgresoFisicoItem({
   pesoCorporal,
   porcentajeGraso,
   masaMuscular,
+  extra = [],
+  cargadoPorCoach = false,
 }: {
   id: string;
   fecha: string;
   pesoCorporal: string | null;
   porcentajeGraso: string | null;
   masaMuscular: string | null;
+  extra?: { label: string; valor: string }[];
+  cargadoPorCoach?: boolean;
 }) {
   const [editar, setEditar] = useState(false);
+  const [verMas, setVerMas] = useState(false);
   const [state, action, pending] = useActionState(editarProgresoFisico, undefined);
 
   return (
     <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-3 text-sm">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-on-surface-variant shrink-0">{fecha}</span>
+        <span className="text-on-surface-variant shrink-0 flex items-center gap-1.5">
+          {fecha}
+          {cargadoPorCoach && (
+            <span className="font-[family-name:var(--font-jetbrains-mono)] text-[9px] tracking-[0.08em] uppercase text-primary-container border border-primary-container/40 rounded-full px-1.5 py-0.5">
+              coach
+            </span>
+          )}
+        </span>
         {!editar && (
           <span className="text-on-surface flex-1 text-right">
             {pesoCorporal ? `${pesoCorporal}kg` : ""}
@@ -56,6 +68,34 @@ export function ProgresoFisicoItem({
           </form>
         </div>
       </div>
+
+      {!editar && extra.length > 0 && (
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={() => setVerMas((v) => !v)}
+            className="text-xs text-primary-container flex items-center gap-1"
+          >
+            <span className="material-symbols-outlined text-[14px]">
+              {verMas ? "expand_less" : "expand_more"}
+            </span>
+            {verMas ? "Ver menos" : `Ver composición completa (${extra.length})`}
+          </button>
+          {verMas && (
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-1 mt-2">
+              {extra.map((e) => (
+                <div
+                  key={e.label}
+                  className="flex justify-between gap-2 border-b border-[#262626] py-1"
+                >
+                  <dt className="text-on-surface-variant">{e.label}</dt>
+                  <dd className="text-on-surface tabular-nums">{e.valor}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </div>
+      )}
 
       {editar && (
         <form action={action} className="grid grid-cols-3 gap-2 mt-2">

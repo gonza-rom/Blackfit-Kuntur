@@ -151,6 +151,72 @@ que no pueda heredar rutas de Black Fit por accidente.
   existentes de `beneficios` / `membresias` / `credenciales` dependen de
   la membresía, no del rol.
 
+## 4. Fotos de progreso — conectadas a Supabase Storage
+`MedidaCorporal.foto_url` ya existía en el schema pero nunca se había
+enchufado a Storage. Ahora sí.
+
+- `src/lib/storage.ts` (nuevo): bucket **privado** `fotos-progreso`. Todo
+  el acceso pasa por el cliente admin (service role), igual que el resto
+  del backend — el navegador nunca sube ni lee directo del bucket. Cada
+  vez que se muestra una foto se genera una **URL firmada** de 1 hora.
+  El bucket se crea solo (lazy) en la primera subida si no existe. Si
+  Storage no está configurado (`SUPABASE_SERVICE_ROLE_KEY` ausente), la
+  subida degrada en silencio y la medida se guarda igual, sin foto.
+- `registrarMedidaCorporal` acepta una foto opcional;
+  `editarMedidaCorporal` permite reemplazarla o quitarla;
+  `eliminarMedidaCorporal` borra también el objeto del bucket.
+- UI: input de archivo en el formulario de medida; miniatura + ampliar en
+  el historial del alumno (`/panel/seguimiento/progreso`) y en la ficha
+  del alumno del coach.
+
+## 5. CRUD que faltaba
+- **Editar recurso de la biblioteca educativa** (modelo `Biblioteca`):
+  antes solo tenía crear y eliminar. Nueva acción
+  `editarRecursoBiblioteca` + edición inline en `/coach/biblioteca`.
+- **Editar `Alumno.objetivo` y `Alumno.fecha_nacimiento`**: antes solo se
+  mostraban. Nueva acción `actualizarDatosAlumno` (valida la relación
+  entrenador-alumno activa en el servidor) + edición desde la ficha del
+  alumno del coach.
+- **Perfil propio del comercio**: antes dependía 100% del admin. Nueva
+  acción `actualizarPerfilComercio` + `/comercio/perfil` + ítem de nav
+  "Perfil".
+
+## 6. Baja de usuarios — `estado_usuario`
+`estado_usuario` (activo / inactivo / suspendido) existía en el modelo
+pero nadie lo usaba ni lo podía tocar. Ahora es la forma correcta de dar
+de baja un usuario **sin borrar nada** (no se toca Supabase Auth ni se
+cascada ningún dato).
+
+- Acción `cambiarEstadoUsuario` para el admin (no puede cambiarse su
+  propio estado — evita el auto-lockout). Queda en auditoría.
+- `iniciarSesion` rechaza a un usuario que no esté activo: cierra la
+  sesión recién abierta y devuelve el motivo.
+- Los layouts protegidos (`/panel`, `/coach`, `/admin`, `/comercio`,
+  `/beneficiario`) mandan a `/cuenta-inactiva` si la cuenta no está
+  activa — cubre las sesiones ya abiertas cuando el admin da de baja.
+- UI de admin: sección "Estado de la cuenta" en `/admin/usuarios/[id]` +
+  chip de estado en el listado.
+
+## 7. Composición corporal — la carga el coach por alumno
+El coach puede cargar la medición completa de balanza/InBody de cada
+alumno de su cartera, con los mismos campos que devuelve una balanza
+smart: peso, IMC, pulso, grasa corporal, agua, músculos, huesos,
+metabolismo basal y activo, grasa visceral, edad metabólica, Soft Lean
+Mass, Lean Body Mass y proteína.
+
+- **Schema** + migración `20260903000000_add_composicion_corporal`: solo
+  agrega 12 columnas **nullable** a `progreso_fisico` + `origen`
+  (`"alumno"` / `"coach"`). No reescribe ninguna fila.
+- Acciones `crearProgresoFisicoAlumno` / `editarProgresoFisicoAlumno` /
+  `eliminarProgresoFisicoAlumno` en `src/app/actions/coach.ts` — validan
+  la relación entrenador-alumno activa y que los valores sean números.
+- UI del coach: sección **"Mediciones de composición corporal"** en la
+  ficha del alumno (formulario de carga con los 15 campos, lista con
+  resumen + detalle expandible, editar/eliminar por entrada).
+- El alumno ve estas mediciones en `/panel/seguimiento/progreso` con un
+  "Ver composición completa" (solo lectura) y un chip "coach". Su
+  formulario de carga sigue siendo el de siempre (peso / graso / masa).
+
 ---
 
 # Instalar y correr
@@ -174,25 +240,47 @@ Dos migraciones nuevas, ninguna toca datos existentes:
   problema dentro de la transacción de la migración porque el valor
   nuevo no se usa en esa misma transacción.
 
-`npx prisma migrate deploy` las aplica ambas sin downtime.
+- `20260903000000_add_composicion_corporal` (punto 7) — solo `ALTER TABLE
+  "progreso_fisico" ADD COLUMN ...` con 13 columnas nullable. No toca
+  datos.
+
+`npx prisma migrate deploy` las aplica sin downtime.
+
+Los puntos 4, 5 y 6 **no traen migraciones nuevas**: `MedidaCorporal.foto_url`
+y `Usuario.estado_usuario` ya existían en el schema.
+
+## Supabase Storage (para las fotos de progreso, punto 4)
+- El bucket privado `fotos-progreso` se crea solo la primera vez que un
+  alumno sube una foto. Si preferís crearlo a mano: en el dashboard de
+  Supabase → Storage → New bucket, nombre `fotos-progreso`, **Public =
+  off**.
+- Requiere que `SUPABASE_SERVICE_ROLE_KEY` esté cargada en el entorno de
+  deploy (Vercel). Ya está en `.env` local. Sin esa key la app funciona
+  igual pero no guarda fotos.
+- No hacen falta políticas de Storage: todo el acceso al bucket es
+  server-side con la service role.
 
 ## Verificación hecha en esta sesión
 En este entorno **sí** hubo salida de red a `binaries.prisma.sh`
 (el engine ya estaba cacheado), así que se pudo correr todo el flujo:
-- `npx prisma generate` — OK con el schema nuevo.
+- `npx prisma generate` — OK con el schema.
 - `npm run build` (`next build` de Next 16 con Turbopack) completo: la
   compilación, el chequeo de **TypeScript** y el **lint** pasan limpios,
-  y las 44 rutas se generan sin error (incluidas `/panel/logros`,
-  `/panel/coach`, `/beneficiario`, `/beneficiario/perfil`,
-  `/registro/beneficiario`).
+  y todas las rutas se generan sin error (incluidas las nuevas
+  `/comercio/perfil` y `/cuenta-inactiva`).
 
 Lo que **no** se pudo verificar acá y conviene que corras vos antes de
 deployar:
 - `npx prisma migrate deploy` contra tu base real de Supabase (acá no se
-  tocó la base).
-- Prueba de humo de los flujos nuevos con datos reales: sumar puntos al
-  completar un entrenamiento / cargar hábitos / feedback, desbloqueo de
-  logros y push, alta y login de un usuario `beneficiario`, y el botón de
-  WhatsApp con un teléfono de coach cargado (revisá que el número
-  normalizado sea el correcto para tu país si no es Argentina — el
-  código de país por defecto está en `src/lib/telefono.ts`).
+  tocó la base). Recordá que esta tanda (puntos 4-6) no trae migraciones.
+- Prueba de humo con datos reales:
+  - subir una foto de progreso (mirá que el bucket `fotos-progreso` se
+    haya creado en Supabase y que la miniatura aparezca);
+  - dar de baja un usuario y confirmar que no puede loguear y que si ya
+    tenía sesión abierta lo saca a `/cuenta-inactiva`;
+  - editar un recurso de la biblioteca educativa, editar objetivo/fecha
+    de nacimiento de un alumno desde el coach, y el perfil propio de un
+    comercio;
+  - lo de la entrega anterior: puntos al entrenar / hábitos / feedback,
+    desbloqueo de logros y push, alta y login de un `beneficiario`, y el
+    botón de WhatsApp con un teléfono de coach cargado.

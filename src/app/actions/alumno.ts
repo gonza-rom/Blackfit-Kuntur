@@ -6,6 +6,14 @@ import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoActual } from "@/lib/auth";
 import { guardarSesionEntrenamiento, type SerieRegistrada } from "@/lib/alumno";
 import { registrarActividad, PUNTOS, claveDia } from "@/lib/gamificacion";
+import {
+  subirFotoProgreso,
+  borrarFotoProgreso,
+} from "@/lib/storage";
+
+function archivoOpcional(valor: FormDataEntryValue | null): File | null {
+  return valor instanceof File && valor.size > 0 ? valor : null;
+}
 
 export type EstadoAlumno = { error?: string; message?: string } | undefined;
 
@@ -366,17 +374,34 @@ export async function registrarMedidaCorporal(
 
   const tipo_medida = String(formData.get("tipo_medida") ?? "").trim();
   const valor_cm = textoOpcional(formData.get("valor_cm"));
+  const foto = archivoOpcional(formData.get("foto"));
 
   if (!tipo_medida || !valor_cm) {
     return { error: "Completá el tipo de medida y el valor." };
   }
 
-  await prisma.medidaCorporal.create({
+  const medida = await prisma.medidaCorporal.create({
     data: { id_alumno: contexto.id_alumno, tipo_medida, valor_cm },
   });
 
+  // La foto es opcional y su subida no es crítica: si falla (Storage sin
+  // configurar, archivo inválido), la medida queda igual guardada.
+  if (foto) {
+    const path = await subirFotoProgreso(contexto.id_alumno, medida.id_medida, foto);
+    if (path) {
+      await prisma.medidaCorporal.update({
+        where: { id_medida: medida.id_medida },
+        data: { foto_url: path },
+      });
+    }
+  }
+
   revalidatePath("/panel/seguimiento/progreso");
-  return { message: "Medida guardada." };
+  return {
+    message: foto
+      ? "Medida y foto guardadas."
+      : "Medida guardada.",
+  };
 }
 
 export async function editarMedidaCorporal(
@@ -389,6 +414,8 @@ export async function editarMedidaCorporal(
   const id_medida = String(formData.get("id_medida") ?? "");
   const tipo_medida = String(formData.get("tipo_medida") ?? "").trim();
   const valor_cm = textoOpcional(formData.get("valor_cm"));
+  const foto = archivoOpcional(formData.get("foto"));
+  const quitarFoto = formData.get("quitar_foto") === "on";
 
   if (!id_medida || !tipo_medida || !valor_cm) {
     return { error: "Completá el tipo de medida y el valor." };
@@ -399,9 +426,24 @@ export async function editarMedidaCorporal(
     return { error: "No autorizado." };
   }
 
+  let foto_url = existente.foto_url;
+  if (quitarFoto) {
+    await borrarFotoProgreso(existente.foto_url);
+    foto_url = null;
+  } else if (foto) {
+    const path = await subirFotoProgreso(contexto.id_alumno, id_medida, foto);
+    if (path) {
+      // Reemplaza la anterior si había una en otro path.
+      if (existente.foto_url && existente.foto_url !== path) {
+        await borrarFotoProgreso(existente.foto_url);
+      }
+      foto_url = path;
+    }
+  }
+
   await prisma.medidaCorporal.update({
     where: { id_medida },
-    data: { tipo_medida, valor_cm },
+    data: { tipo_medida, valor_cm, foto_url },
   });
 
   revalidatePath("/panel/seguimiento/progreso");
@@ -418,6 +460,7 @@ export async function eliminarMedidaCorporal(formData: FormData): Promise<void> 
   const existente = await prisma.medidaCorporal.findUnique({ where: { id_medida } });
   if (!existente || existente.id_alumno !== contexto.id_alumno) return;
 
+  await borrarFotoProgreso(existente.foto_url);
   await prisma.medidaCorporal.delete({ where: { id_medida } });
   revalidatePath("/panel/seguimiento/progreso");
 }

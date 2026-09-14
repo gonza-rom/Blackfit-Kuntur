@@ -18,7 +18,7 @@ export default async function CoachAlumnosPage() {
   });
 
   return (
-    <main className="flex-1 w-full max-w-3xl mx-auto px-5 md:px-10 py-8 flex flex-col gap-6">
+    <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
           Alumnos
@@ -42,17 +42,17 @@ export default async function CoachAlumnosPage() {
             <Link
               key={relacion.id_relacion}
               href={`/coach/alumnos/${relacion.alumno.id_alumno}`}
-              className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex items-center justify-between"
+              className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex items-center justify-between gap-3"
             >
-              <div>
-                <p className="font-[family-name:var(--font-sora)] text-base font-semibold text-on-surface">
+              <div className="min-w-0">
+                <p className="font-[family-name:var(--font-sora)] text-base font-semibold text-on-surface truncate">
                   {relacion.alumno.usuario.nombre} {relacion.alumno.usuario.apellido}
                 </p>
-                <p className="text-sm text-on-surface-variant">
+                <p className="text-sm text-on-surface-variant truncate">
                   {relacion.alumno.usuario.email}
                 </p>
               </div>
-              <span className="font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] text-on-surface-variant uppercase">
+              <span className="shrink-0 font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] text-on-surface-variant uppercase">
                 {relacion.estado_relacion}
               </span>
             </Link>

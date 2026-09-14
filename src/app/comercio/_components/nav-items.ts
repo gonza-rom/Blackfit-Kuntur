@@ -3,4 +3,5 @@ export const NAV_ITEMS_COMERCIO = [
   { href: "/comercio/validar", label: "Validar", icon: "qr_code_scanner" },
   { href: "/comercio/beneficios", label: "Beneficios", icon: "loyalty" },
   { href: "/comercio/historial", label: "Historial", icon: "history" },
+  { href: "/comercio/perfil", label: "Perfil", icon: "storefront" },
 ] as const;

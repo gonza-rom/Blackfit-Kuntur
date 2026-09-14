@@ -3,7 +3,7 @@ import { FormRegistro } from "./_components/form-registro";
 
 export default function RegistroPage() {
   return (
-    <div className="min-h-screen flex flex-1 items-center justify-center bg-black overflow-hidden relative py-16">
+    <div className="min-h-dvh flex flex-1 items-center justify-center bg-black overflow-hidden relative py-16">
       {/* Imagen de fondo */}
       <div className="absolute inset-0 z-0 opacity-40">
         <div
