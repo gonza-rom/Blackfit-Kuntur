@@ -9,6 +9,8 @@ type Comercio = {
   descripcion: string | null;
   direccion: string | null;
   telefono: string | null;
+  email: string | null;
+  logo: string | null;
   categoria: string | null;
 };
 
@@ -81,6 +83,38 @@ export function FormEditarComercio({ comercio }: { comercio: Comercio }) {
           name="telefono"
           type="text"
           defaultValue={comercio.telefono ?? ""}
+          className="w-full bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface font-[family-name:var(--font-inter)] text-base p-3 transition-colors"
+        />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <label
+          htmlFor="email"
+          className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface uppercase"
+        >
+          Email de contacto
+        </label>
+        <input
+          id="email"
+          name="email"
+          type="email"
+          defaultValue={comercio.email ?? ""}
+          className="w-full bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface font-[family-name:var(--font-inter)] text-base p-3 transition-colors"
+        />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <label
+          htmlFor="logo"
+          className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface uppercase"
+        >
+          Logo (URL)
+        </label>
+        <input
+          id="logo"
+          name="logo"
+          type="text"
+          defaultValue={comercio.logo ?? ""}
           className="w-full bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface font-[family-name:var(--font-inter)] text-base p-3 transition-colors"
         />
       </div>

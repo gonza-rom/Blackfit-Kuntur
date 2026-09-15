@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath, updateTag } from "next/cache";
+import { Prisma } from "@prisma/client";
 import type {
   RolUsuario,
   EstadoUsuario,
@@ -151,6 +152,194 @@ export async function cambiarEstadoUsuario(formData: FormData): Promise<void> {
 
   revalidatePath(`/admin/usuarios/${id_usuario}`);
   revalidatePath("/admin/usuarios");
+}
+
+// Postgres valida las FK con ON DELETE NO ACTION (el default de Prisma
+// cuando no se declara onDelete) al final del statement, dentro de la
+// misma transacción implícita del delete/cascada — si algo choca, el
+// borrado completo se revierte solo. Por eso alcanza con intentarlo y
+// capturar P2003 en vez de contar a mano cada tabla que podría bloquearlo.
+function esErrorDeIntegridadReferencial(err: unknown): boolean {
+  return (
+    err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003"
+  );
+}
+
+// Edición de los datos personales del usuario. El email también es el
+// login (auth.uid() de Supabase Auth se resuelve por email en signIn), así
+// que si cambia hay que sincronizarlo en Supabase Auth antes de tocar
+// nuestra tabla — si esa sincronización falla, no se guarda nada acá.
+export async function editarUsuario(
+  _prev: EstadoAdmin,
+  formData: FormData
+): Promise<EstadoAdmin> {
+  const contexto = await obtenerAdministradorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_usuario = String(formData.get("id_usuario") ?? "");
+  const nombre = String(formData.get("nombre") ?? "").trim();
+  const apellido = String(formData.get("apellido") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim();
+  const telefono = String(formData.get("telefono") ?? "").trim() || null;
+  const dni = String(formData.get("dni") ?? "").trim() || null;
+
+  if (!id_usuario || !nombre || !apellido || !email) {
+    return { error: "Completá nombre, apellido y email." };
+  }
+
+  const usuarioActual = await prisma.usuario.findUnique({ where: { id_usuario } });
+  if (!usuarioActual) return { error: "Usuario inválido." };
+
+  if (email !== usuarioActual.email) {
+    const supabaseAdmin = createAdminClient();
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(id_usuario, { email });
+    if (error) {
+      return { error: `No se pudo actualizar el email en Supabase Auth: ${error.message}` };
+    }
+  }
+
+  try {
+    await prisma.usuario.update({
+      where: { id_usuario },
+      data: { nombre, apellido, email, telefono, dni },
+    });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return { error: "Ese email o DNI ya lo usa otro usuario." };
+    }
+    throw err;
+  }
+
+  await registrarAuditoria({
+    id_usuario_actor: contexto.usuario.id_usuario,
+    accion: "modificacion_admin",
+    recurso: "usuario",
+    id_recurso: id_usuario,
+    resultado: `editado:${email}`,
+  });
+
+  revalidatePath(`/admin/usuarios/${id_usuario}`);
+  revalidatePath("/admin/usuarios");
+  redirect(`/admin/usuarios/${id_usuario}`);
+}
+
+// Borrado definitivo. Para la gran mayoría de los casos conviene
+// cambiarEstadoUsuario a "suspendido" (no destruye nada e igual bloquea el
+// acceso) — esto queda para cuentas cargadas por error, sin historial real.
+// Si el usuario tiene membresías, mensajes, validaciones u otro historial
+// con integridad referencial (ON DELETE NO ACTION), Postgres rechaza el
+// borrado completo y no se pierde nada.
+export async function eliminarUsuario(
+  _prev: EstadoAdmin,
+  formData: FormData
+): Promise<EstadoAdmin> {
+  const contexto = await obtenerAdministradorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_usuario = String(formData.get("id_usuario") ?? "");
+  if (!id_usuario) return { error: "Usuario inválido." };
+  if (id_usuario === contexto.usuario.id_usuario) {
+    return { error: "No podés eliminar tu propia cuenta de administrador." };
+  }
+
+  const usuario = await prisma.usuario.findUnique({ where: { id_usuario } });
+  if (!usuario) return { error: "Usuario inválido." };
+
+  try {
+    await prisma.usuario.delete({ where: { id_usuario } });
+  } catch (err) {
+    if (esErrorDeIntegridadReferencial(err)) {
+      return {
+        error:
+          "No se puede eliminar: tiene membresías, mensajes, validaciones u otro historial asociado. Usá el estado \"Suspendido\" en vez de eliminarlo.",
+      };
+    }
+    throw err;
+  }
+
+  const supabaseAdmin = createAdminClient();
+  await supabaseAdmin.auth.admin.deleteUser(id_usuario).catch(() => {});
+
+  await registrarAuditoria({
+    id_usuario_actor: contexto.usuario.id_usuario,
+    accion: "eliminacion_admin",
+    recurso: "usuario",
+    id_recurso: id_usuario,
+    resultado: `eliminado:${usuario.email}`,
+  });
+
+  revalidatePath("/admin/usuarios");
+  redirect("/admin/usuarios");
+}
+
+export async function editarMembresia(
+  _prev: EstadoAdmin,
+  formData: FormData
+): Promise<EstadoAdmin> {
+  const contexto = await obtenerAdministradorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_membresia = String(formData.get("id_membresia") ?? "");
+  const id_plan_membresia = String(formData.get("id_plan_membresia") ?? "");
+  const fecha_inicioRaw = String(formData.get("fecha_inicio") ?? "");
+  const fecha_vencimientoRaw = String(formData.get("fecha_vencimiento") ?? "");
+
+  if (!id_membresia || !id_plan_membresia || !fecha_inicioRaw || !fecha_vencimientoRaw) {
+    return { error: "Completá plan, fecha de inicio y de vencimiento." };
+  }
+
+  const plan = await prisma.planMembresia.findUnique({ where: { id_plan_membresia } });
+  if (!plan) return { error: "Plan inválido." };
+
+  const membresia = await prisma.membresia.update({
+    where: { id_membresia },
+    data: {
+      id_plan_membresia,
+      fecha_inicio_membresia: new Date(fecha_inicioRaw),
+      fecha_vencimiento_membresia: new Date(fecha_vencimientoRaw),
+    },
+  });
+
+  await registrarAuditoria({
+    id_usuario_actor: contexto.usuario.id_usuario,
+    accion: "cambio_membresia",
+    recurso: "membresia",
+    id_recurso: id_membresia,
+    resultado: `editada:${plan.nombre}`,
+  });
+
+  revalidatePath(`/admin/usuarios/${membresia.id_usuario}`);
+  redirect(`/admin/usuarios/${membresia.id_usuario}`);
+}
+
+// Borra el registro de una membresía puntual (ej. una activación hecha por
+// error). No toca la credencial digital: si el usuario tiene otras
+// membresías, sigue necesitándola.
+export async function eliminarMembresia(
+  _prev: EstadoAdmin,
+  formData: FormData
+): Promise<EstadoAdmin> {
+  const contexto = await obtenerAdministradorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_membresia = String(formData.get("id_membresia") ?? "");
+  if (!id_membresia) return { error: "Membresía inválida." };
+
+  const membresia = await prisma.membresia.findUnique({ where: { id_membresia } });
+  if (!membresia) return { error: "Membresía inválida." };
+
+  await prisma.membresia.delete({ where: { id_membresia } });
+
+  await registrarAuditoria({
+    id_usuario_actor: contexto.usuario.id_usuario,
+    accion: "cambio_membresia",
+    recurso: "membresia",
+    id_recurso: id_membresia,
+    resultado: "eliminada",
+  });
+
+  revalidatePath(`/admin/usuarios/${membresia.id_usuario}`);
+  redirect(`/admin/usuarios/${membresia.id_usuario}`);
 }
 
 export async function crearPlanMembresia(
@@ -613,6 +802,8 @@ export async function editarComercio(
   const descripcion = String(formData.get("descripcion") ?? "").trim() || null;
   const direccion = String(formData.get("direccion") ?? "").trim() || null;
   const telefono = String(formData.get("telefono") ?? "").trim() || null;
+  const email = String(formData.get("email") ?? "").trim() || null;
+  const logo = String(formData.get("logo") ?? "").trim() || null;
   const categoria = String(formData.get("categoria") ?? "").trim() || null;
 
   if (!id_comercio || !nombre) {
@@ -621,7 +812,7 @@ export async function editarComercio(
 
   const comercio = await prisma.comercio.update({
     where: { id_comercio },
-    data: { nombre, descripcion, direccion, telefono, categoria },
+    data: { nombre, descripcion, direccion, telefono, email, logo, categoria },
   });
 
   await registrarAuditoria({
@@ -797,4 +988,91 @@ export async function quitarBeneficioPlan(formData: FormData): Promise<void> {
   });
 
   if (id_comercio) revalidatePath(`/admin/comercios/${id_comercio}`);
+}
+
+// Borrado definitivo del beneficio. Si algún comercio ya lo usó para
+// validar (validaciones_beneficios), Postgres rechaza el borrado — en ese
+// caso conviene marcarlo "inactivo"/"vencido" en vez de eliminarlo, así no
+// se pierde el historial de validaciones ya hechas.
+export async function eliminarBeneficio(
+  _prev: EstadoAdmin,
+  formData: FormData
+): Promise<EstadoAdmin> {
+  const contexto = await obtenerAdministradorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_beneficio = String(formData.get("id_beneficio") ?? "");
+  if (!id_beneficio) return { error: "Beneficio inválido." };
+
+  const beneficio = await prisma.beneficio.findUnique({ where: { id_beneficio } });
+  if (!beneficio) return { error: "Beneficio inválido." };
+
+  try {
+    await prisma.beneficio.delete({ where: { id_beneficio } });
+  } catch (err) {
+    if (esErrorDeIntegridadReferencial(err)) {
+      return {
+        error:
+          "No se puede eliminar: ya tiene validaciones registradas. Marcalo como \"inactivo\" o \"vencido\" en vez de borrarlo.",
+      };
+    }
+    throw err;
+  }
+
+  await registrarAuditoria({
+    id_usuario_actor: contexto.usuario.id_usuario,
+    accion: "cambio_beneficio",
+    recurso: "beneficio",
+    id_recurso: id_beneficio,
+    resultado: `eliminado:${beneficio.titulo}`,
+  });
+
+  revalidatePath(`/admin/comercios/${beneficio.id_comercio}`);
+  redirect(`/admin/comercios/${beneficio.id_comercio}`);
+}
+
+// Borrado definitivo del comercio (y sus beneficios, en cascada). También
+// le quita el rol "comercio" al usuario dueño, pero el usuario en sí no se
+// toca — puede seguir existiendo con otros roles. Si algún beneficio ya
+// tiene validaciones registradas, Postgres rechaza todo el borrado.
+export async function eliminarComercio(
+  _prev: EstadoAdmin,
+  formData: FormData
+): Promise<EstadoAdmin> {
+  const contexto = await obtenerAdministradorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_comercio = String(formData.get("id_comercio") ?? "");
+  if (!id_comercio) return { error: "Comercio inválido." };
+
+  const comercio = await prisma.comercio.findUnique({ where: { id_comercio } });
+  if (!comercio) return { error: "Comercio inválido." };
+
+  try {
+    await prisma.$transaction([
+      prisma.usuarioRol.deleteMany({
+        where: { id_usuario: comercio.id_usuario, rol: "comercio" },
+      }),
+      prisma.comercio.delete({ where: { id_comercio } }),
+    ]);
+  } catch (err) {
+    if (esErrorDeIntegridadReferencial(err)) {
+      return {
+        error:
+          "No se puede eliminar: alguno de sus beneficios ya tiene validaciones registradas. Marcalo como \"inactivo\" en vez de borrarlo.",
+      };
+    }
+    throw err;
+  }
+
+  await registrarAuditoria({
+    id_usuario_actor: contexto.usuario.id_usuario,
+    accion: "cambio_comercio",
+    recurso: "comercio",
+    id_recurso: id_comercio,
+    resultado: `eliminado:${comercio.nombre}`,
+  });
+
+  revalidatePath("/admin/comercios");
+  redirect("/admin/comercios");
 }

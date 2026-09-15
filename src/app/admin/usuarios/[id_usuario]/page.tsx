@@ -1,13 +1,15 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerPlanesMembresia } from "@/lib/catalogos";
 import {
   asignarRol,
   quitarRol,
-  cambiarEstadoMembresia,
   cambiarEstadoUsuario,
 } from "@/app/actions/admin";
 import { FormActivarMembresia } from "./_components/form-activar-membresia";
+import { ItemMembresia } from "./_components/item-membresia";
+import { BotonEliminarUsuario } from "./_components/boton-eliminar-usuario";
 
 const ESTADOS_USUARIO = ["activo", "inactivo", "suspendido"] as const;
 
@@ -24,20 +26,6 @@ const ROLES_ASIGNABLES = [
   "beneficiario",
   "administrador",
 ] as const;
-
-const ESTADOS_MEMBRESIA = [
-  "activa",
-  "vencida",
-  "cancelada",
-  "suspendida",
-  "pendiente",
-] as const;
-
-const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
-  day: "2-digit",
-  month: "short",
-  year: "numeric",
-});
 
 export default async function AdminUsuarioDetallePage(
   props: PageProps<"/admin/usuarios/[id_usuario]">
@@ -65,9 +53,18 @@ export default async function AdminUsuarioDetallePage(
   return (
     <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-8">
       <div>
-        <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
-          {usuario.nombre} {usuario.apellido}
-        </h1>
+        <div className="flex items-center gap-2">
+          <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
+            {usuario.nombre} {usuario.apellido}
+          </h1>
+          <Link
+            href={`/admin/usuarios/${id_usuario}/editar`}
+            className="text-on-surface-variant hover:text-primary-container"
+            aria-label="Editar usuario"
+          >
+            <span className="material-symbols-outlined text-[20px]">edit</span>
+          </Link>
+        </div>
         <p className="text-sm text-on-surface-variant">{usuario.email}</p>
         {usuario.dni && (
           <p className="text-sm text-on-surface-variant">DNI {usuario.dni}</p>
@@ -169,41 +166,16 @@ export default async function AdminUsuarioDetallePage(
         ) : (
           <div className="flex flex-col gap-2">
             {usuario.membresias.map((membresia) => (
-              <div
-                key={membresia.id_membresia}
-                className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-3 flex flex-col gap-2"
-              >
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-on-surface">{membresia.plan_membresia.nombre}</span>
-                  <span className="text-on-surface-variant">
-                    hasta {FORMATEADOR_FECHA.format(membresia.fecha_vencimiento_membresia)}
-                  </span>
-                </div>
-                <form action={cambiarEstadoMembresia} className="flex items-center gap-2">
-                  <input type="hidden" name="id_membresia" value={membresia.id_membresia} />
-                  <select
-                    name="estado_membresia"
-                    defaultValue={membresia.estado_membresia}
-                    className="bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface text-xs p-2"
-                  >
-                    {ESTADOS_MEMBRESIA.map((estado) => (
-                      <option key={estado} value={estado}>
-                        {estado}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="submit"
-                    className="font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] uppercase px-3 py-1.5 rounded-full border border-outline-variant text-on-surface-variant"
-                  >
-                    Actualizar
-                  </button>
-                </form>
-              </div>
+              <ItemMembresia key={membresia.id_membresia} membresia={membresia} planes={planes} />
             ))}
           </div>
         )}
       </section>
+
+      <BotonEliminarUsuario
+        idUsuario={id_usuario}
+        nombreCompleto={`${usuario.nombre} ${usuario.apellido}`}
+      />
     </main>
   );
 }

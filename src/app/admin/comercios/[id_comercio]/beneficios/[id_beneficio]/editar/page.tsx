@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { FormEditarBeneficio } from "./_components/form-editar-beneficio";
+import { BotonEliminarBeneficio } from "./_components/boton-eliminar-beneficio";
 
 export default async function EditarBeneficioPage(
   props: PageProps<"/admin/comercios/[id_comercio]/beneficios/[id_beneficio]/editar">
@@ -19,6 +20,8 @@ export default async function EditarBeneficioPage(
       <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 md:p-6">
         <FormEditarBeneficio beneficio={beneficio} />
       </div>
+
+      <BotonEliminarBeneficio idBeneficio={id_beneficio} tituloBeneficio={beneficio.titulo} />
     </main>
   );
 }
