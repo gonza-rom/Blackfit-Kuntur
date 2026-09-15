@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
 import { FormEditarPrograma } from "./_components/form-editar-programa";
+import { BotonEliminarPrograma } from "./_components/boton-eliminar-programa";
 
 function aFechaInput(fecha: Date): string {
   return fecha.toISOString().slice(0, 10);
@@ -53,6 +54,8 @@ export default async function EditarProgramaPage(
           }}
         />
       </div>
+
+      <BotonEliminarPrograma idPrograma={id_programa} nombrePrograma={programa.nombre} />
     </main>
   );
 }

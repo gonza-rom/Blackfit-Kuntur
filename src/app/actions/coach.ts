@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath, updateTag } from "next/cache";
+import { Prisma } from "@prisma/client";
 import type { EstadoPrograma, TipoObjetivo, EstadoObjetivo } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
@@ -338,6 +339,45 @@ export async function editarPrograma(
   redirect(`/coach/programas/${id_programa}`);
 }
 
+// Borrado definitivo de un programa real (nunca de una plantilla, para eso
+// está eliminarPlantilla). Si el alumno ya registró algún entrenamiento
+// contra este programa, Postgres rechaza el borrado (ON DELETE NO ACTION
+// entre Entrenamiento y ProgramaEntrenamiento) — en ese caso conviene
+// marcarlo "finalizado" desde /editar en vez de borrarlo, así no se pierde
+// el historial de lo que el alumno ya entrenó.
+export async function eliminarPrograma(
+  _prev: EstadoCoach,
+  formData: FormData
+): Promise<EstadoCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_programa = String(formData.get("id_programa") ?? "");
+  if (!id_programa) return { error: "Programa inválido." };
+
+  const programa = await prisma.programaEntrenamiento.findUnique({
+    where: { id_programa },
+  });
+  if (!programa || programa.id_entrenador !== contexto.id_entrenador || programa.es_plantilla) {
+    return { error: "No autorizado sobre este programa." };
+  }
+
+  try {
+    await prisma.programaEntrenamiento.delete({ where: { id_programa } });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
+      return {
+        error:
+          'No se puede eliminar: el alumno ya registró entrenamientos contra este programa. Marcalo como "finalizado" en vez de borrarlo.',
+      };
+    }
+    throw err;
+  }
+
+  revalidatePath("/coach/alumnos");
+  redirect(programa.id_alumno ? `/coach/alumnos/${programa.id_alumno}` : "/coach/alumnos");
+}
+
 // ------------------------------------------------------------
 // BIBLIOTECA DE PROGRAMAS (plantillas)
 // ------------------------------------------------------------
@@ -374,6 +414,37 @@ export async function crearPlantillaPrograma(
   });
 
   redirect(`/coach/programas/plantillas/${plantilla.id_programa}`);
+}
+
+export async function editarPlantillaPrograma(
+  _prev: EstadoCoach,
+  formData: FormData
+): Promise<EstadoCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_plantilla = String(formData.get("id_plantilla") ?? "");
+  const nombre = String(formData.get("nombre") ?? "").trim();
+  const descripcion = String(formData.get("descripcion") ?? "").trim() || null;
+  const objetivo = String(formData.get("objetivo") ?? "").trim() || null;
+
+  if (!id_plantilla || !nombre) return { error: "Completá el nombre de la plantilla." };
+
+  const plantilla = await prisma.programaEntrenamiento.findUnique({
+    where: { id_programa: id_plantilla },
+  });
+  if (!plantilla || plantilla.id_entrenador !== contexto.id_entrenador || !plantilla.es_plantilla) {
+    return { error: "No autorizado sobre esta plantilla." };
+  }
+
+  await prisma.programaEntrenamiento.update({
+    where: { id_programa: id_plantilla },
+    data: { nombre, descripcion, objetivo },
+  });
+
+  revalidatePath(`/coach/programas/plantillas/${id_plantilla}`);
+  revalidatePath("/coach/programas/plantillas");
+  return { message: "Plantilla actualizada." };
 }
 
 export async function eliminarPlantilla(formData: FormData): Promise<void> {
@@ -953,6 +1024,22 @@ export async function actualizarObjetivo(
 
   revalidatePath(`/coach/alumnos/${objetivo.id_alumno}`);
   return { message: "Objetivo actualizado." };
+}
+
+export async function eliminarObjetivo(formData: FormData): Promise<void> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return;
+
+  const id_objetivo = String(formData.get("id_objetivo") ?? "");
+  if (!id_objetivo) return;
+
+  const objetivo = await prisma.objetivo.findUnique({ where: { id_objetivo } });
+  if (!objetivo || !(await alumnoDelEntrenador(objetivo.id_alumno, contexto.id_entrenador))) {
+    return;
+  }
+
+  await prisma.objetivo.delete({ where: { id_objetivo } });
+  revalidatePath(`/coach/alumnos/${objetivo.id_alumno}`);
 }
 
 // ------------------------------------------------------------

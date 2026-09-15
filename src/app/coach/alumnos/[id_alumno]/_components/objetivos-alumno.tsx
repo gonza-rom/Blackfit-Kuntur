@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { crearObjetivo, actualizarObjetivo } from "@/app/actions/coach";
+import { crearObjetivo, actualizarObjetivo, eliminarObjetivo } from "@/app/actions/coach";
 
 export type ObjetivoSerializado = {
   id_objetivo: string;
@@ -173,16 +173,35 @@ function ObjetivoItem({ objetivo }: { objetivo: ObjetivoSerializado }) {
             {ESTADOS.find((e) => e.value === objetivo.estado)?.label ?? objetivo.estado}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setEditar((v) => !v)}
-          className="text-on-surface-variant hover:text-on-surface transition-colors shrink-0"
-          aria-label="Editar objetivo"
-        >
-          <span className="material-symbols-outlined text-[20px]">
-            {editar ? "close" : "edit"}
-          </span>
-        </button>
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => setEditar((v) => !v)}
+            className="text-on-surface-variant hover:text-on-surface transition-colors"
+            aria-label="Editar objetivo"
+          >
+            <span className="material-symbols-outlined text-[20px]">
+              {editar ? "close" : "edit"}
+            </span>
+          </button>
+          <form
+            action={eliminarObjetivo}
+            onSubmit={(e) => {
+              if (!confirm(`¿Eliminar el objetivo "${objetivo.titulo}"?`)) {
+                e.preventDefault();
+              }
+            }}
+          >
+            <input type="hidden" name="id_objetivo" value={objetivo.id_objetivo} />
+            <button
+              type="submit"
+              className="text-on-surface-variant hover:text-[#ffb4ab] transition-colors"
+              aria-label="Eliminar objetivo"
+            >
+              <span className="material-symbols-outlined text-[20px]">delete</span>
+            </button>
+          </form>
+        </div>
       </div>
 
       <div className="w-full h-1.5 bg-[#262626] rounded-full">

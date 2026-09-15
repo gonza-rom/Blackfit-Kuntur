@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
 import { obtenerEjerciciosCatalogoConDefaults } from "@/lib/catalogos";
-import { eliminarBloque, duplicarBloque, eliminarPlantilla } from "@/app/actions/coach";
+import { eliminarBloque, duplicarBloque } from "@/app/actions/coach";
 // Reusa los mismos componentes de la página de programa real — bloques y
 // ejercicios funcionan idénticos en una plantilla, ninguno de los dos
 // depende de que el programa tenga alumno.
@@ -10,6 +10,7 @@ import { FormNuevoBloque } from "../../[id_programa]/_components/form-nuevo-bloq
 import { FormNuevoEjercicioBloque } from "../../[id_programa]/_components/form-nuevo-ejercicio-bloque";
 import { EjercicioProgramaItem } from "../../[id_programa]/_components/ejercicio-programa-item";
 import { FormAplicarPlantilla } from "./_components/form-aplicar-plantilla";
+import { FormEditarPlantilla } from "./_components/form-editar-plantilla";
 
 export default async function PlantillaDetallePage(
   props: PageProps<"/coach/programas/plantillas/[id_plantilla]">
@@ -59,33 +60,15 @@ export default async function PlantillaDetallePage(
 
   return (
     <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-8">
-      <section className="flex flex-col gap-1">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
-              {plantilla.nombre}
-            </h1>
-            <p className="text-sm text-on-surface-variant">
-              Plantilla — {plantilla.bloques.length} bloque
-              {plantilla.bloques.length === 1 ? "" : "s"}
-            </p>
-            {plantilla.objetivo && (
-              <p className="text-sm text-on-surface-variant">Objetivo: {plantilla.objetivo}</p>
-            )}
-          </div>
-
-          <form action={eliminarPlantilla}>
-            <input type="hidden" name="id_plantilla" value={id_plantilla} />
-            <button
-              type="submit"
-              aria-label="Eliminar plantilla"
-              className="shrink-0 text-on-surface-variant hover:text-[#ffb4ab] p-1.5"
-            >
-              <span className="material-symbols-outlined text-[20px]">delete</span>
-            </button>
-          </form>
-        </div>
-      </section>
+      <FormEditarPlantilla
+        plantilla={{
+          id_programa: plantilla.id_programa,
+          nombre: plantilla.nombre,
+          descripcion: plantilla.descripcion,
+          objetivo: plantilla.objetivo,
+          cantidadBloques: plantilla.bloques.length,
+        }}
+      />
 
       <section className="flex flex-col gap-2">
         <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
