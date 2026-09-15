@@ -1,10 +1,11 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState, type ChangeEvent } from "react";
 import {
   crearProgresoFisicoAlumno,
   editarProgresoFisicoAlumno,
   eliminarProgresoFisicoAlumno,
+  extraerComposicionDeDocumento,
 } from "@/app/actions/coach";
 
 // Orden y unidades como los muestra la balanza/InBody.
@@ -41,12 +42,27 @@ const INPUT =
 const LABEL =
   "font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] text-on-surface-variant uppercase";
 
+function valoresVacios(): Record<Campo, string> {
+  return Object.fromEntries(CAMPOS.map((c) => [c.name, ""])) as Record<Campo, string>;
+}
+
+// Sin prop "controlado" son inputs comunes con defaultValue (como venía
+// siendo): se usa así en el formulario de edición de una medición ya
+// guardada. Con "controlado" pasan a reflejar el estado que arma
+// ImportarDesdeDocumento tras leer un PDF/Word — así el coach ve los
+// campos ya completados y puede corregirlos antes de guardar.
 function CamposComposicion({
   valores,
   fecha,
+  controlado = false,
+  onCampoChange,
+  onFechaChange,
 }: {
   valores?: Record<Campo, string | null>;
   fecha?: string;
+  controlado?: boolean;
+  onCampoChange?: (campo: Campo, valor: string) => void;
+  onFechaChange?: (valor: string) => void;
 }) {
   return (
     <>
@@ -55,7 +71,9 @@ function CamposComposicion({
         <input
           name="fecha"
           type="date"
-          defaultValue={fecha ?? new Date().toISOString().slice(0, 10)}
+          {...(controlado
+            ? { value: fecha ?? "", onChange: (e: ChangeEvent<HTMLInputElement>) => onFechaChange?.(e.target.value) }
+            : { defaultValue: fecha ?? new Date().toISOString().slice(0, 10) })}
           className={INPUT}
         />
       </div>
@@ -73,13 +91,73 @@ function CamposComposicion({
               step={c.step}
               min="0"
               inputMode="decimal"
-              defaultValue={valores?.[c.name] ?? ""}
+              {...(controlado
+                ? {
+                    value: valores?.[c.name] ?? "",
+                    onChange: (e: ChangeEvent<HTMLInputElement>) =>
+                      onCampoChange?.(c.name, e.target.value),
+                  }
+                : { defaultValue: valores?.[c.name] ?? "" })}
               className={INPUT}
             />
           </div>
         ))}
       </div>
     </>
+  );
+}
+
+// Sube un PDF o Word del reporte de la balanza y le extrae el texto en el
+// servidor (pdf-parse / mammoth, sin ninguna IA) para completar los campos
+// de arriba por nombre — el coach siempre revisa y corrige lo que se
+// completó antes de guardar, esto nunca guarda nada por sí solo.
+function ImportarDesdeDocumento({
+  onExtraido,
+}: {
+  onExtraido: (resultado: { fecha: string | null; valores: Partial<Record<Campo, string>> }) => void;
+}) {
+  const [state, action, pending] = useActionState(extraerComposicionDeDocumento, undefined);
+  const [nombreArchivo, setNombreArchivo] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (state && "valores" in state) {
+      onExtraido(state);
+    }
+    // Solo debe reaccionar cuando llega un resultado nuevo del server action.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
+
+  return (
+    <form
+      action={action}
+      className="border border-dashed border-outline-variant rounded-lg p-3 flex flex-col gap-2"
+    >
+      <p className={LABEL}>Completar desde un PDF/Word de la balanza (opcional)</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          name="archivo"
+          type="file"
+          accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          onChange={(e) => setNombreArchivo(e.target.files?.[0]?.name ?? null)}
+          className="text-xs text-on-surface-variant file:mr-2 file:rounded file:border-0 file:bg-[#262626] file:px-3 file:py-1.5 file:text-on-surface file:text-xs"
+        />
+        <button
+          type="submit"
+          disabled={pending || !nombreArchivo}
+          className="font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] uppercase px-3 py-1.5 rounded-full border border-outline-variant text-on-surface-variant disabled:opacity-40"
+        >
+          {pending ? "Leyendo..." : "Extraer datos"}
+        </button>
+      </div>
+      {state && "error" in state && <p className="text-xs text-[#ffb4ab]">{state.error}</p>}
+      {state && "valores" in state && (
+        <p className="text-xs text-primary-container">
+          Se completaron {Object.keys(state.valores).length} campo
+          {Object.keys(state.valores).length === 1 ? "" : "s"} automáticamente — revisá los
+          valores antes de guardar, esta lectura no siempre es exacta.
+        </p>
+      )}
+    </form>
   );
 }
 
@@ -92,6 +170,8 @@ export function ProgresoFisicoCoach({
 }) {
   const [abrirNueva, setAbrirNueva] = useState(false);
   const [state, action, pending] = useActionState(crearProgresoFisicoAlumno, undefined);
+  const [valoresNuevos, setValoresNuevos] = useState<Record<Campo, string>>(valoresVacios);
+  const [fechaNueva, setFechaNueva] = useState(() => new Date().toISOString().slice(0, 10));
 
   return (
     <div className="flex flex-col gap-2">
@@ -112,24 +192,37 @@ export function ProgresoFisicoCoach({
       </div>
 
       {abrirNueva && (
-        <form
-          action={action}
-          className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col gap-3"
-        >
-          <input type="hidden" name="id_alumno" value={idAlumno} />
-          <CamposComposicion />
-          {state?.error && <p className="text-sm text-[#ffb4ab]">{state.error}</p>}
-          {state?.message && (
-            <p className="text-sm text-primary-container">{state.message}</p>
-          )}
-          <button
-            type="submit"
-            disabled={pending}
-            className="self-start bg-primary-container text-black font-[family-name:var(--font-sora)] text-sm font-bold px-4 py-2 rounded disabled:opacity-60"
-          >
-            {pending ? "Guardando..." : "Guardar medición"}
-          </button>
-        </form>
+        <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col gap-3">
+          <ImportarDesdeDocumento
+            onExtraido={(resultado) => {
+              if (resultado.fecha) setFechaNueva(resultado.fecha);
+              setValoresNuevos((prev) => ({ ...prev, ...resultado.valores }));
+            }}
+          />
+          <form action={action} className="flex flex-col gap-3">
+            <input type="hidden" name="id_alumno" value={idAlumno} />
+            <CamposComposicion
+              controlado
+              valores={valoresNuevos}
+              fecha={fechaNueva}
+              onCampoChange={(campo, valor) =>
+                setValoresNuevos((prev) => ({ ...prev, [campo]: valor }))
+              }
+              onFechaChange={setFechaNueva}
+            />
+            {state?.error && <p className="text-sm text-[#ffb4ab]">{state.error}</p>}
+            {state?.message && (
+              <p className="text-sm text-primary-container">{state.message}</p>
+            )}
+            <button
+              type="submit"
+              disabled={pending}
+              className="self-start bg-primary-container text-black font-[family-name:var(--font-sora)] text-sm font-bold px-4 py-2 rounded disabled:opacity-60"
+            >
+              {pending ? "Guardando..." : "Guardar medición"}
+            </button>
+          </form>
+        </div>
       )}
 
       {entradas.length === 0 ? (

@@ -9,6 +9,8 @@ import { obtenerEntrenadorActual } from "@/lib/auth";
 import { crearNotificacion } from "@/lib/notificaciones";
 import { evaluarLogros } from "@/lib/gamificacion";
 import { TAG_CATALOGO_EJERCICIOS } from "@/lib/catalogos";
+import type { CampoComposicionCorporal } from "@/lib/composicion-corporal";
+import { extraerComposicionDeTexto, extraerFechaDeTexto } from "@/lib/parseo-composicion-corporal";
 
 const TIPOS_OBJETIVO: TipoObjetivo[] = [
   "volumen",
@@ -1115,6 +1117,89 @@ async function progresoDelEntrenador(id_progreso: string, id_entrenador: string)
   const progreso = await prisma.progresoFisico.findUnique({ where: { id_progreso } });
   if (!progreso) return null;
   return (await alumnoDelEntrenador(progreso.id_alumno, id_entrenador)) ? progreso : null;
+}
+
+// ------------------------------------------------------------
+// LECTURA AUTOMÁTICA DE UN REPORTE DE BALANZA (PDF/Word) — sin IA: se le
+// extrae el texto al documento (pdf-parse / mammoth) y se lo busca contra
+// una lista de etiquetas conocidas por campo (extraerComposicionDeTexto,
+// en src/lib/parseo-composicion-corporal.ts). Cada balanza imprime su
+// reporte distinto, así que esto es una ayuda para no tipear todo a mano
+// — nunca se guarda solo: el coach siempre ve los campos ya cargados en
+// el formulario y confirma (o corrige) antes de "Guardar medición".
+// ------------------------------------------------------------
+
+export type ResultadoExtraccionComposicion =
+  | { error: string }
+  | { fecha: string | null; valores: Partial<Record<CampoComposicionCorporal, string>> }
+  | undefined;
+
+const EXTENSIONES_SOPORTADAS = [".pdf", ".docx"];
+const TAMANO_MAXIMO_DOCUMENTO = 10 * 1024 * 1024; // 10 MB
+
+export async function extraerComposicionDeDocumento(
+  _prev: ResultadoExtraccionComposicion,
+  formData: FormData
+): Promise<ResultadoExtraccionComposicion> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const archivo = formData.get("archivo");
+  if (!(archivo instanceof File) || archivo.size === 0) {
+    return { error: "Elegí un archivo PDF o Word (.docx)." };
+  }
+  if (archivo.size > TAMANO_MAXIMO_DOCUMENTO) {
+    return { error: "El archivo es demasiado grande (máx. 10 MB)." };
+  }
+
+  const nombreArchivo = archivo.name.toLowerCase();
+  const esPdf = archivo.type === "application/pdf" || nombreArchivo.endsWith(".pdf");
+  const esDocx = nombreArchivo.endsWith(".docx");
+  if (!esPdf && !esDocx) {
+    return {
+      error: `Formato no soportado: subí un archivo ${EXTENSIONES_SOPORTADAS.join(" o ")}.`,
+    };
+  }
+
+  const buffer = Buffer.from(await archivo.arrayBuffer());
+  let texto = "";
+  try {
+    if (esPdf) {
+      const { PDFParse } = await import("pdf-parse");
+      const parser = new PDFParse({ data: buffer });
+      try {
+        const resultado = await parser.getText({ pageJoiner: "\n" });
+        texto = resultado.text;
+      } finally {
+        await parser.destroy();
+      }
+    } else {
+      const mammoth = await import("mammoth");
+      const resultado = await mammoth.extractRawText({ buffer });
+      texto = resultado.value;
+    }
+  } catch {
+    return {
+      error: "No se pudo leer el archivo. Puede estar dañado, protegido con contraseña o ser una imagen escaneada — probá con otro o completá los datos a mano.",
+    };
+  }
+
+  if (!texto.trim()) {
+    return {
+      error: "El archivo no tiene texto reconocible (¿es una imagen escaneada?). Completá los datos a mano.",
+    };
+  }
+
+  const valores = extraerComposicionDeTexto(texto);
+  const fecha = extraerFechaDeTexto(texto);
+
+  if (Object.keys(valores).length === 0) {
+    return {
+      error: "No se reconoció ningún campo conocido en el archivo. Completá los datos a mano.",
+    };
+  }
+
+  return { fecha, valores };
 }
 
 export async function crearProgresoFisicoAlumno(
