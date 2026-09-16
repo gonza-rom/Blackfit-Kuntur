@@ -7,10 +7,12 @@ export function FeedbackSemanalItem({
   id,
   semana,
   comentario,
+  respuesta,
 }: {
   id: string;
   semana: string;
   comentario: string;
+  respuesta?: string | null;
 }) {
   const [editar, setEditar] = useState(false);
   const [state, action, pending] = useActionState(editarFeedbackSemanal, undefined);
@@ -63,6 +65,15 @@ export function FeedbackSemanalItem({
         </form>
       ) : (
         <p className="text-on-surface mt-1">{comentario}</p>
+      )}
+
+      {respuesta && !editar && (
+        <div className="border-l-2 border-primary-container pl-3 mt-2">
+          <span className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] text-primary-container uppercase">
+            Respuesta de tu coach
+          </span>
+          <p className="text-on-surface-variant mt-0.5">{respuesta}</p>
+        </div>
       )}
     </div>
   );

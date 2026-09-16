@@ -464,6 +464,10 @@ model FeedbackSemanal {
   id_alumno           String
   semana_inicio        DateTime
   comentario_semanal   String
+  // Respuesta del coach dentro de la app — antes el feedback semanal era de
+  // solo lectura para el coach y la devolución real pasaba por WhatsApp.
+  respuesta_coach      String?
+  fecha_respuesta      DateTime?
 
   alumno   Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
 

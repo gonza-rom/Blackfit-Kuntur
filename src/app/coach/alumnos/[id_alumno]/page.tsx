@@ -12,6 +12,7 @@ import {
   ProgresoFisicoCoach,
   type ProgresoSerializado,
 } from "./_components/progreso-fisico-coach";
+import { ItemFeedbackSemanal } from "./_components/item-feedback-semanal";
 
 const CAMPOS_PROGRESO = [
   "peso_corporal",
@@ -106,6 +107,7 @@ export default async function AlumnoDetallePage(
     feedbackSemanales,
     alertas,
     objetivos,
+    seriesConPeso,
   ] = await Promise.all([
     prisma.programaEntrenamiento.findMany({
       where: { id_alumno, id_entrenador: contexto.id_entrenador },
@@ -153,6 +155,25 @@ export default async function AlumnoDetallePage(
       where: { id_alumno },
       orderBy: [{ estado: "asc" }, { fecha_creacion: "desc" }],
     }),
+    // Objetivo (peso_sugerido, lo carga el coach en el programa) vs.
+    // ejecución (peso_utilizado, lo carga el alumno al entrenar) — series
+    // reales más recientes por ejercicio, para ver la progresión de fuerza.
+    prisma.serieEntrenamiento.findMany({
+      where: { entrenamiento: { id_alumno }, peso_utilizado: { not: null } },
+      orderBy: { entrenamiento: { fecha: "desc" } },
+      take: 300,
+      select: {
+        peso_utilizado: true,
+        repeticiones_realizadas: true,
+        entrenamiento: { select: { fecha: true } },
+        ejercicio_programa: {
+          select: {
+            peso_sugerido: true,
+            ejercicio: { select: { id_ejercicio: true, nombre: true } },
+          },
+        },
+      },
+    }),
   ]);
 
   const { usuario } = relacion.alumno;
@@ -186,6 +207,39 @@ export default async function AlumnoDetallePage(
       ? o.fecha_objetivo.toISOString().slice(0, 10)
       : null,
   }));
+
+  // seriesConPeso ya viene ordenado por fecha desc — se toman como mucho 8
+  // sets por ejercicio (los más recientes) y se dan vuelta para leer la
+  // progresión de izquierda (más vieja) a derecha (más reciente).
+  const progresionPorEjercicio = new Map<
+    string,
+    {
+      nombre: string;
+      entradas: { fecha: Date; peso: number; reps: number | null; sugerido: number | null }[];
+    }
+  >();
+  for (const s of seriesConPeso) {
+    if (s.peso_utilizado == null) continue;
+    const ej = s.ejercicio_programa.ejercicio;
+    const grupo = progresionPorEjercicio.get(ej.id_ejercicio) ?? { nombre: ej.nombre, entradas: [] };
+    if (grupo.entradas.length < 8) {
+      grupo.entradas.push({
+        fecha: s.entrenamiento.fecha,
+        peso: Number(s.peso_utilizado),
+        reps: s.repeticiones_realizadas,
+        sugerido: s.ejercicio_programa.peso_sugerido ? Number(s.ejercicio_programa.peso_sugerido) : null,
+      });
+    }
+    progresionPorEjercicio.set(ej.id_ejercicio, grupo);
+  }
+  const progresionEjercicios = Array.from(progresionPorEjercicio.entries()).map(
+    ([id_ejercicio, grupo]) => ({
+      id_ejercicio,
+      nombre: grupo.nombre,
+      sugeridoActual: grupo.entradas[0]?.sugerido ?? null,
+      entradas: [...grupo.entradas].reverse(),
+    })
+  );
 
   const pesosOrdenados = [...progresos]
     .reverse()
@@ -331,6 +385,64 @@ export default async function AlumnoDetallePage(
 
       <section className="flex flex-col gap-2">
         <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
+          Progresión de fuerza
+        </h2>
+        <p className="text-xs text-on-surface-variant -mt-1">
+          Peso sugerido (lo cargás vos en el programa) vs. peso real que el alumno registró en cada sesión.
+        </p>
+        {progresionEjercicios.length === 0 ? (
+          <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 text-on-surface-variant text-sm">
+            Todavía no registró ningún peso en sus entrenamientos.
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {progresionEjercicios.map((ej) => (
+              <div
+                key={ej.id_ejercicio}
+                className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col gap-3"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="font-[family-name:var(--font-sora)] text-base font-semibold text-on-surface">
+                    {ej.nombre}
+                  </h3>
+                  <span className="shrink-0 font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] text-on-surface-variant uppercase">
+                    {ej.sugeridoActual ? `Sugerido: ${ej.sugeridoActual}kg` : "Sin peso sugerido"}
+                  </span>
+                </div>
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {ej.entradas.map((entrada, i) => {
+                    const cumplioObjetivo =
+                      entrada.sugerido != null && entrada.peso >= entrada.sugerido;
+                    return (
+                      <div
+                        key={i}
+                        className="shrink-0 w-[64px] bg-[#131313] border border-[#262626] rounded-lg p-2 flex flex-col items-center gap-0.5"
+                      >
+                        <span className="text-[10px] text-on-surface-variant tabular-nums">
+                          {FORMATEADOR_FECHA.format(entrada.fecha)}
+                        </span>
+                        <span
+                          className={`font-[family-name:var(--font-sora)] text-sm font-bold tabular-nums ${
+                            cumplioObjetivo ? "text-primary-container" : "text-on-surface"
+                          }`}
+                        >
+                          {entrada.peso}
+                        </span>
+                        <span className="text-[10px] text-on-surface-variant tabular-nums">
+                          {entrada.reps != null ? `${entrada.reps} reps` : "—"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="flex flex-col gap-2">
+        <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
           Progreso físico
         </h2>
         {pesosOrdenados.length >= 2 && (
@@ -428,15 +540,13 @@ export default async function AlumnoDetallePage(
         ) : (
           <div className="flex flex-col gap-1">
             {feedbackSemanales.map((f) => (
-              <div
+              <ItemFeedbackSemanal
                 key={f.id_feedback_semanal}
-                className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-3 text-sm"
-              >
-                <span className="text-on-surface-variant">
-                  Semana del {FORMATEADOR_FECHA.format(f.semana_inicio)}
-                </span>
-                <p className="text-on-surface mt-1">{f.comentario_semanal}</p>
-              </div>
+                id={f.id_feedback_semanal}
+                semana={FORMATEADOR_FECHA.format(f.semana_inicio)}
+                comentario={f.comentario_semanal}
+                respuesta={f.respuesta_coach}
+              />
             ))}
             {feedbackDiarios.map((f) => (
               <div

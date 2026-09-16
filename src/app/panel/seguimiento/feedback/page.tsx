@@ -70,6 +70,7 @@ export default async function FeedbackPage() {
                 id={f.id_feedback_semanal}
                 semana={FORMATEADOR_FECHA.format(f.semana_inicio)}
                 comentario={f.comentario_semanal}
+                respuesta={f.respuesta_coach}
               />
             ))}
           </div>

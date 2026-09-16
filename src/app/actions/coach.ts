@@ -1045,6 +1045,52 @@ export async function eliminarObjetivo(formData: FormData): Promise<void> {
 }
 
 // ------------------------------------------------------------
+// FEEDBACK SEMANAL — antes era de solo lectura para el coach; esto le
+// permite responder dentro de la misma app en vez de tener que escribirle
+// por WhatsApp aparte.
+// ------------------------------------------------------------
+
+export async function responderFeedbackSemanal(
+  _prev: EstadoCoach,
+  formData: FormData
+): Promise<EstadoCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_feedback_semanal = String(formData.get("id_feedback_semanal") ?? "");
+  const respuesta_coach = String(formData.get("respuesta_coach") ?? "").trim();
+  if (!id_feedback_semanal || !respuesta_coach) {
+    return { error: "Escribí una respuesta." };
+  }
+
+  const feedback = await prisma.feedbackSemanal.findUnique({
+    where: { id_feedback_semanal },
+    include: { alumno: { include: { usuario: true } } },
+  });
+  if (!feedback || !(await alumnoDelEntrenador(feedback.id_alumno, contexto.id_entrenador))) {
+    return { error: "No autorizado sobre este feedback." };
+  }
+
+  await prisma.feedbackSemanal.update({
+    where: { id_feedback_semanal },
+    data: { respuesta_coach, fecha_respuesta: new Date() },
+  });
+
+  await crearNotificacion({
+    id_usuario: feedback.alumno.usuario.id_usuario,
+    titulo: "Tu coach respondió tu feedback semanal",
+    contenido:
+      respuesta_coach.length > 120 ? `${respuesta_coach.slice(0, 117)}...` : respuesta_coach,
+    tipo: "feedback",
+    url: "/panel/seguimiento/feedback",
+  });
+
+  revalidatePath(`/coach/alumnos/${feedback.id_alumno}`);
+  revalidatePath("/panel/seguimiento/feedback");
+  return { message: "Respuesta enviada." };
+}
+
+// ------------------------------------------------------------
 // COMPOSICIÓN CORPORAL — el coach carga la medición completa de
 // balanza/InBody de cada alumno de su cartera.
 // ------------------------------------------------------------
