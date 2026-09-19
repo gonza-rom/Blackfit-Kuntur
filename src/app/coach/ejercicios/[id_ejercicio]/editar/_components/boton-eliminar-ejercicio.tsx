@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { eliminarEjercicio } from "@/app/actions/coach";
+import { ConfirmForm } from "@/components/confirm-form";
 
 export function BotonEliminarEjercicio({
   idEjercicio,
@@ -19,13 +20,9 @@ export function BotonEliminarEjercicio({
           {state.error}
         </p>
       )}
-      <form
+      <ConfirmForm
         action={action}
-        onSubmit={(e) => {
-          if (!confirm(`¿Eliminar "${nombre}" de la biblioteca? No se puede deshacer.`)) {
-            e.preventDefault();
-          }
-        }}
+        mensaje={`¿Eliminar "${nombre}" de la biblioteca? No se puede deshacer.`}
       >
         <input type="hidden" name="id_ejercicio" value={idEjercicio} />
         <button
@@ -35,7 +32,7 @@ export function BotonEliminarEjercicio({
         >
           {pending ? "Eliminando..." : "Eliminar ejercicio"}
         </button>
-      </form>
+      </ConfirmForm>
     </div>
   );
 }

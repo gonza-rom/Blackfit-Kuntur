@@ -11,6 +11,9 @@ import { evaluarLogros } from "@/lib/gamificacion";
 import { TAG_CATALOGO_EJERCICIOS } from "@/lib/catalogos";
 import type { CampoComposicionCorporal } from "@/lib/composicion-corporal";
 import { extraerComposicionDeTexto, extraerFechaDeTexto } from "@/lib/parseo-composicion-corporal";
+import { registrarAuditoria } from "@/lib/auditoria";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { emailSinteticoAlumno } from "@/lib/importarBeneficiarios";
 
 const TIPOS_OBJETIVO: TipoObjetivo[] = [
   "volumen",
@@ -99,6 +102,93 @@ export async function vincularAlumno(
     });
   }
 
+  redirect("/coach/alumnos");
+}
+
+// Alta de un alumno que todavía no tiene cuenta (no pasó por /registro):
+// el coach le crea el usuario directo, con contraseña = DNI (mismo
+// mecanismo que los beneficiarios importados de Kuntur — ver
+// importarFilaBeneficiario en actions/admin.ts). El alumno después entra
+// con su DNI (ver iniciarSesion en actions/auth.ts) y completa su perfil
+// desde /panel. A diferencia del import de beneficiarios, acá un DNI que
+// ya existe es un error en vez de actualizarse: el coach no debe poder
+// pisar los datos de una cuenta ajena solo por adivinar su DNI — para
+// vincular a alguien que ya tiene cuenta está vincularAlumno (por email).
+export async function crearYVincularAlumno(
+  _prev: EstadoCoach,
+  formData: FormData
+): Promise<EstadoCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const nombre = String(formData.get("nombre") ?? "").trim();
+  const apellido = String(formData.get("apellido") ?? "").trim();
+  const dniRaw = String(formData.get("dni") ?? "").trim();
+  const emailRaw = String(formData.get("email") ?? "").trim();
+  const vincular = formData.get("vincular") === "on";
+
+  if (!nombre || !apellido || !dniRaw) {
+    return { error: "Completá nombre, apellido y DNI." };
+  }
+
+  const dni = dniRaw.replace(/\D/g, "");
+  if (dni.length < 6) {
+    return { error: "El DNI debe tener al menos 6 dígitos: se usa como contraseña inicial." };
+  }
+
+  const dniEnUso = await prisma.usuario.findUnique({ where: { dni } });
+  if (dniEnUso) {
+    return {
+      error: "Ya existe una cuenta con ese DNI. Buscala por email y usá \"Vincular\" en vez de crearla de nuevo.",
+    };
+  }
+
+  const email = emailRaw || emailSinteticoAlumno(dni);
+  if (emailRaw) {
+    const emailEnUso = await prisma.usuario.findUnique({ where: { email } });
+    if (emailEnUso) return { error: "Ese email ya está en uso por otra cuenta." };
+  }
+
+  const supabaseAdmin = createAdminClient();
+  const { data, error } = await supabaseAdmin.auth.admin.createUser({
+    email,
+    password: dni,
+    email_confirm: true,
+    user_metadata: { nombre, apellido, dni },
+  });
+  if (error || !data.user) {
+    return { error: `No se pudo crear la cuenta: ${error?.message ?? "error desconocido"}` };
+  }
+
+  const id_usuario = data.user.id;
+  const usuario = await prisma.usuario.create({
+    data: {
+      id_usuario,
+      email,
+      dni,
+      nombre,
+      apellido,
+      roles: { create: { rol: "alumno" } },
+      alumno: { create: {} },
+    },
+    include: { alumno: true },
+  });
+
+  if (vincular && usuario.alumno) {
+    await prisma.relacionEntrenadorAlumno.create({
+      data: { id_entrenador: contexto.id_entrenador, id_alumno: usuario.alumno.id_alumno },
+    });
+  }
+
+  await registrarAuditoria({
+    id_usuario_actor: contexto.usuario.id_usuario,
+    accion: "alta_alumno_coach",
+    recurso: "usuario",
+    id_recurso: id_usuario,
+    resultado: vincular ? "creado_y_vinculado" : "creado",
+  });
+
+  revalidatePath("/coach/alumnos");
   redirect("/coach/alumnos");
 }
 
@@ -241,7 +331,22 @@ export async function eliminarEjercicio(
     };
   }
 
-  await prisma.ejercicio.delete({ where: { id_ejercicio } });
+  // El count() de arriba da el mensaje detallado en el caso común, pero no
+  // cubre una fila creada justo entre el count() y este delete() — sin este
+  // try/catch, esa carrera (o cualquier otro error de Prisma) tiraba una
+  // excepción sin capturar y el cliente veía "unexpected response" en vez
+  // de un mensaje.
+  try {
+    await prisma.ejercicio.delete({ where: { id_ejercicio } });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
+      return {
+        error: "No se puede eliminar: ya se usó en un programa/plantilla. Editalo si hace falta corregirlo.",
+      };
+    }
+    throw err;
+  }
+
   updateTag(TAG_CATALOGO_EJERCICIOS);
   redirect("/coach/ejercicios");
 }

@@ -1,16 +1,13 @@
 "use client";
 
 import { eliminarEntrenamiento } from "@/app/actions/alumno";
+import { ConfirmForm } from "@/components/confirm-form";
 
 export function BotonEliminarEntrenamiento({ idEntrenamiento }: { idEntrenamiento: string }) {
   return (
-    <form
+    <ConfirmForm
       action={eliminarEntrenamiento}
-      onSubmit={(e) => {
-        if (!confirm("¿Eliminar esta sesión registrada? No se puede deshacer.")) {
-          e.preventDefault();
-        }
-      }}
+      mensaje="¿Eliminar esta sesión registrada? No se puede deshacer."
     >
       <input type="hidden" name="id_entrenamiento" value={idEntrenamiento} />
       <button
@@ -20,6 +17,6 @@ export function BotonEliminarEntrenamiento({ idEntrenamiento }: { idEntrenamient
       >
         <span className="material-symbols-outlined text-[18px]">delete</span>
       </button>
-    </form>
+    </ConfirmForm>
   );
 }

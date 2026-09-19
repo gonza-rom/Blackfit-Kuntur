@@ -105,3 +105,11 @@ export function parsearCsvBeneficiarios(texto: string): ResultadoParseoCsv {
 export function emailSinteticoBeneficiario(dni: string): string {
   return `dni${dni}@beneficiario.blackhub.local`;
 }
+
+// Mismo mecanismo que emailSinteticoBeneficiario, pero para alumnos que
+// el coach da de alta sin email desde /coach/alumnos/nuevo (ver
+// crearYVincularAlumno en src/app/actions/coach.ts). Dominio propio para
+// que quede claro en la base/logs de qué tipo de alta salió la cuenta.
+export function emailSinteticoAlumno(dni: string): string {
+  return `dni${dni}@alumno.blackhub.local`;
+}

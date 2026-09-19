@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { eliminarPrograma } from "@/app/actions/coach";
+import { ConfirmForm } from "@/components/confirm-form";
 
 export function BotonEliminarPrograma({
   idPrograma,
@@ -30,13 +31,9 @@ export function BotonEliminarPrograma({
         </p>
       )}
 
-      <form
+      <ConfirmForm
         action={action}
-        onSubmit={(e) => {
-          if (!confirm(`¿Eliminar el programa "${nombrePrograma}"? No se puede deshacer.`)) {
-            e.preventDefault();
-          }
-        }}
+        mensaje={`¿Eliminar el programa "${nombrePrograma}"? No se puede deshacer.`}
       >
         <input type="hidden" name="id_programa" value={idPrograma} />
         <button
@@ -46,7 +43,7 @@ export function BotonEliminarPrograma({
         >
           {pending ? "Eliminando..." : "Eliminar programa"}
         </button>
-      </form>
+      </ConfirmForm>
     </div>
   );
 }

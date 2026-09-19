@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { crearObjetivo, actualizarObjetivo, eliminarObjetivo } from "@/app/actions/coach";
+import { ConfirmForm } from "@/components/confirm-form";
 
 export type ObjetivoSerializado = {
   id_objetivo: string;
@@ -184,14 +185,7 @@ function ObjetivoItem({ objetivo }: { objetivo: ObjetivoSerializado }) {
               {editar ? "close" : "edit"}
             </span>
           </button>
-          <form
-            action={eliminarObjetivo}
-            onSubmit={(e) => {
-              if (!confirm(`¿Eliminar el objetivo "${objetivo.titulo}"?`)) {
-                e.preventDefault();
-              }
-            }}
-          >
+          <ConfirmForm action={eliminarObjetivo} mensaje={`¿Eliminar el objetivo "${objetivo.titulo}"?`}>
             <input type="hidden" name="id_objetivo" value={objetivo.id_objetivo} />
             <button
               type="submit"
@@ -200,7 +194,7 @@ function ObjetivoItem({ objetivo }: { objetivo: ObjetivoSerializado }) {
             >
               <span className="material-symbols-outlined text-[20px]">delete</span>
             </button>
-          </form>
+          </ConfirmForm>
         </div>
       </div>
 

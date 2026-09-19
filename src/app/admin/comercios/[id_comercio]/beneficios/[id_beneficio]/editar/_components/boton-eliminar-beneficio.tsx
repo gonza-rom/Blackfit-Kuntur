@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { eliminarBeneficio } from "@/app/actions/admin";
+import { ConfirmForm } from "@/components/confirm-form";
 
 export function BotonEliminarBeneficio({
   idBeneficio,
@@ -30,13 +31,9 @@ export function BotonEliminarBeneficio({
         </p>
       )}
 
-      <form
+      <ConfirmForm
         action={action}
-        onSubmit={(e) => {
-          if (!confirm(`¿Eliminar el beneficio "${tituloBeneficio}"? No se puede deshacer.`)) {
-            e.preventDefault();
-          }
-        }}
+        mensaje={`¿Eliminar el beneficio "${tituloBeneficio}"? No se puede deshacer.`}
       >
         <input type="hidden" name="id_beneficio" value={idBeneficio} />
         <button
@@ -46,7 +43,7 @@ export function BotonEliminarBeneficio({
         >
           {pending ? "Eliminando..." : "Eliminar beneficio"}
         </button>
-      </form>
+      </ConfirmForm>
     </div>
   );
 }

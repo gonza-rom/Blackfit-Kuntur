@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { eliminarComercio } from "@/app/actions/admin";
+import { ConfirmForm } from "@/components/confirm-form";
 
 export function BotonEliminarComercio({
   idComercio,
@@ -31,13 +32,9 @@ export function BotonEliminarComercio({
         </p>
       )}
 
-      <form
+      <ConfirmForm
         action={action}
-        onSubmit={(e) => {
-          if (!confirm(`¿Eliminar el comercio "${nombreComercio}"? No se puede deshacer.`)) {
-            e.preventDefault();
-          }
-        }}
+        mensaje={`¿Eliminar el comercio "${nombreComercio}"? No se puede deshacer.`}
       >
         <input type="hidden" name="id_comercio" value={idComercio} />
         <button
@@ -47,7 +44,7 @@ export function BotonEliminarComercio({
         >
           {pending ? "Eliminando..." : "Eliminar comercio"}
         </button>
-      </form>
+      </ConfirmForm>
     </div>
   );
 }

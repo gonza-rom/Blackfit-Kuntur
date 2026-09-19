@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { editarPlantillaPrograma, eliminarPlantilla } from "@/app/actions/coach";
+import { ConfirmForm } from "@/components/confirm-form";
 
 const INPUT =
   "w-full bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface text-sm p-2.5 transition-colors";
@@ -95,13 +96,9 @@ export function FormEditarPlantilla({ plantilla }: { plantilla: Plantilla }) {
         )}
       </div>
 
-      <form
+      <ConfirmForm
         action={eliminarPlantilla}
-        onSubmit={(e) => {
-          if (!confirm(`¿Eliminar la plantilla "${plantilla.nombre}"? No se puede deshacer.`)) {
-            e.preventDefault();
-          }
-        }}
+        mensaje={`¿Eliminar la plantilla "${plantilla.nombre}"? No se puede deshacer.`}
       >
         <input type="hidden" name="id_plantilla" value={plantilla.id_programa} />
         <button
@@ -111,7 +108,7 @@ export function FormEditarPlantilla({ plantilla }: { plantilla: Plantilla }) {
         >
           <span className="material-symbols-outlined text-[20px]">delete</span>
         </button>
-      </form>
+      </ConfirmForm>
     </section>
   );
 }

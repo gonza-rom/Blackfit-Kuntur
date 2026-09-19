@@ -3,7 +3,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { emailSinteticoBeneficiario } from "@/lib/importarBeneficiarios";
 
 export type EstadoAuth = { error?: string; message?: string } | undefined;
 
@@ -18,13 +17,23 @@ export async function iniciarSesion(
     return { error: "Completá email/DNI y contraseña." };
   }
 
-  // Los beneficiarios importados de Kuntur (ver importarBeneficiarios en
-  // src/app/actions/admin.ts) no tienen email propio: se loguean con su
-  // DNI, que se resuelve acá al email sintético con el que se creó su
-  // cuenta. Cualquier valor sin "@" se trata como DNI.
-  const email = identificador.includes("@")
-    ? identificador
-    : emailSinteticoBeneficiario(identificador.replace(/\D/g, ""));
+  // Cuentas dadas de alta sin email propio (beneficiarios importados de
+  // Kuntur, o alumnos que carga el coach desde /coach/alumnos/nuevo) se
+  // loguean con su DNI. En vez de reconstruir el email sintético con el
+  // que se creó la cuenta (dependería de saber qué alta lo generó), se
+  // busca directo por DNI el email real con el que quedó registrado.
+  let email = identificador;
+  if (!identificador.includes("@")) {
+    const dni = identificador.replace(/\D/g, "");
+    const usuario = await prisma.usuario.findUnique({
+      where: { dni },
+      select: { email: true },
+    });
+    if (!usuario) {
+      return { error: "Email o contraseña incorrectos." };
+    }
+    email = usuario.email;
+  }
 
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });

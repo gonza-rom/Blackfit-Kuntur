@@ -1,6 +1,7 @@
 "use client";
 
 import { desvincularAlumno } from "@/app/actions/coach";
+import { ConfirmForm } from "@/components/confirm-form";
 
 export function BotonDesvincular({
   idAlumno,
@@ -10,17 +11,11 @@ export function BotonDesvincular({
   nombreCompleto: string;
 }) {
   return (
-    <form
+    <ConfirmForm
       action={desvincularAlumno}
-      onSubmit={(e) => {
-        if (
-          !confirm(
-            `¿Desvincular a ${nombreCompleto} de tu cartera? Podés volver a vincularlo más adelante — no se borra su historial.`
-          )
-        ) {
-          e.preventDefault();
-        }
-      }}
+      titulo="Desvincular alumno"
+      confirmLabel="Desvincular"
+      mensaje={`¿Desvincular a ${nombreCompleto} de tu cartera? Podés volver a vincularlo más adelante — no se borra su historial.`}
     >
       <input type="hidden" name="id_alumno" value={idAlumno} />
       <button
@@ -30,6 +25,6 @@ export function BotonDesvincular({
         <span className="material-symbols-outlined text-[16px]">person_remove</span>
         Desvincular
       </button>
-    </form>
+    </ConfirmForm>
   );
 }

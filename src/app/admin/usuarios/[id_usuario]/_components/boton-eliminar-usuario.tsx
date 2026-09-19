@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { eliminarUsuario } from "@/app/actions/admin";
+import { ConfirmForm } from "@/components/confirm-form";
 
 export function BotonEliminarUsuario({
   idUsuario,
@@ -31,13 +32,9 @@ export function BotonEliminarUsuario({
         </p>
       )}
 
-      <form
+      <ConfirmForm
         action={action}
-        onSubmit={(e) => {
-          if (!confirm(`¿Eliminar la cuenta de "${nombreCompleto}"? No se puede deshacer.`)) {
-            e.preventDefault();
-          }
-        }}
+        mensaje={`¿Eliminar la cuenta de "${nombreCompleto}"? No se puede deshacer.`}
       >
         <input type="hidden" name="id_usuario" value={idUsuario} />
         <button
@@ -47,7 +44,7 @@ export function BotonEliminarUsuario({
         >
           {pending ? "Eliminando..." : "Eliminar usuario"}
         </button>
-      </form>
+      </ConfirmForm>
     </div>
   );
 }

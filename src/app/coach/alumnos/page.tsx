@@ -148,13 +148,21 @@ export default async function CoachAlumnosPage() {
             {relaciones.length} activo{relaciones.length === 1 ? "" : "s"}
           </p>
         </div>
-        <Link
-          href="/coach/alumnos/vincular"
-          className="flex items-center gap-2 bg-primary-container text-black font-[family-name:var(--font-sora)] text-sm font-bold px-4 py-2 rounded-full"
-        >
-          <span className="material-symbols-outlined text-[18px]">add</span>
-          Vincular
-        </Link>
+        <div className="flex gap-2">
+          <Link
+            href="/coach/alumnos/vincular"
+            className="flex items-center gap-2 border border-outline-variant text-on-surface font-[family-name:var(--font-sora)] text-sm font-bold px-4 py-2 rounded-full"
+          >
+            Vincular
+          </Link>
+          <Link
+            href="/coach/alumnos/nuevo"
+            className="flex items-center gap-2 bg-primary-container text-black font-[family-name:var(--font-sora)] text-sm font-bold px-4 py-2 rounded-full"
+          >
+            <span className="material-symbols-outlined text-[18px]">add</span>
+            Nuevo
+          </Link>
+        </div>
       </div>
 
       {relaciones.length === 0 ? (

@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { eliminarPlanMembresia } from "@/app/actions/admin";
+import { ConfirmForm } from "@/components/confirm-form";
 
 export function BotonEliminarPlan({
   idPlanMembresia,
@@ -34,14 +35,7 @@ export function BotonEliminarPlan({
         </p>
       )}
 
-      <form
-        action={action}
-        onSubmit={(e) => {
-          if (!confirm(`¿Eliminar el plan "${nombrePlan}"? No se puede deshacer.`)) {
-            e.preventDefault();
-          }
-        }}
-      >
+      <ConfirmForm action={action} mensaje={`¿Eliminar el plan "${nombrePlan}"? No se puede deshacer.`}>
         <input type="hidden" name="id_plan_membresia" value={idPlanMembresia} />
         <button
           type="submit"
@@ -50,7 +44,7 @@ export function BotonEliminarPlan({
         >
           {pending ? "Eliminando..." : "Eliminar plan"}
         </button>
-      </form>
+      </ConfirmForm>
     </div>
   );
 }

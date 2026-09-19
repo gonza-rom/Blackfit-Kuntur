@@ -41,3 +41,7 @@ yarn-error.log*
 next-env.d.ts
 
 /src/generated/prisma
+
+# datos personales de socios (nombre/DNI) que Kuntur manda para importar —
+# nunca al repo, ver /admin/usuarios/importar
+*SOCIOS*.csv

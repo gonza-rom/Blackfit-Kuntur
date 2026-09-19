@@ -29,8 +29,7 @@ export default async function CoachMensajesPage() {
           WhatsApp
         </h1>
         <p className="text-sm text-on-surface-variant">
-          La comunicación con tus alumnos es por WhatsApp. El chat interno de la
-          app fue dado de baja.
+          La comunicación con tus alumnos es por WhatsApp.
         </p>
       </div>
 

@@ -6,6 +6,7 @@ import {
   editarMembresia,
   eliminarMembresia,
 } from "@/app/actions/admin";
+import { ConfirmForm } from "@/components/confirm-form";
 
 const ESTADOS_MEMBRESIA = ["activa", "vencida", "cancelada", "suspendida", "pendiente"] as const;
 
@@ -114,14 +115,7 @@ export function ItemMembresia({ membresia, planes }: { membresia: Membresia; pla
       )}
 
       {editando && (
-        <form
-          action={accionDelete}
-          onSubmit={(e) => {
-            if (!confirm("¿Eliminar esta membresía? No se puede deshacer.")) {
-              e.preventDefault();
-            }
-          }}
-        >
+        <ConfirmForm action={accionDelete} mensaje="¿Eliminar esta membresía? No se puede deshacer.">
           <input type="hidden" name="id_membresia" value={membresia.id_membresia} />
           <button
             type="submit"
@@ -133,7 +127,7 @@ export function ItemMembresia({ membresia, planes }: { membresia: Membresia; pla
           {estadoDelete?.error && (
             <p className="text-xs text-[#ffb4ab] mt-1">{estadoDelete.error}</p>
           )}
-        </form>
+        </ConfirmForm>
       )}
     </div>
   );
