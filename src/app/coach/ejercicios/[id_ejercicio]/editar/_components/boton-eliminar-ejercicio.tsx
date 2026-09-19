@@ -22,6 +22,7 @@ export function BotonEliminarEjercicio({
       )}
       <ConfirmForm
         action={action}
+        pending={pending}
         mensaje={`¿Eliminar "${nombre}" de la biblioteca? No se puede deshacer.`}
       >
         <input type="hidden" name="id_ejercicio" value={idEjercicio} />

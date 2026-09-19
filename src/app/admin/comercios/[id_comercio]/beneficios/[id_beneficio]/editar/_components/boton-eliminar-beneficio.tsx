@@ -33,6 +33,7 @@ export function BotonEliminarBeneficio({
 
       <ConfirmForm
         action={action}
+        pending={pending}
         mensaje={`¿Eliminar el beneficio "${tituloBeneficio}"? No se puede deshacer.`}
       >
         <input type="hidden" name="id_beneficio" value={idBeneficio} />

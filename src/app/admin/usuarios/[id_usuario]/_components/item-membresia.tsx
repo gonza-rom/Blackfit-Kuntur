@@ -115,7 +115,11 @@ export function ItemMembresia({ membresia, planes }: { membresia: Membresia; pla
       )}
 
       {editando && (
-        <ConfirmForm action={accionDelete} mensaje="¿Eliminar esta membresía? No se puede deshacer.">
+        <ConfirmForm
+          action={accionDelete}
+          pending={pendingDelete}
+          mensaje="¿Eliminar esta membresía? No se puede deshacer."
+        >
           <input type="hidden" name="id_membresia" value={membresia.id_membresia} />
           <button
             type="submit"

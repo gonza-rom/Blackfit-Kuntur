@@ -33,6 +33,7 @@ export function BotonEliminarPrograma({
 
       <ConfirmForm
         action={action}
+        pending={pending}
         mensaje={`¿Eliminar el programa "${nombrePrograma}"? No se puede deshacer.`}
       >
         <input type="hidden" name="id_programa" value={idPrograma} />

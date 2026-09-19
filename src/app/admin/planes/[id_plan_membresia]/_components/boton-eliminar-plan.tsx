@@ -35,7 +35,11 @@ export function BotonEliminarPlan({
         </p>
       )}
 
-      <ConfirmForm action={action} mensaje={`¿Eliminar el plan "${nombrePlan}"? No se puede deshacer.`}>
+      <ConfirmForm
+        action={action}
+        pending={pending}
+        mensaje={`¿Eliminar el plan "${nombrePlan}"? No se puede deshacer.`}
+      >
         <input type="hidden" name="id_plan_membresia" value={idPlanMembresia} />
         <button
           type="submit"

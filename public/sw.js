@@ -1,4 +1,4 @@
-const CACHE = "black-hub-v1";
+const CACHE = "black-hub-v2";
 const APP_SHELL = ["/manifest.json", "/icons/icon-192.png", "/icons/icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -17,13 +17,39 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Solo cachea GET del propio origen. Los datos "en vivo" (entrenamientos,
-// mensajes, etc.) siguen viniendo del servidor; el modo offline real de
-// escritura lo maneja la cola en src/lib/offline-queue.ts, no este worker.
+// Solo cachea assets estáticos reales (JS/CSS de _next/static, íconos,
+// manifest) — nunca navegaciones de documento ni los fetches internos del
+// App Router (RSC, Server Actions, prefetch: headers "RSC",
+// "Next-Router-State-Tree", "Next-Action"). Esas rutas llevan headers que
+// esta cache no distingue (la Cache API matchea por URL, no por header) —
+// si se les sirve una respuesta vieja cacheada bajo la misma URL, React
+// recibe un payload RSC corrupto y tira "An unexpected response was
+// received from the server" o "enqueueModel is not a function". Los datos
+// "en vivo" (entrenamientos, mensajes, etc.) siguen viniendo del servidor;
+// el modo offline real de escritura lo maneja la cola en
+// src/lib/offline-queue.ts, no este worker.
+function esAssetEstatico(url) {
+  return (
+    url.pathname.startsWith("/_next/static/") ||
+    url.pathname.startsWith("/icons/") ||
+    url.pathname === "/manifest.json"
+  );
+}
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
   if (!request.url.startsWith(self.location.origin)) return;
+  if (request.mode === "navigate") return;
+  if (
+    request.headers.has("RSC") ||
+    request.headers.has("Next-Router-State-Tree") ||
+    request.headers.has("Next-Action") ||
+    request.headers.get("purpose") === "prefetch"
+  ) {
+    return;
+  }
+  if (!esAssetEstatico(new URL(request.url))) return;
 
   event.respondWith(
     caches.match(request).then((cached) => {

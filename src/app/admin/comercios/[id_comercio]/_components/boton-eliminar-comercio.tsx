@@ -34,6 +34,7 @@ export function BotonEliminarComercio({
 
       <ConfirmForm
         action={action}
+        pending={pending}
         mensaje={`¿Eliminar el comercio "${nombreComercio}"? No se puede deshacer.`}
       >
         <input type="hidden" name="id_comercio" value={idComercio} />

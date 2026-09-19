@@ -34,6 +34,7 @@ export function BotonEliminarUsuario({
 
       <ConfirmForm
         action={action}
+        pending={pending}
         mensaje={`¿Eliminar la cuenta de "${nombreCompleto}"? No se puede deshacer.`}
       >
         <input type="hidden" name="id_usuario" value={idUsuario} />
