@@ -6,6 +6,9 @@ export type SesionPendiente = {
   id_local: string;
   id_bloque: string;
   comentario_general: string | null;
+  duracion_minutos: number | null;
+  calorias_estimadas: number | null;
+  sensacion_general: number | null;
   series: {
     id_ejercicio_programa: string;
     peso_utilizado: number | null;

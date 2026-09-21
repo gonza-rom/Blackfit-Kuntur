@@ -353,6 +353,16 @@ model Entrenamiento {
   comentarios      String?
   estado           EstadoEntrenamiento @default(pendiente)
 
+  // Resumen que ve el alumno al finalizar la sesión (pantalla "Finalizar
+  // entrenamiento"). duracion_minutos se mide en el cliente (desde que
+  // abre el bloque hasta que finaliza); calorias_estimadas es una
+  // aproximación a partir de la duración — nunca un valor médico exacto,
+  // por eso siempre se etiqueta como "estimado" en la UI. sensacion_general
+  // es la carita que elige (1 = 😫 más costoso, 5 = 🤩 mejor sensación).
+  duracion_minutos    Int?
+  calorias_estimadas  Int?
+  sensacion_general   Int?
+
   alumno   Alumno                 @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
   programa ProgramaEntrenamiento? @relation(fields: [id_programa], references: [id_programa])
   series   SerieEntrenamiento[]

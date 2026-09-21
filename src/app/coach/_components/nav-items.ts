@@ -14,6 +14,6 @@ export const NAV_ITEMS_COACH = [
     icon: "fitness_center",
   },
   { href: "/coach/biblioteca", label: "Biblioteca", shortLabel: "Bibliot.", icon: "menu_book" },
-  { href: "/coach/mensajes", label: "WhatsApp", shortLabel: "WhatsApp", icon: "forum" },
+  { href: "/coach/mensajes", label: "Mensajes", shortLabel: "Mensajes", icon: "forum" },
   { href: "/coach/perfil", label: "Perfil", shortLabel: "Perfil", icon: "person" },
 ] as const;

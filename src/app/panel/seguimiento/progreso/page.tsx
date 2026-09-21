@@ -6,6 +6,7 @@ import { FormProgresoFisico } from "./_components/form-progreso-fisico";
 import { FormMedidaCorporal } from "./_components/form-medida-corporal";
 import { ProgresoFisicoItem } from "./_components/progreso-fisico-item";
 import { MedidaCorporalItem } from "./_components/medida-corporal-item";
+import { GraficoEvolucion, type SerieMetrica } from "./_components/grafico-evolucion";
 
 const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
   day: "2-digit",
@@ -29,24 +30,6 @@ const CAMPOS_EXTRA: { campo: string; label: string; unit: string }[] = [
   { campo: "proteina", label: "Proteína", unit: "kg" },
 ];
 
-const ANCHO_SPARKLINE = 280;
-const ALTO_SPARKLINE = 60;
-
-function puntosSparkline(valores: number[]): string {
-  if (valores.length < 2) return "";
-  const min = Math.min(...valores);
-  const max = Math.max(...valores);
-  const rango = max - min || 1;
-
-  return valores
-    .map((valor, i) => {
-      const x = (i / (valores.length - 1)) * ANCHO_SPARKLINE;
-      const y = ALTO_SPARKLINE - ((valor - min) / rango) * ALTO_SPARKLINE;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
-}
-
 export default async function ProgresoFisicoPage() {
   const contexto = await obtenerAlumnoActual();
   if (!contexto) redirect("/panel");
@@ -64,10 +47,29 @@ export default async function ProgresoFisicoPage() {
     }),
   ]);
 
-  const pesosOrdenados = [...progresos]
-    .reverse()
-    .filter((p) => p.peso_corporal !== null)
-    .map((p) => Number(p.peso_corporal));
+  const progresosAscendentes = [...progresos].reverse();
+
+  function serieDe(campo: "peso_corporal" | "porcentaje_graso" | "masa_muscular") {
+    return progresosAscendentes
+      .filter((p) => p[campo] !== null)
+      .map((p) => ({ fecha: FORMATEADOR_FECHA.format(p.fecha), valor: Number(p[campo]) }));
+  }
+
+  const seriesGrafico: SerieMetrica[] = [
+    { clave: "peso_corporal", etiqueta: "Peso", unidad: "kg", puntos: serieDe("peso_corporal") },
+    {
+      clave: "porcentaje_graso",
+      etiqueta: "% Grasa",
+      unidad: "%",
+      puntos: serieDe("porcentaje_graso"),
+    },
+    {
+      clave: "masa_muscular",
+      etiqueta: "Masa muscular",
+      unidad: "kg",
+      puntos: serieDe("masa_muscular"),
+    },
+  ];
 
   const urlesFotos = await urlesFirmadasFotos(medidas.map((m) => m.foto_url));
 
@@ -77,25 +79,7 @@ export default async function ProgresoFisicoPage() {
         Progreso físico
       </h1>
 
-      {pesosOrdenados.length >= 2 && (
-        <section className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4">
-          <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase mb-3">
-            Evolución del peso
-          </h2>
-          <svg
-            viewBox={`0 0 ${ANCHO_SPARKLINE} ${ALTO_SPARKLINE}`}
-            className="w-full h-16"
-            preserveAspectRatio="none"
-          >
-            <polyline
-              points={puntosSparkline(pesosOrdenados)}
-              fill="none"
-              stroke="#61edda"
-              strokeWidth="2"
-            />
-          </svg>
-        </section>
-      )}
+      <GraficoEvolucion series={seriesGrafico} />
 
       <section className="flex flex-col gap-2">
         <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">

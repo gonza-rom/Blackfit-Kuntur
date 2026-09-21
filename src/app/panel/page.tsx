@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoActual, tieneRol } from "@/lib/auth";
-import { obtenerProgramaActivo, calcularBloqueActual } from "@/lib/alumno";
+import { obtenerProgramaActivo, calcularBloqueActual, obtenerUltimoPR } from "@/lib/alumno";
+
+const FORMATEADOR_FECHA_PR = new Intl.DateTimeFormat("es-AR", { day: "2-digit", month: "short" });
 
 export default async function PanelPage() {
   const contexto = await obtenerAlumnoActual();
@@ -31,6 +33,7 @@ export default async function PanelPage() {
     alumnoPuntos,
     objetivosActivos,
     logrosObtenidos,
+    ultimoPR,
   ] = await Promise.all([
     prisma.progresoFisico.findMany({
       where: { id_alumno },
@@ -52,6 +55,7 @@ export default async function PanelPage() {
     }),
     prisma.objetivo.count({ where: { id_alumno, estado: "activo" } }),
     prisma.logroAlumno.count({ where: { id_alumno } }),
+    obtenerUltimoPR(id_alumno),
   ]);
 
   const bloqueActual = programa ? calcularBloqueActual(programa) : null;
@@ -74,6 +78,13 @@ export default async function PanelPage() {
 
   return (
     <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-8">
+      <div>
+        <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
+          Hola, {usuario.nombre}
+        </h1>
+        <p className="text-sm text-on-surface-variant">Tu entrenamiento, en tus manos.</p>
+      </div>
+
       {/* Protocolo de hoy */}
       <section className="flex flex-col gap-2">
         <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
@@ -116,6 +127,32 @@ export default async function PanelPage() {
           </div>
         )}
       </section>
+
+      {ultimoPR && (
+        <section className="flex flex-col gap-2">
+          <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
+            Último PR
+          </h2>
+          <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full border border-primary-container flex items-center justify-center bg-[#131313] shrink-0">
+              <span
+                className="material-symbols-outlined text-primary-container text-[20px]"
+                style={{ fontVariationSettings: "'FILL' 1" }}
+              >
+                military_tech
+              </span>
+            </div>
+            <div className="min-w-0">
+              <p className="font-[family-name:var(--font-sora)] text-base font-semibold text-on-surface truncate">
+                {ultimoPR.nombreEjercicio} · {ultimoPR.peso}kg
+              </p>
+              <p className="text-[12px] text-on-surface-variant">
+                {FORMATEADOR_FECHA_PR.format(ultimoPR.fecha)}
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Métricas de rendimiento */}
       <section className="flex flex-col gap-2">

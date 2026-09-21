@@ -17,6 +17,9 @@ export async function POST(request: Request) {
     id_bloque?: string;
     comentario_general?: string | null;
     series?: SerieRegistrada[];
+    duracion_minutos?: number | null;
+    calorias_estimadas?: number | null;
+    sensacion_general?: number | null;
   };
   try {
     body = await request.json();
@@ -32,7 +35,12 @@ export async function POST(request: Request) {
     contexto.id_alumno,
     body.id_bloque,
     body.comentario_general ?? null,
-    body.series
+    body.series,
+    {
+      duracionMinutos: body.duracion_minutos ?? null,
+      caloriasEstimadas: body.calorias_estimadas ?? null,
+      sensacionGeneral: body.sensacion_general ?? null,
+    }
   );
 
   if (resultado.error) {

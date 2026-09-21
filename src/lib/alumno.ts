@@ -116,6 +116,45 @@ export async function calcularEstadisticasAlumno(
   return { sesiones, rachaDias, nuevosRecords };
 }
 
+export type UltimoPR = { nombreEjercicio: string; peso: number; fecha: Date } | null;
+
+/** El ejercicio en el que el alumno marcó su récord de peso más reciente (entre todos los que entrenó). */
+export async function obtenerUltimoPR(id_alumno: string): Promise<UltimoPR> {
+  const series = await prisma.serieEntrenamiento.findMany({
+    where: { entrenamiento: { id_alumno }, peso_utilizado: { not: null } },
+    select: {
+      peso_utilizado: true,
+      entrenamiento: { select: { fecha: true } },
+      ejercicio_programa: {
+        select: { ejercicio: { select: { id_ejercicio: true, nombre: true } } },
+      },
+    },
+  });
+
+  const maximos = new Map<string, { peso: number; fecha: Date; nombre: string }>();
+  for (const s of series) {
+    if (s.peso_utilizado === null) continue;
+    const peso = Number(s.peso_utilizado);
+    const id = s.ejercicio_programa.ejercicio.id_ejercicio;
+    const actual = maximos.get(id);
+    if (!actual || peso > actual.peso) {
+      maximos.set(id, {
+        peso,
+        fecha: s.entrenamiento.fecha,
+        nombre: s.ejercicio_programa.ejercicio.nombre,
+      });
+    }
+  }
+
+  let mejor: UltimoPR = null;
+  for (const m of maximos.values()) {
+    if (!mejor || m.fecha > mejor.fecha) {
+      mejor = { nombreEjercicio: m.nombre, peso: m.peso, fecha: m.fecha };
+    }
+  }
+  return mejor;
+}
+
 export type SerieRegistrada = {
   id_ejercicio_programa: string;
   peso_utilizado: number | null;
@@ -132,11 +171,18 @@ export type SerieRegistrada = {
  * el route handler (usado por la cola de sincronización offline — ver
  * lib/offline-queue.ts) para que ambos caminos guarden exactamente igual.
  */
+export type ResumenSesion = {
+  duracionMinutos?: number | null;
+  caloriasEstimadas?: number | null;
+  sensacionGeneral?: number | null;
+};
+
 export async function guardarSesionEntrenamiento(
   id_alumno: string,
   id_bloque: string,
   comentarioGeneral: string | null,
-  series: SerieRegistrada[]
+  series: SerieRegistrada[],
+  resumen?: ResumenSesion
 ): Promise<{ error?: string }> {
   const bloque = await prisma.bloqueEntrenamiento.findUnique({
     where: { id_bloque },
@@ -157,6 +203,9 @@ export async function guardarSesionEntrenamiento(
         nombre: bloque.nombre,
         estado: "completado",
         comentarios: comentarioGeneral,
+        duracion_minutos: resumen?.duracionMinutos ?? null,
+        calorias_estimadas: resumen?.caloriasEstimadas ?? null,
+        sensacion_general: resumen?.sensacionGeneral ?? null,
       },
     });
 

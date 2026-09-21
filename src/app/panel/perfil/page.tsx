@@ -56,6 +56,14 @@ export default async function PerfilPage() {
   const estadisticas =
     usuario?.alumno && (await calcularEstadisticasAlumno(usuario.alumno.id_alumno));
 
+  const ultimaComposicion = usuario?.alumno
+    ? await prisma.progresoFisico.findFirst({
+        where: { id_alumno: usuario.alumno.id_alumno },
+        orderBy: { fecha: "desc" },
+        select: { peso_corporal: true, imc: true, porcentaje_graso: true },
+      })
+    : null;
+
   const membresiaVigente = Boolean(
     membresia &&
       membresia.estado_membresia === "activa" &&
@@ -91,6 +99,37 @@ export default async function PerfilPage() {
           </div>
         )}
       </section>
+
+      {/* Composición corporal (última medición) */}
+      {ultimaComposicion &&
+        (ultimaComposicion.peso_corporal || ultimaComposicion.imc || ultimaComposicion.porcentaje_graso) && (
+          <section className="grid grid-cols-3 gap-3 mb-6">
+            <div className="bg-[#1f1f1f] border border-[#262626] rounded-xl p-3 flex flex-col items-center justify-center">
+              <span className="font-[family-name:var(--font-sora)] text-lg font-bold text-on-surface tabular-nums">
+                {ultimaComposicion.peso_corporal ? `${ultimaComposicion.peso_corporal}` : "—"}
+              </span>
+              <span className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] text-on-surface-variant uppercase">
+                Peso (kg)
+              </span>
+            </div>
+            <div className="bg-[#1f1f1f] border border-[#262626] rounded-xl p-3 flex flex-col items-center justify-center">
+              <span className="font-[family-name:var(--font-sora)] text-lg font-bold text-on-surface tabular-nums">
+                {ultimaComposicion.imc ? `${ultimaComposicion.imc}` : "—"}
+              </span>
+              <span className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] text-on-surface-variant uppercase">
+                IMC
+              </span>
+            </div>
+            <div className="bg-[#1f1f1f] border border-[#262626] rounded-xl p-3 flex flex-col items-center justify-center">
+              <span className="font-[family-name:var(--font-sora)] text-lg font-bold text-on-surface tabular-nums">
+                {ultimaComposicion.porcentaje_graso ? `${ultimaComposicion.porcentaje_graso}%` : "—"}
+              </span>
+              <span className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] text-on-surface-variant uppercase">
+                Grasa
+              </span>
+            </div>
+          </section>
+        )}
 
       {/* Fila de estadísticas */}
       <section className="grid grid-cols-3 gap-4 mb-8">
@@ -129,7 +168,9 @@ export default async function PerfilPage() {
           {[
             { icon: "badge", label: "Información Personal", href: "/panel/perfil/informacion-personal" },
             { icon: "credit_card", label: "Plan de Membresía", href: "/panel/beneficios" },
-            { icon: "monitor_heart", label: "Métricas Corporales", href: "/panel/seguimiento/progreso" },
+            { icon: "monitor_heart", label: "Mi progreso", href: "/panel/seguimiento/progreso" },
+            { icon: "emoji_events", label: "Mis logros", href: "/panel/logros" },
+            { icon: "history", label: "Mis evaluaciones", href: "/panel/entrenamientos/historial" },
           ].map((item) => (
             <Link
               key={item.label}

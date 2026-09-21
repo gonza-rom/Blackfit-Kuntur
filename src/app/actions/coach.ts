@@ -324,10 +324,12 @@ export async function eliminarEjercicio(
   const id_ejercicio = String(formData.get("id_ejercicio") ?? "");
   if (!id_ejercicio) return { error: "Ejercicio inválido." };
 
+  const forzar = formData.get("forzar") === "1";
+
   const usos = await prisma.ejercicioPrograma.count({ where: { id_ejercicio } });
-  if (usos > 0) {
+  if (usos > 0 && !forzar) {
     return {
-      error: `No se puede eliminar: ya se usó en ${usos} programa(s)/plantilla(s). Editalo si hace falta corregirlo.`,
+      error: `No se puede eliminar: ya se usó en ${usos} programa(s)/plantilla(s). Editalo si hace falta corregirlo, o forzá el borrado más abajo si estás seguro — se pierde el historial real de series que los alumnos ya registraron con ese ejercicio.`,
     };
   }
 
@@ -337,7 +339,19 @@ export async function eliminarEjercicio(
   // excepción sin capturar y el cliente veía "unexpected response" en vez
   // de un mensaje.
   try {
-    await prisma.ejercicio.delete({ where: { id_ejercicio } });
+    if (usos > 0) {
+      // Forzado: el coach ya vio la advertencia de arriba y decidió
+      // borrar igual. Se pierde el historial real de series contra ese
+      // ejercicio en esos programas/plantillas — es intencional, no un
+      // efecto secundario.
+      await prisma.$transaction([
+        prisma.serieEntrenamiento.deleteMany({ where: { ejercicio_programa: { id_ejercicio } } }),
+        prisma.ejercicioPrograma.deleteMany({ where: { id_ejercicio } }),
+        prisma.ejercicio.delete({ where: { id_ejercicio } }),
+      ]);
+    } else {
+      await prisma.ejercicio.delete({ where: { id_ejercicio } });
+    }
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
       return {

@@ -35,7 +35,14 @@ export default async function RegistrarEntrenamientoPage(
     descanso: ep.descanso,
     metodo_entrenamiento: ep.metodo_entrenamiento,
     tiempo_bajo_tension_sugerido: ep.tiempo_bajo_tension_sugerido,
-    ejercicio: { nombre: ep.ejercicio.nombre },
+    ejercicio: {
+      id_ejercicio: ep.ejercicio.id_ejercicio,
+      nombre: ep.ejercicio.nombre,
+      grupo_muscular: ep.ejercicio.grupo_muscular,
+      descripcion: ep.ejercicio.descripcion,
+      instrucciones: ep.ejercicio.instrucciones,
+      video_url: ep.ejercicio.video_url,
+    },
   }));
 
   return (
