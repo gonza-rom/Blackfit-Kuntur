@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 
@@ -88,11 +89,22 @@ export async function registrarse(
     return { error: "Las contraseñas no coinciden." };
   }
 
+  // Sin esto, GoTrue usa el Site URL configurado en Supabase como destino
+  // del link del mail de confirmación (ver /auth/confirm), que en el
+  // dashboard puede estar apuntando a localhost. Construir el origin acá
+  // asegura que el link siempre vuelva al mismo host desde el que se
+  // registró el usuario, sea local o producción.
+  const encabezados = await headers();
+  const origin = `${encabezados.get("x-forwarded-proto") ?? "http"}://${encabezados.get("host")}`;
+
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
-    options: { data: { nombre, apellido } },
+    options: {
+      data: { nombre, apellido },
+      emailRedirectTo: `${origin}/auth/confirm`,
+    },
   });
 
   if (error) {
