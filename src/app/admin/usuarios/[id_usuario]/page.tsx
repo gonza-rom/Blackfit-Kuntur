@@ -3,6 +3,12 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerPlanesMembresia } from "@/lib/catalogos";
 import {
+  obtenerUsuarioActual,
+  tieneRol,
+  ROLES_DOMINIO_COMERCIOS,
+  ROLES_DOMINIO_BLACKFIT,
+} from "@/lib/auth";
+import {
   asignarRol,
   quitarRol,
   cambiarEstadoUsuario,
@@ -10,6 +16,7 @@ import {
 import { FormActivarMembresia } from "./_components/form-activar-membresia";
 import { ItemMembresia } from "./_components/item-membresia";
 import { BotonEliminarUsuario } from "./_components/boton-eliminar-usuario";
+import type { RolUsuario } from "@prisma/client";
 
 const ESTADOS_USUARIO = ["activo", "inactivo", "suspendido"] as const;
 
@@ -19,18 +26,26 @@ const ETIQUETA_ESTADO_USUARIO: Record<string, string> = {
   suspendido: "Suspendido",
 };
 
-const ROLES_ASIGNABLES = [
+const ROLES_ASIGNABLES_GENERAL: RolUsuario[] = [
   "alumno",
   "entrenador",
   "miembro_kuntur",
   "beneficiario",
   "administrador",
-] as const;
+  "admin_comercios",
+  "admin_blackfit",
+];
 
 export default async function AdminUsuarioDetallePage(
   props: PageProps<"/admin/usuarios/[id_usuario]">
 ) {
   const { id_usuario } = await props.params;
+
+  const actor = await obtenerUsuarioActual();
+  const esGeneral = tieneRol(actor, "administrador");
+  const puedeComercios = esGeneral || tieneRol(actor, "admin_comercios");
+  const puedeBlackfit = esGeneral || tieneRol(actor, "admin_blackfit");
+  if (!esGeneral && !puedeComercios && !puedeBlackfit) notFound();
 
   const [usuario, planes] = await Promise.all([
     prisma.usuario.findUnique({
@@ -49,6 +64,25 @@ export default async function AdminUsuarioDetallePage(
   if (!usuario) notFound();
 
   const rolesActuales = new Set(usuario.roles.map((r) => r.rol));
+
+  // Un admin recortado solo puede abrir (y gestionar) usuarios que ya
+  // tengan al menos un rol de su dominio — si no, 404. asignarRol/
+  // quitarRol/cambiarEstadoUsuario/etc. revalidan esto mismo del lado del
+  // servidor (autorizarSobreUsuario en actions/admin.ts): esconder el
+  // botón acá es solo UX, no la barrera real.
+  if (!esGeneral) {
+    const enDominio =
+      (puedeComercios && [...rolesActuales].some((r) => ROLES_DOMINIO_COMERCIOS.includes(r))) ||
+      (puedeBlackfit && [...rolesActuales].some((r) => ROLES_DOMINIO_BLACKFIT.includes(r)));
+    if (!enDominio) notFound();
+  }
+
+  const rolesAsignables: RolUsuario[] = esGeneral
+    ? ROLES_ASIGNABLES_GENERAL
+    : [
+        ...(puedeComercios ? ROLES_DOMINIO_COMERCIOS : []),
+        ...(puedeBlackfit ? ROLES_DOMINIO_BLACKFIT : []),
+      ];
 
   return (
     <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-8">
@@ -118,7 +152,7 @@ export default async function AdminUsuarioDetallePage(
           Roles
         </h2>
         <div className="flex flex-col gap-1">
-          {ROLES_ASIGNABLES.map((rol) => {
+          {rolesAsignables.map((rol) => {
             const tiene = rolesActuales.has(rol);
             return (
               <div

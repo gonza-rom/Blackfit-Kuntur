@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { obtenerUsuarioActual, tieneRol, cuentaActiva } from "@/lib/auth";
+import { obtenerUsuarioActual, tieneRol, tieneAccesoAdmin, cuentaActiva } from "@/lib/auth";
 import { cerrarSesion } from "@/app/actions/auth";
 import { InstalarApp } from "@/components/instalar-app";
 import { BottomNav } from "./_components/bottom-nav";
@@ -20,9 +20,13 @@ export default async function AdminLayout({
     redirect("/cuenta-inactiva");
   }
 
-  if (!tieneRol(usuario, "administrador")) {
+  if (!tieneAccesoAdmin(usuario)) {
     redirect("/panel");
   }
+
+  const esAdminGeneral = tieneRol(usuario, "administrador");
+  const puedeComercios = esAdminGeneral || tieneRol(usuario, "admin_comercios");
+  const puedeBlackfit = esAdminGeneral || tieneRol(usuario, "admin_blackfit");
 
   const nombre = usuario.nombre;
   const inicial = nombre.charAt(0).toUpperCase();
@@ -58,7 +62,7 @@ export default async function AdminLayout({
             BLACK HUB ADMIN
           </span>
         </div>
-        <SidebarNav />
+        <SidebarNav puedeComercios={puedeComercios} puedeBlackfit={puedeBlackfit} />
         <form action={cerrarSesion} className="mt-auto px-4 pb-8">
           <button
             type="submit"
@@ -80,7 +84,7 @@ export default async function AdminLayout({
       </div>
 
       {/* BottomNavBar (mobile) */}
-      <BottomNav />
+      <BottomNav puedeComercios={puedeComercios} puedeBlackfit={puedeBlackfit} />
     </div>
   );
 }

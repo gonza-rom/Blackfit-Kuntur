@@ -1,6 +1,13 @@
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import type { Prisma, RolUsuario, EstadoMembresia } from "@prisma/client";
+import {
+  obtenerUsuarioActual,
+  tieneRol,
+  ROLES_DOMINIO_COMERCIOS,
+  ROLES_DOMINIO_BLACKFIT,
+} from "@/lib/auth";
 
 const ETIQUETA_ESTADO: Record<string, string> = {
   activa: "Activa",
@@ -10,13 +17,15 @@ const ETIQUETA_ESTADO: Record<string, string> = {
   pendiente: "Pendiente",
 };
 
-const ROLES_FILTRO: RolUsuario[] = [
+const ROLES_FILTRO_COMPLETO: RolUsuario[] = [
   "alumno",
   "entrenador",
   "miembro_kuntur",
   "beneficiario",
   "comercio",
   "administrador",
+  "admin_comercios",
+  "admin_blackfit",
 ];
 
 const ESTADOS_FILTRO: EstadoMembresia[] = [
@@ -32,11 +41,27 @@ const TAMANO_PAGINA = 30;
 export default async function AdminUsuariosPage(
   props: PageProps<"/admin/usuarios">
 ) {
+  const usuario = await obtenerUsuarioActual();
+  const esGeneral = tieneRol(usuario, "administrador");
+  const puedeComercios = esGeneral || tieneRol(usuario, "admin_comercios");
+  const puedeBlackfit = esGeneral || tieneRol(usuario, "admin_blackfit");
+  if (!esGeneral && !puedeComercios && !puedeBlackfit) redirect("/admin");
+
+  // Roles de su dominio: un admin recortado ni ve ni puede filtrar por
+  // roles fuera de lo que le toca gestionar (ver también autorizarSobreUsuario
+  // en actions/admin.ts, que revalida esto mismo del lado del servidor).
+  const rolesDominio: RolUsuario[] = esGeneral
+    ? ROLES_FILTRO_COMPLETO
+    : [
+        ...(puedeComercios ? ROLES_DOMINIO_COMERCIOS : []),
+        ...(puedeBlackfit ? ROLES_DOMINIO_BLACKFIT : []),
+      ];
+
   const { q, rol, estado, pagina: paginaRaw } = await props.searchParams;
 
   const busqueda = typeof q === "string" ? q.trim() : "";
   const rolFiltro =
-    typeof rol === "string" && ROLES_FILTRO.includes(rol as RolUsuario)
+    typeof rol === "string" && rolesDominio.includes(rol as RolUsuario)
       ? (rol as RolUsuario)
       : undefined;
   const estadoFiltro =
@@ -56,6 +81,8 @@ export default async function AdminUsuariosPage(
   }
   if (rolFiltro) {
     where.roles = { some: { rol: rolFiltro } };
+  } else if (!esGeneral) {
+    where.roles = { some: { rol: { in: rolesDominio } } };
   }
   if (estadoFiltro === "sin_membresia") {
     where.membresias = { none: {} };
@@ -110,13 +137,15 @@ export default async function AdminUsuariosPage(
             {(busqueda || rolFiltro || estadoFiltro) && " (filtrados)"}
           </p>
         </div>
-        <Link
-          href="/admin/usuarios/importar"
-          className="flex items-center gap-2 bg-primary-container text-black font-[family-name:var(--font-sora)] text-sm font-bold px-4 py-2 rounded-full"
-        >
-          <span className="material-symbols-outlined text-[18px]">upload_file</span>
-          Importar
-        </Link>
+        {puedeComercios && (
+          <Link
+            href="/admin/usuarios/importar"
+            className="flex items-center gap-2 bg-primary-container text-black font-[family-name:var(--font-sora)] text-sm font-bold px-4 py-2 rounded-full"
+          >
+            <span className="material-symbols-outlined text-[18px]">upload_file</span>
+            Importar
+          </Link>
+        )}
       </div>
 
       <form method="get" className="flex flex-col gap-2">
@@ -142,7 +171,7 @@ export default async function AdminUsuariosPage(
             className="flex-1 bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface text-sm p-2.5"
           >
             <option value="">Todos los roles</option>
-            {ROLES_FILTRO.map((r) => (
+            {rolesDominio.map((r) => (
               <option key={r} value={r}>
                 {r} {conteos[r] ? `(${conteos[r]})` : ""}
               </option>

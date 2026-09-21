@@ -30,7 +30,9 @@ enum RolUsuario {
   miembro_kuntur  // Kuntur — módulo de Beneficios como ADD-ON de un usuario Black Fit
   beneficiario    // Kuntur puro — SOLO beneficios + perfil, sin nada de Black Fit
   comercio        // Operativo — asignado por el administrador
-  administrador   // Operativo — asignado por el administrador
+  administrador   // Operativo — ve y gestiona TODO, incluido asignar los dos roles de abajo
+  admin_comercios // Operativo recortado — comercios, beneficios y usuarios beneficiario/comercio/miembro_kuntur (Kuntur)
+  admin_blackfit  // Operativo recortado — usuarios alumno/entrenador y sus membresías (Black Fit)
 }
 
 enum EstadoUsuario {

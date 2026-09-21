@@ -1,6 +1,12 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { obtenerUsuarioActual, tieneRol, soloBeneficiario, cuentaActiva } from "@/lib/auth";
+import {
+  obtenerUsuarioActual,
+  tieneRol,
+  tieneAccesoAdmin,
+  soloBeneficiario,
+  cuentaActiva,
+} from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { OfflineSyncBanner } from "@/components/offline-sync-banner";
 import { ActivarPush } from "@/components/activar-push";
@@ -38,7 +44,7 @@ export default async function PanelLayout({
   if (
     !tieneRol(usuario, "alumno") &&
     !tieneRol(usuario, "entrenador") &&
-    tieneRol(usuario, "administrador")
+    tieneAccesoAdmin(usuario)
   ) {
     redirect("/admin");
   }
@@ -46,7 +52,7 @@ export default async function PanelLayout({
   if (
     !tieneRol(usuario, "alumno") &&
     !tieneRol(usuario, "entrenador") &&
-    !tieneRol(usuario, "administrador") &&
+    !tieneAccesoAdmin(usuario) &&
     tieneRol(usuario, "comercio") &&
     usuario.comercio
   ) {

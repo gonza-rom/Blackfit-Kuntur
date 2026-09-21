@@ -4,12 +4,23 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NAV_ITEMS_ADMIN } from "./nav-items";
 
-export function SidebarNav() {
+export function SidebarNav({
+  puedeComercios,
+  puedeBlackfit,
+}: {
+  puedeComercios: boolean;
+  puedeBlackfit: boolean;
+}) {
   const pathname = usePathname();
+  const items = NAV_ITEMS_ADMIN.filter((item) => {
+    if (item.scope === "comercios") return puedeComercios;
+    if (item.scope === "blackfit") return puedeBlackfit;
+    return true;
+  });
 
   return (
     <nav className="flex flex-col gap-2 px-4">
-      {NAV_ITEMS_ADMIN.map((item) => {
+      {items.map((item) => {
         const activo =
           item.href === "/admin"
             ? pathname === "/admin"

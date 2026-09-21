@@ -12,7 +12,16 @@ import type {
 } from "@prisma/client";
 import { TAG_CATALOGO_PLANES } from "@/lib/catalogos";
 import { prisma } from "@/lib/prisma";
-import { obtenerAdministradorActual } from "@/lib/auth";
+import {
+  obtenerUsuarioActual,
+  obtenerAdminComerciosActual,
+  obtenerAdminBlackfitActual,
+  tieneRol,
+  ROLES_DOMINIO_COMERCIOS,
+  ROLES_DOMINIO_BLACKFIT,
+  ROLES_ADMIN,
+  type UsuarioActual,
+} from "@/lib/auth";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -28,6 +37,8 @@ const ROLES_ASIGNABLES: RolUsuario[] = [
   "miembro_kuntur",
   "beneficiario",
   "administrador",
+  "admin_comercios",
+  "admin_blackfit",
 ];
 
 const ESTADOS_USUARIO: EstadoUsuario[] = ["activo", "inactivo", "suspendido"];
@@ -52,9 +63,46 @@ async function generarNumeroSocio(): Promise<string> {
   return `K-${String(total + 1).padStart(6, "0")}`;
 }
 
+// Autorización para acciones que operan sobre UN usuario puntual ya
+// existente (editar, eliminar, cambiar estado, gestionar sus membresías):
+// el admin general entra siempre; un admin recortado (comercios/black
+// fit) solo si el usuario objetivo tiene al menos un rol de su dominio.
+// Sin este chequeo, un admin recortado podría mandar el id_usuario de
+// alguien fuera de lo que ve en /admin/usuarios a mano y gestionarlo
+// igual — la UI ya lo esconde, pero la acción tiene que revalidarlo.
+async function autorizarSobreUsuario(
+  id_usuario: string
+): Promise<{ usuario: UsuarioActual } | null> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return null;
+  if (tieneRol(usuario, "administrador")) return { usuario };
+
+  const puedeComercios = tieneRol(usuario, "admin_comercios");
+  const puedeBlackfit = tieneRol(usuario, "admin_blackfit");
+  if (!puedeComercios && !puedeBlackfit) return null;
+
+  const objetivo = await prisma.usuario.findUnique({
+    where: { id_usuario },
+    include: { roles: true },
+  });
+  if (!objetivo) return null;
+
+  const rolesObjetivo = objetivo.roles.map((r) => r.rol);
+  const enDominio =
+    (puedeComercios && rolesObjetivo.some((r) => ROLES_DOMINIO_COMERCIOS.includes(r))) ||
+    (puedeBlackfit && rolesObjetivo.some((r) => ROLES_DOMINIO_BLACKFIT.includes(r)));
+
+  return enDominio ? { usuario } : null;
+}
+
 export async function asignarRol(formData: FormData): Promise<void> {
-  const contexto = await obtenerAdministradorActual();
-  if (!contexto) return;
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return;
+
+  const esGeneral = tieneRol(usuario, "administrador");
+  const puedeComercios = esGeneral || tieneRol(usuario, "admin_comercios");
+  const puedeBlackfit = esGeneral || tieneRol(usuario, "admin_blackfit");
+  if (!esGeneral && !puedeComercios && !puedeBlackfit) return;
 
   const id_usuario = String(formData.get("id_usuario") ?? "");
   const rol = String(formData.get("rol") ?? "") as RolUsuario;
@@ -62,6 +110,19 @@ export async function asignarRol(formData: FormData): Promise<void> {
   if (!id_usuario || !ROLES_ASIGNABLES.includes(rol)) {
     return;
   }
+
+  // Roles de administración: solo el admin general los toca. Fuera de
+  // eso, cada admin recortado solo puede asignar roles de su dominio.
+  if (ROLES_ADMIN.includes(rol) && !esGeneral) return;
+  if (
+    !esGeneral &&
+    !(puedeComercios && ROLES_DOMINIO_COMERCIOS.includes(rol)) &&
+    !(puedeBlackfit && ROLES_DOMINIO_BLACKFIT.includes(rol))
+  ) {
+    return;
+  }
+
+  const contexto = { usuario };
 
   const existente = await prisma.usuarioRol.findUnique({
     where: { usuario_rol_unico: { id_usuario, rol } },
@@ -98,8 +159,13 @@ export async function asignarRol(formData: FormData): Promise<void> {
 }
 
 export async function quitarRol(formData: FormData): Promise<void> {
-  const contexto = await obtenerAdministradorActual();
-  if (!contexto) return;
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return;
+
+  const esGeneral = tieneRol(usuario, "administrador");
+  const puedeComercios = esGeneral || tieneRol(usuario, "admin_comercios");
+  const puedeBlackfit = esGeneral || tieneRol(usuario, "admin_blackfit");
+  if (!esGeneral && !puedeComercios && !puedeBlackfit) return;
 
   const id_usuario = String(formData.get("id_usuario") ?? "");
   const rol = String(formData.get("rol") ?? "") as RolUsuario;
@@ -107,6 +173,17 @@ export async function quitarRol(formData: FormData): Promise<void> {
   if (!id_usuario || !ROLES_ASIGNABLES.includes(rol)) {
     return;
   }
+
+  if (ROLES_ADMIN.includes(rol) && !esGeneral) return;
+  if (
+    !esGeneral &&
+    !(puedeComercios && ROLES_DOMINIO_COMERCIOS.includes(rol)) &&
+    !(puedeBlackfit && ROLES_DOMINIO_BLACKFIT.includes(rol))
+  ) {
+    return;
+  }
+
+  const contexto = { usuario };
 
   await prisma.usuarioRol.deleteMany({ where: { id_usuario, rol } });
 
@@ -126,13 +203,13 @@ export async function quitarRol(formData: FormData): Promise<void> {
 // (ver iniciarSesion en actions/auth.ts) y es expulsado de cualquier
 // sección protegida (ver cuentaActiva() usado en los layouts).
 export async function cambiarEstadoUsuario(formData: FormData): Promise<void> {
-  const contexto = await obtenerAdministradorActual();
-  if (!contexto) return;
-
   const id_usuario = String(formData.get("id_usuario") ?? "");
   const estado_usuario = String(formData.get("estado_usuario") ?? "") as EstadoUsuario;
 
   if (!id_usuario || !ESTADOS_USUARIO.includes(estado_usuario)) return;
+
+  const contexto = await autorizarSobreUsuario(id_usuario);
+  if (!contexto) return;
   // Un admin no puede desactivarse a sí mismo (se quedaría sin poder
   // volver a entrar para revertirlo).
   if (id_usuario === contexto.usuario.id_usuario) return;
@@ -173,9 +250,6 @@ export async function editarUsuario(
   _prev: EstadoAdmin,
   formData: FormData
 ): Promise<EstadoAdmin> {
-  const contexto = await obtenerAdministradorActual();
-  if (!contexto) return { error: "No autorizado." };
-
   const id_usuario = String(formData.get("id_usuario") ?? "");
   const nombre = String(formData.get("nombre") ?? "").trim();
   const apellido = String(formData.get("apellido") ?? "").trim();
@@ -186,6 +260,9 @@ export async function editarUsuario(
   if (!id_usuario || !nombre || !apellido || !email) {
     return { error: "Completá nombre, apellido y email." };
   }
+
+  const contexto = await autorizarSobreUsuario(id_usuario);
+  if (!contexto) return { error: "No autorizado." };
 
   const usuarioActual = await prisma.usuario.findUnique({ where: { id_usuario } });
   if (!usuarioActual) return { error: "Usuario inválido." };
@@ -233,11 +310,11 @@ export async function eliminarUsuario(
   _prev: EstadoAdmin,
   formData: FormData
 ): Promise<EstadoAdmin> {
-  const contexto = await obtenerAdministradorActual();
-  if (!contexto) return { error: "No autorizado." };
-
   const id_usuario = String(formData.get("id_usuario") ?? "");
   if (!id_usuario) return { error: "Usuario inválido." };
+
+  const contexto = await autorizarSobreUsuario(id_usuario);
+  if (!contexto) return { error: "No autorizado." };
   if (id_usuario === contexto.usuario.id_usuario) {
     return { error: "No podés eliminar tu propia cuenta de administrador." };
   }
@@ -276,9 +353,6 @@ export async function editarMembresia(
   _prev: EstadoAdmin,
   formData: FormData
 ): Promise<EstadoAdmin> {
-  const contexto = await obtenerAdministradorActual();
-  if (!contexto) return { error: "No autorizado." };
-
   const id_membresia = String(formData.get("id_membresia") ?? "");
   const id_plan_membresia = String(formData.get("id_plan_membresia") ?? "");
   const fecha_inicioRaw = String(formData.get("fecha_inicio") ?? "");
@@ -287,6 +361,12 @@ export async function editarMembresia(
   if (!id_membresia || !id_plan_membresia || !fecha_inicioRaw || !fecha_vencimientoRaw) {
     return { error: "Completá plan, fecha de inicio y de vencimiento." };
   }
+
+  const membresiaActual = await prisma.membresia.findUnique({ where: { id_membresia } });
+  if (!membresiaActual) return { error: "Membresía inválida." };
+
+  const contexto = await autorizarSobreUsuario(membresiaActual.id_usuario);
+  if (!contexto) return { error: "No autorizado." };
 
   const plan = await prisma.planMembresia.findUnique({ where: { id_plan_membresia } });
   if (!plan) return { error: "Plan inválido." };
@@ -319,14 +399,14 @@ export async function eliminarMembresia(
   _prev: EstadoAdmin,
   formData: FormData
 ): Promise<EstadoAdmin> {
-  const contexto = await obtenerAdministradorActual();
-  if (!contexto) return { error: "No autorizado." };
-
   const id_membresia = String(formData.get("id_membresia") ?? "");
   if (!id_membresia) return { error: "Membresía inválida." };
 
   const membresia = await prisma.membresia.findUnique({ where: { id_membresia } });
   if (!membresia) return { error: "Membresía inválida." };
+
+  const contexto = await autorizarSobreUsuario(membresia.id_usuario);
+  if (!contexto) return { error: "No autorizado." };
 
   await prisma.membresia.delete({ where: { id_membresia } });
 
@@ -346,7 +426,7 @@ export async function crearPlanMembresia(
   _prev: EstadoAdmin,
   formData: FormData
 ): Promise<EstadoAdmin> {
-  const contexto = await obtenerAdministradorActual();
+  const contexto = await obtenerAdminBlackfitActual();
   if (!contexto) return { error: "No autorizado." };
 
   const nombre = String(formData.get("nombre") ?? "").trim();
@@ -375,7 +455,7 @@ export async function editarPlanMembresia(
   _prev: EstadoAdmin,
   formData: FormData
 ): Promise<EstadoAdmin> {
-  const contexto = await obtenerAdministradorActual();
+  const contexto = await obtenerAdminBlackfitActual();
   if (!contexto) return { error: "No autorizado." };
 
   const id_plan_membresia = String(formData.get("id_plan_membresia") ?? "");
@@ -415,7 +495,7 @@ export async function eliminarPlanMembresia(
   _prev: EstadoAdmin,
   formData: FormData
 ): Promise<EstadoAdmin> {
-  const contexto = await obtenerAdministradorActual();
+  const contexto = await obtenerAdminBlackfitActual();
   if (!contexto) return { error: "No autorizado." };
 
   const id_plan_membresia = String(formData.get("id_plan_membresia") ?? "");
@@ -454,9 +534,6 @@ export async function activarMembresia(
   _prev: EstadoAdmin,
   formData: FormData
 ): Promise<EstadoAdmin> {
-  const contexto = await obtenerAdministradorActual();
-  if (!contexto) return { error: "No autorizado." };
-
   const id_usuario = String(formData.get("id_usuario") ?? "");
   const id_plan_membresia = String(formData.get("id_plan_membresia") ?? "");
   const fecha_inicioRaw = String(formData.get("fecha_inicio") ?? "");
@@ -464,6 +541,9 @@ export async function activarMembresia(
   if (!id_usuario || !id_plan_membresia) {
     return { error: "Elegí un plan." };
   }
+
+  const contexto = await autorizarSobreUsuario(id_usuario);
+  if (!contexto) return { error: "No autorizado." };
 
   const plan = await prisma.planMembresia.findUnique({
     where: { id_plan_membresia },
@@ -508,15 +588,18 @@ export async function activarMembresia(
 }
 
 export async function cambiarEstadoMembresia(formData: FormData): Promise<void> {
-  const contexto = await obtenerAdministradorActual();
-  if (!contexto) return;
-
   const id_membresia = String(formData.get("id_membresia") ?? "");
   const estado_membresia = String(formData.get("estado_membresia") ?? "") as EstadoMembresia;
 
   if (!id_membresia || !ESTADOS_MEMBRESIA.includes(estado_membresia)) {
     return;
   }
+
+  const membresiaActual = await prisma.membresia.findUnique({ where: { id_membresia } });
+  if (!membresiaActual) return;
+
+  const contexto = await autorizarSobreUsuario(membresiaActual.id_usuario);
+  if (!contexto) return;
 
   const membresia = await prisma.membresia.update({
     where: { id_membresia },
@@ -586,7 +669,7 @@ async function obtenerOCrearPlanBeneficiarioKuntur() {
 export async function iniciarImportBeneficiarios(): Promise<
   { id_plan_membresia: string } | { error: string }
 > {
-  const contexto = await obtenerAdministradorActual();
+  const contexto = await obtenerAdminComerciosActual();
   if (!contexto) return { error: "No autorizado." };
 
   const plan = await obtenerOCrearPlanBeneficiarioKuntur();
@@ -600,7 +683,7 @@ export async function importarFilaBeneficiario(
   fila: FilaBeneficiarioParseada,
   id_plan_membresia: string
 ): Promise<ResultadoFilaImport> {
-  const contexto = await obtenerAdministradorActual();
+  const contexto = await obtenerAdminComerciosActual();
   if (!contexto) return { tipo: "error", motivo: "No autorizado." };
 
   const nombreCompleto = `${fila.nombre} ${fila.apellido}`.trim();
@@ -686,7 +769,7 @@ export async function finalizarImportBeneficiarios(resumen: {
   omitidos: number;
   errores: number;
 }): Promise<void> {
-  const contexto = await obtenerAdministradorActual();
+  const contexto = await obtenerAdminComerciosActual();
   if (!contexto) return;
 
   await registrarAuditoria({
@@ -710,7 +793,7 @@ export async function crearComercio(
   _prev: EstadoAdmin,
   formData: FormData
 ): Promise<EstadoAdmin> {
-  const contexto = await obtenerAdministradorActual();
+  const contexto = await obtenerAdminComerciosActual();
   if (!contexto) return { error: "No autorizado." };
 
   const email = String(formData.get("email") ?? "").trim();
@@ -768,7 +851,7 @@ export async function crearComercio(
 }
 
 export async function cambiarEstadoComercio(formData: FormData): Promise<void> {
-  const contexto = await obtenerAdministradorActual();
+  const contexto = await obtenerAdminComerciosActual();
   if (!contexto) return;
 
   const id_comercio = String(formData.get("id_comercio") ?? "");
@@ -794,7 +877,7 @@ export async function editarComercio(
   _prev: EstadoAdmin,
   formData: FormData
 ): Promise<EstadoAdmin> {
-  const contexto = await obtenerAdministradorActual();
+  const contexto = await obtenerAdminComerciosActual();
   if (!contexto) return { error: "No autorizado." };
 
   const id_comercio = String(formData.get("id_comercio") ?? "");
@@ -832,7 +915,7 @@ export async function crearBeneficio(
   _prev: EstadoAdmin,
   formData: FormData
 ): Promise<EstadoAdmin> {
-  const contexto = await obtenerAdministradorActual();
+  const contexto = await obtenerAdminComerciosActual();
   if (!contexto) return { error: "No autorizado." };
 
   const id_comercio = String(formData.get("id_comercio") ?? "");
@@ -875,7 +958,7 @@ export async function crearBeneficio(
 }
 
 export async function cambiarEstadoBeneficio(formData: FormData): Promise<void> {
-  const contexto = await obtenerAdministradorActual();
+  const contexto = await obtenerAdminComerciosActual();
   if (!contexto) return;
 
   const id_beneficio = String(formData.get("id_beneficio") ?? "");
@@ -903,7 +986,7 @@ export async function editarBeneficio(
   _prev: EstadoAdmin,
   formData: FormData
 ): Promise<EstadoAdmin> {
-  const contexto = await obtenerAdministradorActual();
+  const contexto = await obtenerAdminComerciosActual();
   if (!contexto) return { error: "No autorizado." };
 
   const id_beneficio = String(formData.get("id_beneficio") ?? "");
@@ -943,7 +1026,7 @@ export async function editarBeneficio(
 }
 
 export async function asignarBeneficioPlan(formData: FormData): Promise<void> {
-  const contexto = await obtenerAdministradorActual();
+  const contexto = await obtenerAdminComerciosActual();
   if (!contexto) return;
 
   const id_beneficio = String(formData.get("id_beneficio") ?? "");
@@ -969,7 +1052,7 @@ export async function asignarBeneficioPlan(formData: FormData): Promise<void> {
 }
 
 export async function quitarBeneficioPlan(formData: FormData): Promise<void> {
-  const contexto = await obtenerAdministradorActual();
+  const contexto = await obtenerAdminComerciosActual();
   if (!contexto) return;
 
   const id_beneficio = String(formData.get("id_beneficio") ?? "");
@@ -998,7 +1081,7 @@ export async function eliminarBeneficio(
   _prev: EstadoAdmin,
   formData: FormData
 ): Promise<EstadoAdmin> {
-  const contexto = await obtenerAdministradorActual();
+  const contexto = await obtenerAdminComerciosActual();
   if (!contexto) return { error: "No autorizado." };
 
   const id_beneficio = String(formData.get("id_beneficio") ?? "");
@@ -1039,7 +1122,7 @@ export async function eliminarComercio(
   _prev: EstadoAdmin,
   formData: FormData
 ): Promise<EstadoAdmin> {
-  const contexto = await obtenerAdministradorActual();
+  const contexto = await obtenerAdminComerciosActual();
   if (!contexto) return { error: "No autorizado." };
 
   const id_comercio = String(formData.get("id_comercio") ?? "");

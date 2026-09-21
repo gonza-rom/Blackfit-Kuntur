@@ -17,6 +17,18 @@ export type UsuarioActual = Usuario & {
   comercio: Comercio | null;
 };
 
+// A qué usuarios (por sus roles) llega cada admin recortado. Se reusa
+// tanto en las server actions (actions/admin.ts, para autorizar) como en
+// las páginas de /admin/usuarios (para filtrar qué se lista/asigna) — una
+// sola fuente de verdad para no desalinear ambos lados.
+export const ROLES_DOMINIO_COMERCIOS: RolUsuario[] = [
+  "comercio",
+  "beneficiario",
+  "miembro_kuntur",
+];
+export const ROLES_DOMINIO_BLACKFIT: RolUsuario[] = ["alumno", "entrenador"];
+export const ROLES_ADMIN: RolUsuario[] = ["administrador", "admin_comercios", "admin_blackfit"];
+
 // Layout + page (+ a veces componentes anidados) piden la identidad del
 // usuario por separado, cada uno como defensa en profundidad — así debe
 // ser. Sin `cache()` eso significaba repetir la ida y vuelta a Supabase
@@ -117,6 +129,8 @@ export function soloBeneficiario(usuario: UsuarioActual | null): boolean {
     tieneRol(usuario, "alumno") ||
     tieneRol(usuario, "entrenador") ||
     tieneRol(usuario, "administrador") ||
+    tieneRol(usuario, "admin_comercios") ||
+    tieneRol(usuario, "admin_blackfit") ||
     tieneRol(usuario, "comercio")
   );
 }
@@ -130,6 +144,44 @@ export const obtenerAdministradorActual = cache(
     return { usuario };
   }
 );
+
+// Dos roles administrativos recortados, pensados para delegar sin dar
+// acceso total: "admin_comercios" (comercios, beneficios y los usuarios
+// beneficiario/comercio/miembro_kuntur — el lado Kuntur) y
+// "admin_blackfit" (usuarios alumno/entrenador y sus membresías — el lado
+// Black Fit). El admin general ("administrador") entra a los dos.
+export const obtenerAdminComerciosActual = cache(
+  async (): Promise<{ usuario: UsuarioActual } | null> => {
+    const usuario = await obtenerUsuarioActual();
+    if (!usuario) return null;
+    if (!tieneRol(usuario, "administrador") && !tieneRol(usuario, "admin_comercios")) {
+      return null;
+    }
+    return { usuario };
+  }
+);
+
+export const obtenerAdminBlackfitActual = cache(
+  async (): Promise<{ usuario: UsuarioActual } | null> => {
+    const usuario = await obtenerUsuarioActual();
+    if (!usuario) return null;
+    if (!tieneRol(usuario, "administrador") && !tieneRol(usuario, "admin_blackfit")) {
+      return null;
+    }
+    return { usuario };
+  }
+);
+
+// Cualquiera de los tres roles administrativos — usado por el layout de
+// /admin para decidir si deja entrar, no para autorizar acciones puntuales
+// (eso lo hace cada acción con el check más específico de arriba).
+export function tieneAccesoAdmin(usuario: UsuarioActual | null): boolean {
+  return (
+    tieneRol(usuario, "administrador") ||
+    tieneRol(usuario, "admin_comercios") ||
+    tieneRol(usuario, "admin_blackfit")
+  );
+}
 
 // Un usuario "comercio" siempre debe tener, además del rol, un perfil de
 // Comercio creado (nombre, categoría, etc.). Ambas cosas se crean juntas
