@@ -18,9 +18,36 @@ export type ProgramaActivo = Prisma.ProgramaEntrenamientoGetPayload<{
   include: typeof PROGRAMA_ACTIVO_INCLUDE;
 }>;
 
+const MS_POR_SEMANA_PLAN = 7 * 24 * 60 * 60 * 1000;
+const MS_POR_DIA_PLAN = 24 * 60 * 60 * 1000;
+
+/** Semana actual (1-4, clampeada) y días transcurridos desde que arrancó el plan mensual. */
+export function calcularSemanaYDiasActivos(fechaInicio: Date): {
+  semanaActual: number;
+  diasActivos: number;
+} {
+  const transcurrido = Date.now() - fechaInicio.getTime();
+  return {
+    semanaActual: Math.min(4, Math.max(1, Math.floor(transcurrido / MS_POR_SEMANA_PLAN) + 1)),
+    diasActivos: Math.max(0, Math.floor(transcurrido / MS_POR_DIA_PLAN)),
+  };
+}
+
 export type BloqueActual = ProgramaActivo["bloques"][number];
 
 const MS_POR_SEMANA = 7 * 24 * 60 * 60 * 1000;
+
+// Índice = Date.getDay() (0 = domingo). Traduce la fecha de hoy al enum
+// DiaSemana para elegir el bloque del día en un plan armado por día.
+const DIAS_SEMANA_JS = [
+  "domingo",
+  "lunes",
+  "martes",
+  "miercoles",
+  "jueves",
+  "viernes",
+  "sabado",
+] as const;
 
 export async function obtenerProgramaActivo(
   id_alumno: string
@@ -38,6 +65,28 @@ export function calcularBloqueActual(programa: ProgramaActivo): BloqueActual | n
   const semanaActual =
     Math.floor((Date.now() - programa.fecha_inicio.getTime()) / MS_POR_SEMANA) + 1;
 
+  // Planificación nueva (por día): si algún bloque tiene dia_semana
+  // cargado, el programa entero se arma con ese esquema — se busca el
+  // bloque de HOY dentro de la semana actual, y si no hay ninguno (día de
+  // descanso planificado) no se devuelve nada, en vez de caer a
+  // cualquier otro bloque.
+  const esPorDia = programa.bloques.some((b) => b.dia_semana != null);
+  if (esPorDia) {
+    const hoy = DIAS_SEMANA_JS[new Date().getDay()];
+    return (
+      programa.bloques.find(
+        (b) =>
+          b.dia_semana === hoy &&
+          b.semana_inicio != null &&
+          b.semana_fin != null &&
+          semanaActual >= b.semana_inicio &&
+          semanaActual <= b.semana_fin
+      ) ?? null
+    );
+  }
+
+  // Planificación vieja (por bloques libres): se mantiene igual que
+  // siempre, para no romper ningún programa ya armado.
   const bloquePorSemana = programa.bloques.find(
     (b) =>
       b.semana_inicio != null &&

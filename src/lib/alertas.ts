@@ -6,6 +6,21 @@ export type Alerta = {
   severidad: "info" | "advertencia" | "critica";
 };
 
+export type EstadoAlumnoSemaforo = "progresando" | "estable" | "estancado";
+
+export const ETIQUETA_ESTADO_SEMAFORO: Record<EstadoAlumnoSemaforo, string> = {
+  progresando: "Progresando",
+  estable: "Estable",
+  estancado: "Estancado",
+};
+
+/** Semáforo simple para el resumen del alumno — se deriva de las mismas alertas, nunca de una regla aparte. */
+export function calcularEstadoSemaforo(alertas: Alerta[]): EstadoAlumnoSemaforo {
+  if (alertas.some((a) => a.severidad === "critica")) return "estancado";
+  if (alertas.some((a) => a.severidad === "advertencia")) return "estable";
+  return "progresando";
+}
+
 const DIA_MS = 1000 * 60 * 60 * 24;
 
 const TIPOS_BLOQUE_DESCARGA = /deload|descarga/i;

@@ -2,8 +2,10 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
-import { detectarAlertas } from "@/lib/alertas";
+import { detectarAlertas, calcularEstadoSemaforo, ETIQUETA_ESTADO_SEMAFORO } from "@/lib/alertas";
 import { urlesFirmadasFotos } from "@/lib/storage";
+import { calcularSemanaYDiasActivos } from "@/lib/alumno";
+import { obtenerOCrearProgramaActivo } from "@/app/actions/coach";
 import { SugerenciaIA } from "./_components/sugerencia-ia";
 import { ObjetivosAlumno, type ObjetivoSerializado } from "./_components/objetivos-alumno";
 import { BotonDesvincular } from "./_components/boton-desvincular";
@@ -13,6 +15,9 @@ import {
   type ProgresoSerializado,
 } from "./_components/progreso-fisico-coach";
 import { ItemFeedbackSemanal } from "./_components/item-feedback-semanal";
+import { TabsAlumno } from "./_components/tabs-alumno";
+import { PlanificacionTab } from "./_components/planificacion-tab";
+import { FotosTab, type FotoSerializada } from "./_components/fotos-tab";
 
 const CAMPOS_PROGRESO = [
   "peso_corporal",
@@ -37,8 +42,21 @@ const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
   month: "short",
 });
 
+const ANGULOS_FOTO = ["frente", "espalda", "perfil_izquierdo", "perfil_derecho"];
+
 const ANCHO_SPARKLINE = 280;
 const ALTO_SPARKLINE = 60;
+
+const COLOR_SEMAFORO: Record<string, string> = {
+  progresando: "text-primary-container border-primary-container/40 bg-primary-container/5",
+  estable: "text-[#eda100] border-[#eda100]/40 bg-[#eda100]/5",
+  estancado: "text-[#ffb4ab] border-[#ffb4ab]/40 bg-[#ffb4ab]/5",
+};
+const ICONO_SEMAFORO: Record<string, string> = {
+  progresando: "trending_up",
+  estable: "trending_flat",
+  estancado: "trending_down",
+};
 
 function puntosSparkline(valores: number[]): string {
   if (valores.length < 2) return "";
@@ -61,6 +79,17 @@ function inicioDelDia(fecha = new Date()): Date {
   return d;
 }
 
+function calcularEdad(fechaNacimiento: Date | null): number | null {
+  if (!fechaNacimiento) return null;
+  const hoy = new Date();
+  let edad = hoy.getFullYear() - fechaNacimiento.getFullYear();
+  const aunNoCumplio =
+    hoy.getMonth() < fechaNacimiento.getMonth() ||
+    (hoy.getMonth() === fechaNacimiento.getMonth() && hoy.getDate() < fechaNacimiento.getDate());
+  if (aunNoCumplio) edad--;
+  return edad;
+}
+
 export default async function AlumnoDetallePage(
   props: PageProps<"/coach/alumnos/[id_alumno]">
 ) {
@@ -68,6 +97,8 @@ export default async function AlumnoDetallePage(
   if (!contexto) redirect("/panel");
 
   const { id_alumno } = await props.params;
+  const sp = await props.searchParams;
+  const tabInicial = typeof sp.tab === "string" ? sp.tab : "resumen";
 
   const relacion = await prisma.relacionEntrenadorAlumno.findUnique({
     where: {
@@ -95,24 +126,23 @@ export default async function AlumnoDetallePage(
     return { inicio, fin };
   });
 
+  const programaActivo = await obtenerOCrearProgramaActivo(id_alumno, contexto.id_entrenador);
+
   const [
-    programas,
     ultimaSesion,
     totalSesiones,
     sesionesPorSemana,
     progresos,
     medidas,
+    fotosAngulo,
     habitosSemana,
     feedbackDiarios,
     feedbackSemanales,
     alertas,
     objetivos,
     seriesConPeso,
+    programaConBloques,
   ] = await Promise.all([
-    prisma.programaEntrenamiento.findMany({
-      where: { id_alumno, id_entrenador: contexto.id_entrenador },
-      orderBy: { fecha_inicio: "desc" },
-    }),
     prisma.entrenamiento.findFirst({
       where: { id_alumno },
       orderBy: { fecha: "desc" },
@@ -132,9 +162,14 @@ export default async function AlumnoDetallePage(
       take: 10,
     }),
     prisma.medidaCorporal.findMany({
-      where: { id_alumno },
+      where: { id_alumno, tipo_medida: { notIn: ANGULOS_FOTO } },
       orderBy: { fecha: "desc" },
       take: 5,
+    }),
+    prisma.medidaCorporal.findMany({
+      where: { id_alumno, tipo_medida: { in: ANGULOS_FOTO } },
+      orderBy: { fecha: "desc" },
+      take: 40,
     }),
     prisma.habito.findMany({
       where: { id_alumno, fecha: { gte: inicioSemanaActual } },
@@ -174,11 +209,16 @@ export default async function AlumnoDetallePage(
         },
       },
     }),
+    prisma.programaEntrenamiento.findUnique({
+      where: { id_programa: programaActivo.id_programa },
+      include: { bloques: { include: { _count: { select: { ejercicios_programa: true } } } } },
+    }),
   ]);
 
   const { usuario } = relacion.alumno;
 
   const urlesFotos = await urlesFirmadasFotos(medidas.map((m) => m.foto_url));
+  const urlesFotosAngulo = await urlesFirmadasFotos(fotosAngulo.map((m) => m.foto_url));
 
   const progresosSerializados: ProgresoSerializado[] = progresos.map((p) => {
     const valores: Record<string, string | null> = {};
@@ -206,6 +246,13 @@ export default async function AlumnoDetallePage(
     fecha_objetivo: o.fecha_objetivo
       ? o.fecha_objetivo.toISOString().slice(0, 10)
       : null,
+  }));
+
+  const fotosSerializadas: FotoSerializada[] = fotosAngulo.map((f) => ({
+    id_medida: f.id_medida,
+    angulo: f.tipo_medida,
+    fechaLabel: FORMATEADOR_FECHA.format(f.fecha),
+    url: f.foto_url ? urlesFotosAngulo.get(f.foto_url) ?? null : null,
   }));
 
   // seriesConPeso ya viene ordenado por fecha desc — se toman como mucho 8
@@ -247,29 +294,49 @@ export default async function AlumnoDetallePage(
     .map((p) => Number(p.peso_corporal));
   const maxSesionesSemana = Math.max(1, ...sesionesPorSemana);
 
-  return (
-    <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-8">
-      <section className="flex items-start justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
-            {usuario.nombre} {usuario.apellido}
-          </h1>
-          <p className="text-sm text-on-surface-variant">{usuario.email}</p>
-          <DatosAlumno
-            idAlumno={id_alumno}
-            objetivo={relacion.alumno.objetivo}
-            fechaNacimiento={
-              relacion.alumno.fecha_nacimiento
-                ? relacion.alumno.fecha_nacimiento.toISOString().slice(0, 10)
-                : null
-            }
-          />
+  const estadoSemaforo = calcularEstadoSemaforo(alertas);
+  const edad = calcularEdad(relacion.alumno.fecha_nacimiento);
+  const pesoActual = progresos[0]?.peso_corporal ? Number(progresos[0].peso_corporal) : null;
+  const { semanaActual, diasActivos } = calcularSemanaYDiasActivos(programaActivo.fecha_inicio);
+
+  const panelResumen = (
+    <div className="flex flex-col gap-6">
+      <section className="flex flex-wrap gap-2">
+        <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl px-3 py-2 flex flex-col">
+          <span className="text-[10px] text-on-surface-variant uppercase">Edad</span>
+          <span className="text-sm text-on-surface tabular-nums">{edad ?? "—"}</span>
         </div>
-        <BotonDesvincular
-          idAlumno={id_alumno}
-          nombreCompleto={`${usuario.nombre} ${usuario.apellido}`}
-        />
+        <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl px-3 py-2 flex flex-col">
+          <span className="text-[10px] text-on-surface-variant uppercase">Peso</span>
+          <span className="text-sm text-on-surface tabular-nums">
+            {pesoActual ? `${pesoActual}kg` : "—"}
+          </span>
+        </div>
+        <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl px-3 py-2 flex flex-col">
+          <span className="text-[10px] text-on-surface-variant uppercase">Semana</span>
+          <span className="text-sm text-on-surface tabular-nums">{semanaActual} de 4</span>
+        </div>
+        <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl px-3 py-2 flex flex-col">
+          <span className="text-[10px] text-on-surface-variant uppercase">Días activo</span>
+          <span className="text-sm text-on-surface tabular-nums">{diasActivos}</span>
+        </div>
+        <div
+          className={`rounded-xl px-3 py-2 flex items-center gap-1.5 border ${COLOR_SEMAFORO[estadoSemaforo]}`}
+        >
+          <span className="material-symbols-outlined text-[18px]">
+            {ICONO_SEMAFORO[estadoSemaforo]}
+          </span>
+          <span className="text-xs font-[family-name:var(--font-sora)] font-semibold">
+            {ETIQUETA_ESTADO_SEMAFORO[estadoSemaforo]}
+          </span>
+        </div>
       </section>
+
+      {relacion.alumno.objetivo && (
+        <p className="text-sm text-on-surface-variant">
+          <span className="text-on-surface-variant/70">Objetivo:</span> {relacion.alumno.objetivo}
+        </p>
+      )}
 
       {alertas.length > 0 && (
         <section className="flex flex-col gap-2">
@@ -302,51 +369,6 @@ export default async function AlumnoDetallePage(
           <SugerenciaIA idAlumno={id_alumno} />
         </section>
       )}
-
-      <section className="flex flex-col gap-2">
-        <div className="flex items-center justify-between">
-          <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
-            Programas
-          </h2>
-          <Link
-            href={`/coach/alumnos/${id_alumno}/programas/nuevo`}
-            className="flex items-center gap-2 bg-primary-container text-black font-[family-name:var(--font-sora)] text-sm font-bold px-4 py-2 rounded-full"
-          >
-            <span className="material-symbols-outlined text-[18px]">add</span>
-            Nuevo programa
-          </Link>
-        </div>
-
-        {programas.length === 0 ? (
-          <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 text-on-surface-variant text-sm">
-            Este alumno todavía no tiene programas.
-          </div>
-        ) : (
-          <div className="flex flex-col gap-1">
-            {programas.map((programa) => (
-              <Link
-                key={programa.id_programa}
-                href={`/coach/programas/${programa.id_programa}`}
-                className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex items-center justify-between"
-              >
-                <div>
-                  <p className="font-[family-name:var(--font-sora)] text-base font-semibold text-on-surface">
-                    {programa.nombre}
-                  </p>
-                  <p className="text-sm text-on-surface-variant">
-                    {programa.fecha_inicio.toLocaleDateString("es-AR")}
-                  </p>
-                </div>
-                <span className="font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] text-on-surface-variant uppercase">
-                  {programa.estado_programa}
-                </span>
-              </Link>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <ObjetivosAlumno idAlumno={id_alumno} objetivos={objetivosSerializados} />
 
       <section className="flex flex-col gap-2">
         <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
@@ -385,10 +407,10 @@ export default async function AlumnoDetallePage(
 
       <section className="flex flex-col gap-2">
         <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
-          Progresión de fuerza
+          Rendimiento
         </h2>
         <p className="text-xs text-on-surface-variant -mt-1">
-          Peso sugerido (lo cargás vos en el programa) vs. peso real que el alumno registró en cada sesión.
+          Peso sugerido (lo cargás vos en el día) vs. peso real que el alumno registró en cada sesión.
         </p>
         {progresionEjercicios.length === 0 ? (
           <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 text-on-surface-variant text-sm">
@@ -440,34 +462,42 @@ export default async function AlumnoDetallePage(
           </div>
         )}
       </section>
+    </div>
+  );
 
-      <section className="flex flex-col gap-2">
-        <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
-          Progreso físico
-        </h2>
-        {pesosOrdenados.length >= 2 && (
-          <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4">
-            <svg
-              viewBox={`0 0 ${ANCHO_SPARKLINE} ${ALTO_SPARKLINE}`}
-              className="w-full h-16"
-              preserveAspectRatio="none"
-            >
-              <polyline
-                points={puntosSparkline(pesosOrdenados)}
-                fill="none"
-                stroke="#61edda"
-                strokeWidth="2"
-              />
-            </svg>
-          </div>
-        )}
-        <ProgresoFisicoCoach idAlumno={id_alumno} entradas={progresosSerializados} />
+  const panelComposicion = (
+    <div className="flex flex-col gap-6">
+      {pesosOrdenados.length >= 2 && (
+        <section className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4">
+          <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase mb-3">
+            Evolución del peso
+          </h2>
+          <svg
+            viewBox={`0 0 ${ANCHO_SPARKLINE} ${ALTO_SPARKLINE}`}
+            className="w-full h-16"
+            preserveAspectRatio="none"
+          >
+            <polyline
+              points={puntosSparkline(pesosOrdenados)}
+              fill="none"
+              stroke="#61edda"
+              strokeWidth="2"
+            />
+          </svg>
+        </section>
+      )}
+      <ProgresoFisicoCoach idAlumno={id_alumno} entradas={progresosSerializados} />
+    </div>
+  );
 
-        {medidas.length > 0 && (
-          <div className="flex flex-col gap-1 mt-2">
-            <h3 className="font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] text-on-surface-variant uppercase">
-              Medidas corporales
-            </h3>
+  const panelHistorial = (
+    <div className="flex flex-col gap-6">
+      {medidas.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
+            Medidas corporales
+          </h2>
+          <div className="flex flex-col gap-1">
             {medidas.map((m) => {
               const foto = m.foto_url ? urlesFotos.get(m.foto_url) ?? null : null;
               return (
@@ -481,6 +511,7 @@ export default async function AlumnoDetallePage(
                   <span className="text-on-surface capitalize flex items-center gap-2 text-right">
                     {foto && (
                       <a href={foto} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={foto}
                           alt={`Foto de ${m.tipo_medida}`}
@@ -494,8 +525,8 @@ export default async function AlumnoDetallePage(
               );
             })}
           </div>
-        )}
-      </section>
+        </section>
+      )}
 
       <section className="flex flex-col gap-2">
         <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
@@ -562,6 +593,59 @@ export default async function AlumnoDetallePage(
           </div>
         )}
       </section>
+    </div>
+  );
+
+  return (
+    <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-6">
+      <section className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
+            {usuario.nombre} {usuario.apellido}
+          </h1>
+          <p className="text-sm text-on-surface-variant">{usuario.email}</p>
+          <DatosAlumno
+            idAlumno={id_alumno}
+            objetivo={relacion.alumno.objetivo}
+            fechaNacimiento={
+              relacion.alumno.fecha_nacimiento
+                ? relacion.alumno.fecha_nacimiento.toISOString().slice(0, 10)
+                : null
+            }
+          />
+        </div>
+        <BotonDesvincular
+          idAlumno={id_alumno}
+          nombreCompleto={`${usuario.nombre} ${usuario.apellido}`}
+        />
+      </section>
+
+      <TabsAlumno
+        inicial={tabInicial}
+        panels={{
+          resumen: panelResumen,
+          planificacion: (
+            <PlanificacionTab
+              idAlumno={id_alumno}
+              idPrograma={programaActivo.id_programa}
+              tipoPlanificacion={programaConBloques?.tipo_planificacion ?? "fija"}
+              bloques={programaConBloques?.bloques ?? []}
+            />
+          ),
+          objetivos: <ObjetivosAlumno idAlumno={id_alumno} objetivos={objetivosSerializados} />,
+          composicion: panelComposicion,
+          fotos: <FotosTab idAlumno={id_alumno} fotos={fotosSerializadas} />,
+          historial: panelHistorial,
+        }}
+      />
+
+      <Link
+        href="/coach/alumnos"
+        className="text-sm text-on-surface-variant hover:text-on-surface transition-colors flex items-center gap-1 self-start"
+      >
+        <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+        Volver a alumnos
+      </Link>
     </main>
   );
 }

@@ -3,7 +3,11 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { cerrarSesion } from "@/app/actions/auth";
 import { CredencialCard } from "../beneficios/_components/credencial-card";
-import { calcularEstadisticasAlumno } from "@/lib/alumno";
+import {
+  calcularEstadisticasAlumno,
+  obtenerProgramaActivo,
+  calcularSemanaYDiasActivos,
+} from "@/lib/alumno";
 
 const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
   day: "2-digit",
@@ -60,9 +64,20 @@ export default async function PerfilPage() {
     ? await prisma.progresoFisico.findFirst({
         where: { id_alumno: usuario.alumno.id_alumno },
         orderBy: { fecha: "desc" },
-        select: { peso_corporal: true, imc: true, porcentaje_graso: true },
+        select: {
+          peso_corporal: true,
+          imc: true,
+          porcentaje_graso: true,
+          grasa_visceral: true,
+          masa_muscular: true,
+        },
       })
     : null;
+
+  const programaActivo = usuario?.alumno ? await obtenerProgramaActivo(usuario.alumno.id_alumno) : null;
+  const { semanaActual, diasActivos } = programaActivo
+    ? calcularSemanaYDiasActivos(programaActivo.fecha_inicio)
+    : { semanaActual: null, diasActivos: null };
 
   const membresiaVigente = Boolean(
     membresia &&
@@ -85,6 +100,9 @@ export default async function PerfilPage() {
         <h1 className="font-[family-name:var(--font-sora)] text-[24px] leading-8 md:text-[36px] md:leading-[42px] font-bold text-on-surface mb-1">
           {nombreCompleto}
         </h1>
+        {usuario?.alumno?.objetivo && (
+          <p className="text-sm text-on-surface-variant mb-2">{usuario.alumno.objetivo}</p>
+        )}
         {esKuntur && (
           <div className="flex items-center justify-center gap-2">
             <span
@@ -100,36 +118,55 @@ export default async function PerfilPage() {
         )}
       </section>
 
-      {/* Composición corporal (última medición) */}
+      {/* Composición corporal (última medición) — solo lectura, la carga el coach */}
       {ultimaComposicion &&
-        (ultimaComposicion.peso_corporal || ultimaComposicion.imc || ultimaComposicion.porcentaje_graso) && (
-          <section className="grid grid-cols-3 gap-3 mb-6">
-            <div className="bg-[#1f1f1f] border border-[#262626] rounded-xl p-3 flex flex-col items-center justify-center">
-              <span className="font-[family-name:var(--font-sora)] text-lg font-bold text-on-surface tabular-nums">
-                {ultimaComposicion.peso_corporal ? `${ultimaComposicion.peso_corporal}` : "—"}
-              </span>
-              <span className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] text-on-surface-variant uppercase">
-                Peso (kg)
-              </span>
-            </div>
-            <div className="bg-[#1f1f1f] border border-[#262626] rounded-xl p-3 flex flex-col items-center justify-center">
-              <span className="font-[family-name:var(--font-sora)] text-lg font-bold text-on-surface tabular-nums">
-                {ultimaComposicion.imc ? `${ultimaComposicion.imc}` : "—"}
-              </span>
-              <span className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] text-on-surface-variant uppercase">
-                IMC
-              </span>
-            </div>
-            <div className="bg-[#1f1f1f] border border-[#262626] rounded-xl p-3 flex flex-col items-center justify-center">
-              <span className="font-[family-name:var(--font-sora)] text-lg font-bold text-on-surface tabular-nums">
-                {ultimaComposicion.porcentaje_graso ? `${ultimaComposicion.porcentaje_graso}%` : "—"}
-              </span>
-              <span className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] text-on-surface-variant uppercase">
-                Grasa
-              </span>
-            </div>
+        (ultimaComposicion.peso_corporal ||
+          ultimaComposicion.imc ||
+          ultimaComposicion.porcentaje_graso ||
+          ultimaComposicion.grasa_visceral ||
+          ultimaComposicion.masa_muscular) && (
+          <section className="grid grid-cols-3 sm:grid-cols-5 gap-3 mb-6">
+            {[
+              { valor: ultimaComposicion.peso_corporal, label: "Peso (kg)" },
+              { valor: ultimaComposicion.imc, label: "IMC" },
+              { valor: ultimaComposicion.porcentaje_graso, label: "% Grasa" },
+              { valor: ultimaComposicion.grasa_visceral, label: "Grasa visc." },
+              { valor: ultimaComposicion.masa_muscular, label: "Masa musc." },
+            ].map((item) => (
+              <div
+                key={item.label}
+                className="bg-[#1f1f1f] border border-[#262626] rounded-xl p-3 flex flex-col items-center justify-center"
+              >
+                <span className="font-[family-name:var(--font-sora)] text-lg font-bold text-on-surface tabular-nums">
+                  {item.valor != null ? `${item.valor}` : "—"}
+                </span>
+                <span className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] text-on-surface-variant uppercase text-center">
+                  {item.label}
+                </span>
+              </div>
+            ))}
           </section>
         )}
+
+      {/* Plan actual */}
+      {programaActivo && semanaActual !== null && (
+        <section className="bg-[#1f1f1f] border border-[#262626] rounded-xl p-4 mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
+              {programaActivo.nombre}
+            </span>
+            <span className="text-sm text-on-surface tabular-nums">
+              Semana {semanaActual} de 4 · {diasActivos} día{diasActivos === 1 ? "" : "s"} activo
+            </span>
+          </div>
+          <div className="w-full h-1.5 bg-[#262626] rounded-full">
+            <div
+              className="h-full bg-primary-container rounded-full"
+              style={{ width: `${(semanaActual / 4) * 100}%` }}
+            />
+          </div>
+        </section>
+      )}
 
       {/* Fila de estadísticas */}
       <section className="grid grid-cols-3 gap-4 mb-8">

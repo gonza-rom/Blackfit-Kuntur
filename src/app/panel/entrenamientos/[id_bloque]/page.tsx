@@ -45,11 +45,21 @@ export default async function RegistrarEntrenamientoPage(
     },
   }));
 
+  const ETIQUETA_DIA: Record<string, string> = {
+    lunes: "Lunes",
+    martes: "Martes",
+    miercoles: "Miércoles",
+    jueves: "Jueves",
+    viernes: "Viernes",
+    sabado: "Sábado",
+    domingo: "Domingo",
+  };
+
   return (
     <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-6">
       <div>
         <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
-          {bloque.nombre}
+          {bloque.dia_semana ? `Hoy — ${ETIQUETA_DIA[bloque.dia_semana]}` : bloque.nombre}
         </h1>
         <p className="text-sm text-on-surface-variant">{bloque.programa.nombre}</p>
       </div>

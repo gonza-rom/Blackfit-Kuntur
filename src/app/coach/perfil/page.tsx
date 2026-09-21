@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { obtenerEntrenadorActual } from "@/lib/auth";
 import { FormInformacionPersonal } from "@/app/panel/perfil/informacion-personal/_components/form-informacion-personal";
@@ -40,6 +41,32 @@ export default async function CoachPerfilPage() {
             biografia={usuario.entrenador?.biografia ?? null}
           />
         </div>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase mb-1">
+          Más
+        </h2>
+        <Link
+          href="/coach/programas/plantillas"
+          className="flex items-center justify-between bg-[#1A1A1A] border border-[#262626] rounded-xl p-4"
+        >
+          <span className="flex items-center gap-3 text-sm text-on-surface">
+            <span className="material-symbols-outlined text-on-surface-variant">content_copy</span>
+            Plantillas de rutinas
+          </span>
+          <span className="material-symbols-outlined text-on-surface-variant">chevron_right</span>
+        </Link>
+        <Link
+          href="/coach/biblioteca"
+          className="flex items-center justify-between bg-[#1A1A1A] border border-[#262626] rounded-xl p-4"
+        >
+          <span className="flex items-center gap-3 text-sm text-on-surface">
+            <span className="material-symbols-outlined text-on-surface-variant">menu_book</span>
+            Biblioteca educativa
+          </span>
+          <span className="material-symbols-outlined text-on-surface-variant">chevron_right</span>
+        </Link>
       </div>
     </main>
   );

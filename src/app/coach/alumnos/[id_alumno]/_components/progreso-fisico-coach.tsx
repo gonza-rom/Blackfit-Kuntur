@@ -132,12 +132,12 @@ function ImportarDesdeDocumento({
       action={action}
       className="border border-dashed border-outline-variant rounded-lg p-3 flex flex-col gap-2"
     >
-      <p className={LABEL}>Completar desde un PDF/Word de la balanza (opcional)</p>
+      <p className={LABEL}>Completar desde un PDF/Word o una foto de la balanza (opcional)</p>
       <div className="flex flex-wrap items-center gap-2">
         <input
           name="archivo"
           type="file"
-          accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          accept=".pdf,.docx,.jpg,.jpeg,.png,.webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*"
           onChange={(e) => setNombreArchivo(e.target.files?.[0]?.name ?? null)}
           className="text-xs text-on-surface-variant file:mr-2 file:rounded file:border-0 file:bg-[#262626] file:px-3 file:py-1.5 file:text-on-surface file:text-xs"
         />

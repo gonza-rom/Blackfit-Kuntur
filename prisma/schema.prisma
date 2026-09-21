@@ -59,6 +59,27 @@ enum EstadoPrograma {
   finalizado
 }
 
+// Cómo se reparten las 4 semanas del plan mensual entre los bloques
+// (días) que arma el coach. Es solo una guía para la pantalla de edición
+// — el dato real de qué semanas cubre cada bloque sigue viviendo en
+// BloqueEntrenamiento.semana_inicio/semana_fin, así que cambiar el tipo
+// nunca corrompe bloques ya armados.
+enum TipoPlanificacion {
+  fija            // 1 semana se repite en las 4
+  semanal         // las 4 semanas son distintas
+  personalizada   // agrupamientos libres (2+2, 3+1, 1+1+2, etc.)
+}
+
+enum DiaSemana {
+  lunes
+  martes
+  miercoles
+  jueves
+  viernes
+  sabado
+  domingo
+}
+
 enum EstadoEntrenamiento {
   pendiente
   completado
@@ -272,6 +293,7 @@ model ProgramaEntrenamiento {
   fecha_fin        DateTime?
   estado_programa  EstadoPrograma @default(activo)
   es_plantilla     Boolean        @default(false)
+  tipo_planificacion TipoPlanificacion @default(fija)
 
   alumno           Alumno?             @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
   entrenador       Entrenador          @relation(fields: [id_entrenador], references: [id_entrenador])
@@ -290,6 +312,10 @@ model BloqueEntrenamiento {
   semana_inicio    Int?
   semana_fin       Int?
   tipo             String?  // ej: acumulacion, intensificacion, deload
+  // Día de la semana que cubre este bloque en la planificación nueva
+  // (por día). Nulo en bloques viejos armados antes de este cambio — ahí
+  // se sigue eligiendo el bloque solo por semana, como siempre.
+  dia_semana       DiaSemana?
 
   programa         ProgramaEntrenamiento @relation(fields: [id_programa], references: [id_programa], onDelete: Cascade)
   ejercicios_programa EjercicioPrograma[]
@@ -335,6 +361,7 @@ model EjercicioPrograma {
   descanso                 String?
   metodo_entrenamiento     String?
   tiempo_bajo_tension_sugerido Int? // segundos, nunca obligatorio
+  nota                     String?
   orden                    Int
 
   bloque       BloqueEntrenamiento @relation(fields: [id_bloque], references: [id_bloque], onDelete: Cascade)

@@ -3,13 +3,20 @@
 import { redirect } from "next/navigation";
 import { revalidatePath, updateTag } from "next/cache";
 import { Prisma } from "@prisma/client";
-import type { EstadoPrograma, TipoObjetivo, EstadoObjetivo } from "@prisma/client";
+import type {
+  EstadoPrograma,
+  TipoObjetivo,
+  EstadoObjetivo,
+  TipoPlanificacion,
+  DiaSemana,
+} from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
 import { crearNotificacion } from "@/lib/notificaciones";
 import { evaluarLogros } from "@/lib/gamificacion";
 import { TAG_CATALOGO_EJERCICIOS } from "@/lib/catalogos";
 import type { CampoComposicionCorporal } from "@/lib/composicion-corporal";
+import { subirFotoProgreso } from "@/lib/storage";
 import { extraerComposicionDeTexto, extraerFechaDeTexto } from "@/lib/parseo-composicion-corporal";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -673,6 +680,272 @@ export async function aplicarPlantilla(
   redirect(`/coach/programas/${programa.id_programa}`);
 }
 
+// ------------------------------------------------------------
+// PLANIFICACIÓN POR DÍA — pantalla "Planificación" del perfil del
+// alumno. Reusa BloqueEntrenamiento/EjercicioPrograma tal cual (ver
+// dia_semana en el schema): un bloque ahora puede representar el
+// entrenamiento de UN día de la semana dentro de un rango de semanas
+// (1-4), en vez de un tramo libre del programa. Nada de esto toca cómo
+// se guarda el historial real (SerieEntrenamiento sigue igual), así que
+// las sesiones ya registradas no se alteran nunca.
+// ------------------------------------------------------------
+
+const DIAS_SEMANA: DiaSemana[] = [
+  "lunes",
+  "martes",
+  "miercoles",
+  "jueves",
+  "viernes",
+  "sabado",
+  "domingo",
+];
+
+const ETIQUETA_DIA: Record<DiaSemana, string> = {
+  lunes: "Lunes",
+  martes: "Martes",
+  miercoles: "Miércoles",
+  jueves: "Jueves",
+  viernes: "Viernes",
+  sabado: "Sábado",
+  domingo: "Domingo",
+};
+
+/** El programa activo (no plantilla) del alumno con este coach, creándolo si hace falta. */
+export async function obtenerOCrearProgramaActivo(id_alumno: string, id_entrenador: string) {
+  const existente = await prisma.programaEntrenamiento.findFirst({
+    where: { id_alumno, id_entrenador, estado_programa: "activo", es_plantilla: false },
+    orderBy: { fecha_inicio: "desc" },
+  });
+  if (existente) return existente;
+
+  return prisma.programaEntrenamiento.create({
+    data: {
+      id_alumno,
+      id_entrenador,
+      nombre: "Plan mensual",
+      fecha_inicio: new Date(),
+      estado_programa: "activo",
+      tipo_planificacion: "fija",
+    },
+  });
+}
+
+export async function establecerTipoPlanificacion(formData: FormData): Promise<void> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return;
+
+  const id_programa = String(formData.get("id_programa") ?? "");
+  const tipo = String(formData.get("tipo_planificacion") ?? "") as TipoPlanificacion;
+  if (!id_programa || !["fija", "semanal", "personalizada"].includes(tipo)) return;
+
+  const programa = await prisma.programaEntrenamiento.findUnique({ where: { id_programa } });
+  if (!programa || programa.id_entrenador !== contexto.id_entrenador) return;
+
+  await prisma.programaEntrenamiento.update({
+    where: { id_programa },
+    data: { tipo_planificacion: tipo },
+  });
+
+  revalidatePath(`/coach/alumnos/${programa.id_alumno}`);
+}
+
+// Crea (si no existen todavía) los 7 bloques vacíos — uno por día — para
+// un rango de semanas nuevo, así la grilla de la semana aparece completa
+// aunque el coach todavía no haya cargado ejercicios en ningún día.
+export async function crearGrupoSemanas(formData: FormData): Promise<void> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return;
+
+  const id_programa = String(formData.get("id_programa") ?? "");
+  const semana_inicio = Number(formData.get("semana_inicio") ?? "");
+  const semana_fin = Number(formData.get("semana_fin") ?? "");
+  if (
+    !id_programa ||
+    !Number.isFinite(semana_inicio) ||
+    !Number.isFinite(semana_fin) ||
+    semana_inicio < 1 ||
+    semana_fin > 4 ||
+    semana_inicio > semana_fin
+  ) {
+    return;
+  }
+
+  const programa = await prisma.programaEntrenamiento.findUnique({
+    where: { id_programa },
+    include: { bloques: true },
+  });
+  if (!programa || programa.id_entrenador !== contexto.id_entrenador) return;
+
+  const existentes = new Set(
+    programa.bloques
+      .filter((b) => b.semana_inicio === semana_inicio && b.semana_fin === semana_fin)
+      .map((b) => b.dia_semana)
+  );
+
+  const faltantes = DIAS_SEMANA.filter((d) => !existentes.has(d));
+  if (faltantes.length === 0) return;
+
+  await prisma.bloqueEntrenamiento.createMany({
+    data: faltantes.map((dia_semana, i) => ({
+      id_programa,
+      nombre: ETIQUETA_DIA[dia_semana],
+      orden: DIAS_SEMANA.indexOf(dia_semana) + i,
+      semana_inicio,
+      semana_fin,
+      dia_semana,
+    })),
+  });
+
+  revalidatePath(`/coach/alumnos/${programa.id_alumno}`);
+}
+
+// Elimina un grupo de semanas completo (los 7 días). Si algún día ya
+// tiene historial real registrado por el alumno, Postgres rechaza el
+// borrado de ESE bloque puntual — se avisa y no se borra nada del grupo,
+// para no dejarlo a medio borrar.
+export async function eliminarGrupoSemanas(
+  _prev: EstadoCoach,
+  formData: FormData
+): Promise<EstadoCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_programa = String(formData.get("id_programa") ?? "");
+  const semana_inicio = Number(formData.get("semana_inicio") ?? "");
+  const semana_fin = Number(formData.get("semana_fin") ?? "");
+
+  const programa = await prisma.programaEntrenamiento.findUnique({ where: { id_programa } });
+  if (!programa || programa.id_entrenador !== contexto.id_entrenador) {
+    return { error: "No autorizado." };
+  }
+
+  try {
+    await prisma.bloqueEntrenamiento.deleteMany({
+      where: { id_programa, semana_inicio, semana_fin },
+    });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
+      return {
+        error:
+          "No se puede eliminar: algún día de este grupo ya tiene entrenamientos registrados por el alumno.",
+      };
+    }
+    throw err;
+  }
+
+  revalidatePath(`/coach/alumnos/${programa.id_alumno}`);
+  return undefined;
+}
+
+export type EjercicioDiaEntrada = {
+  id_ejercicio: string;
+  series: string;
+  repeticiones: string;
+  peso_sugerido: string;
+  descanso: string;
+  tempo: string;
+  nota: string;
+};
+
+export type EstadoDiaPlan = { error?: string; message?: string } | undefined;
+
+// Reemplaza de punta a punta los ejercicios de un día puntual (semana +
+// día de semana dentro de un programa). Simplifica la pantalla de
+// edición a un solo botón "Guardar cambios" — arma la lista que quiere
+// el coach, sin ir agregando/borrando de a uno. Si algún ejercicio que
+// se iba a borrar ya tiene series reales registradas, no se borra nada:
+// se avisa para que el coach edite ese día como una semana nueva en vez
+// de pisar el historial.
+export async function guardarDiaPlan(
+  _prev: EstadoDiaPlan,
+  formData: FormData
+): Promise<EstadoDiaPlan> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_programa = String(formData.get("id_programa") ?? "");
+  const semana_inicio = Number(formData.get("semana_inicio") ?? "");
+  const semana_fin = Number(formData.get("semana_fin") ?? "");
+  const dia_semana = String(formData.get("dia_semana") ?? "") as DiaSemana;
+
+  let entradas: EjercicioDiaEntrada[];
+  try {
+    entradas = JSON.parse(String(formData.get("entradas") ?? "[]"));
+  } catch {
+    return { error: "Datos inválidos." };
+  }
+
+  if (
+    !id_programa ||
+    !Number.isFinite(semana_inicio) ||
+    !Number.isFinite(semana_fin) ||
+    !DIAS_SEMANA.includes(dia_semana)
+  ) {
+    return { error: "Datos inválidos." };
+  }
+
+  const programa = await prisma.programaEntrenamiento.findUnique({ where: { id_programa } });
+  if (!programa || programa.id_entrenador !== contexto.id_entrenador || !programa.id_alumno) {
+    return { error: "No autorizado sobre este programa." };
+  }
+  const id_alumno = programa.id_alumno;
+
+  const validas = entradas.filter((e) => e.id_ejercicio && e.series && e.repeticiones);
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      // No hay @@unique sobre (id_programa, semana_inicio, semana_fin,
+      // dia_semana), así que "encontrar o crear" el bloque del día se
+      // resuelve a mano en vez de con upsert.
+      const existente = await tx.bloqueEntrenamiento.findFirst({
+        where: { id_programa, semana_inicio, semana_fin, dia_semana },
+      });
+      const bloque =
+        existente ??
+        (await tx.bloqueEntrenamiento.create({
+          data: {
+            id_programa,
+            nombre: ETIQUETA_DIA[dia_semana],
+            orden: DIAS_SEMANA.indexOf(dia_semana),
+            semana_inicio,
+            semana_fin,
+            dia_semana,
+          },
+        }));
+
+      await tx.ejercicioPrograma.deleteMany({ where: { id_bloque: bloque.id_bloque } });
+
+      let orden = 1;
+      for (const e of validas) {
+        await tx.ejercicioPrograma.create({
+          data: {
+            id_bloque: bloque.id_bloque,
+            id_ejercicio: e.id_ejercicio,
+            series: Number(e.series) || 1,
+            repeticiones: e.repeticiones,
+            peso_sugerido: e.peso_sugerido || null,
+            descanso: e.descanso || null,
+            tempo: e.tempo || null,
+            nota: e.nota || null,
+            orden: orden++,
+          },
+        });
+      }
+    });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
+      return {
+        error:
+          "Este día ya tiene entrenamientos reales registrados por el alumno — no se puede reemplazar la lista de ejercicios sin perder ese historial. Armá una semana nueva para el cambio en vez de editar esta.",
+      };
+    }
+    throw err;
+  }
+
+  revalidatePath(`/coach/alumnos/${id_alumno}`);
+  redirect(`/coach/alumnos/${id_alumno}?tab=planificacion`);
+}
+
 export async function crearBloque(
   _prev: EstadoCoach,
   formData: FormData
@@ -1299,8 +1572,112 @@ export type ResultadoExtraccionComposicion =
   | { fecha: string | null; valores: Partial<Record<CampoComposicionCorporal, string>> }
   | undefined;
 
-const EXTENSIONES_SOPORTADAS = [".pdf", ".docx"];
+const EXTENSIONES_SOPORTADAS = [".pdf", ".docx", ".jpg", ".jpeg", ".png", ".webp"];
 const TAMANO_MAXIMO_DOCUMENTO = 10 * 1024 * 1024; // 10 MB
+const TIPOS_IMAGEN: Record<string, string> = {
+  "image/jpeg": "image/jpeg",
+  "image/jpg": "image/jpeg",
+  "image/png": "image/png",
+  "image/webp": "image/webp",
+};
+
+// Lectura por IA de una FOTO del visor de la balanza (ej. Beurer BF 990):
+// a diferencia del PDF/Word (texto real, se lee con reglas sin IA — ver
+// extraerComposicionDeTexto), una foto no tiene texto extraíble, así que
+// acá sí hace falta un modelo con visión. Requiere ANTHROPIC_API_KEY; si
+// no está configurada, se avisa igual que en generarSugerenciaIA (ia.ts)
+// en vez de fallar en silencio.
+async function leerComposicionDeImagen(
+  buffer: Buffer,
+  mediaType: string
+): Promise<{ valores: Partial<Record<CampoComposicionCorporal, string>>; fecha: string | null } | { error: string }> {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return {
+      error:
+        "La lectura por IA no está configurada todavía (falta ANTHROPIC_API_KEY). Completá los datos a mano, o subí el PDF/Word del reporte si tu balanza lo exporta así.",
+    };
+  }
+
+  const camposValidos: CampoComposicionCorporal[] = [
+    "peso_corporal",
+    "imc",
+    "pulso",
+    "porcentaje_graso",
+    "porcentaje_agua",
+    "porcentaje_musculo",
+    "masa_osea",
+    "metabolismo_basal",
+    "metabolismo_activo",
+    "grasa_visceral",
+    "edad_metabolica",
+    "soft_lean_mass",
+    "lean_body_mass",
+    "proteina",
+    "masa_muscular",
+  ];
+
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 500,
+        system:
+          "Sos un asistente que lee la pantalla o el ticket impreso de una balanza de composición corporal (ej. Beurer BF 990, InBody) a partir de una foto. " +
+          `Devolvé ÚNICAMENTE un objeto JSON (sin texto alrededor, sin markdown) con esta forma: {"fecha": "YYYY-MM-DD o null", "valores": {...}}. ` +
+          `Las claves posibles de "valores" son exactamente: ${camposValidos.join(", ")} — usá SOLO las que puedas leer con confianza en la imagen, como números (string), sin unidades. ` +
+          "Nunca inventes un valor que no se vea con claridad en la foto: omití esa clave en vez de adivinar.",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "image", source: { type: "base64", media_type: mediaType, data: buffer.toString("base64") } },
+              { type: "text", text: "Leé esta captura de la balanza y devolvé el JSON." },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!res.ok) {
+      return { error: "El asistente de IA no pudo leer la imagen. Probá de nuevo o completá los datos a mano." };
+    }
+
+    const data = await res.json();
+    const texto: string = (data.content ?? [])
+      .map((b: { type: string; text?: string }) => (b.type === "text" ? b.text : ""))
+      .join("");
+
+    const match = texto.match(/\{[\s\S]*\}/);
+    if (!match) return { error: "El asistente no devolvió una lectura válida. Completá los datos a mano." };
+
+    const parseado = JSON.parse(match[0]) as {
+      fecha?: string | null;
+      valores?: Record<string, unknown>;
+    };
+
+    const valores: Partial<Record<CampoComposicionCorporal, string>> = {};
+    for (const campo of camposValidos) {
+      const v = parseado.valores?.[campo];
+      if (v !== undefined && v !== null && String(v).trim() !== "") {
+        valores[campo] = String(v);
+      }
+    }
+
+    if (Object.keys(valores).length === 0) {
+      return { error: "El asistente no reconoció ningún dato en la imagen. Completá los datos a mano." };
+    }
+
+    return { valores, fecha: parseado.fecha ?? null };
+  } catch {
+    return { error: "No se pudo conectar con el asistente de IA. Completá los datos a mano." };
+  }
+}
 
 export async function extraerComposicionDeDocumento(
   _prev: ResultadoExtraccionComposicion,
@@ -1311,7 +1688,7 @@ export async function extraerComposicionDeDocumento(
 
   const archivo = formData.get("archivo");
   if (!(archivo instanceof File) || archivo.size === 0) {
-    return { error: "Elegí un archivo PDF o Word (.docx)." };
+    return { error: "Elegí un archivo PDF, Word o una foto de la balanza." };
   }
   if (archivo.size > TAMANO_MAXIMO_DOCUMENTO) {
     return { error: "El archivo es demasiado grande (máx. 10 MB)." };
@@ -1320,6 +1697,15 @@ export async function extraerComposicionDeDocumento(
   const nombreArchivo = archivo.name.toLowerCase();
   const esPdf = archivo.type === "application/pdf" || nombreArchivo.endsWith(".pdf");
   const esDocx = nombreArchivo.endsWith(".docx");
+  const mediaTypeImagen = TIPOS_IMAGEN[archivo.type];
+
+  if (mediaTypeImagen) {
+    const buffer = Buffer.from(await archivo.arrayBuffer());
+    const resultado = await leerComposicionDeImagen(buffer, mediaTypeImagen);
+    if ("error" in resultado) return resultado;
+    return { fecha: resultado.fecha, valores: resultado.valores };
+  }
+
   if (!esPdf && !esDocx) {
     return {
       error: `Formato no soportado: subí un archivo ${EXTENSIONES_SOPORTADAS.join(" o ")}.`,
@@ -1365,6 +1751,61 @@ export async function extraerComposicionDeDocumento(
   }
 
   return { fecha, valores };
+}
+
+// ------------------------------------------------------------
+// FOTOS DE PROGRESO POR ÁNGULO — el coach las sube desde el perfil del
+// alumno (frente/espalda/perfil izquierdo/perfil derecho, con fecha
+// automática). Reusa MedidaCorporal + Supabase Storage tal cual el
+// alumno ya las carga desde /panel/seguimiento/progreso — mismo bucket,
+// mismas URLs firmadas — así que ambos caminos conviven sin pisarse.
+// ------------------------------------------------------------
+
+// No exportado: un archivo "use server" solo puede exportar funciones
+// async — ver el mismo listado de ángulos, duplicado a propósito, en
+// fotos-tab.tsx y en la página del perfil del alumno.
+const ANGULOS_FOTO = ["frente", "espalda", "perfil_izquierdo", "perfil_derecho"] as const;
+type AnguloFoto = (typeof ANGULOS_FOTO)[number];
+
+export async function subirFotoProgresoAngulo(
+  _prev: EstadoCoach,
+  formData: FormData
+): Promise<EstadoCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_alumno = String(formData.get("id_alumno") ?? "");
+  const angulo = String(formData.get("angulo") ?? "") as AnguloFoto;
+  const archivo = formData.get("foto");
+
+  if (!id_alumno || !ANGULOS_FOTO.includes(angulo)) {
+    return { error: "Datos inválidos." };
+  }
+  if (!(archivo instanceof File) || archivo.size === 0) {
+    return { error: "Elegí una foto." };
+  }
+  if (!(await alumnoDelEntrenador(id_alumno, contexto.id_entrenador))) {
+    return { error: "Ese alumno no está vinculado a tu cartera." };
+  }
+
+  const medida = await prisma.medidaCorporal.create({
+    data: { id_alumno, tipo_medida: angulo, valor_cm: 0 },
+  });
+
+  const path = await subirFotoProgreso(id_alumno, medida.id_medida, archivo);
+  if (path) {
+    await prisma.medidaCorporal.update({
+      where: { id_medida: medida.id_medida },
+      data: { foto_url: path },
+    });
+  } else {
+    // Sin la foto no tiene sentido conservar la fila vacía.
+    await prisma.medidaCorporal.delete({ where: { id_medida: medida.id_medida } });
+    return { error: "No se pudo subir la foto. Probá de nuevo." };
+  }
+
+  revalidatePath(`/coach/alumnos/${id_alumno}`);
+  return { message: "Foto guardada." };
 }
 
 export async function crearProgresoFisicoAlumno(
