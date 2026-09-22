@@ -28,6 +28,7 @@ export default async function ComercioPerfilPage() {
           telefono={comercio.telefono}
           email={comercio.email}
           categoria={comercio.categoria}
+          logoActual={comercio.logo}
         />
       </div>
 

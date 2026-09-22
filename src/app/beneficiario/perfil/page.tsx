@@ -13,10 +13,19 @@ export default async function BeneficiarioPerfilPage() {
   return (
     <main className="flex-1 w-full max-w-md mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-6">
       <section className="flex flex-col items-center text-center gap-3">
-        <div className="w-24 h-24 rounded-full border border-[#262626] bg-[#1A1A1A] flex items-center justify-center">
-          <span className="font-[family-name:var(--font-sora)] text-[40px] font-bold text-primary-container">
-            {inicial}
-          </span>
+        <div className="w-24 h-24 rounded-full overflow-hidden border border-[#262626] bg-[#1A1A1A] flex items-center justify-center">
+          {usuario.foto_perfil ? (
+            // eslint-disable-next-line @next/next/no-img-element -- avatar subido a Supabase Storage, no un asset del build
+            <img
+              src={usuario.foto_perfil}
+              alt="Foto de perfil"
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <span className="font-[family-name:var(--font-sora)] text-[40px] font-bold text-primary-container">
+              {inicial}
+            </span>
+          )}
         </div>
         <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
           {usuario.nombre} {usuario.apellido}
@@ -32,6 +41,7 @@ export default async function BeneficiarioPerfilPage() {
           apellido={usuario.apellido}
           telefono={usuario.telefono}
           email={usuario.email}
+          fotoActual={usuario.foto_perfil}
         />
       </div>
 

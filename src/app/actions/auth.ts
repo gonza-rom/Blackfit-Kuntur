@@ -4,7 +4,11 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { otorgarLogrosManualesIniciales } from "@/lib/gamificacion";
+import {
+  otorgarLogrosManualesIniciales,
+  registrarLogin,
+  evaluarLogros,
+} from "@/lib/gamificacion";
 
 export type EstadoAuth = { error?: string; message?: string } | undefined;
 
@@ -50,7 +54,7 @@ export async function iniciarSesion(
   if (data.user) {
     const perfil = await prisma.usuario.findUnique({
       where: { id_usuario: data.user.id },
-      select: { estado_usuario: true },
+      select: { estado_usuario: true, alumno: { select: { id_alumno: true } } },
     });
     if (perfil && perfil.estado_usuario !== "activo") {
       await supabase.auth.signOut();
@@ -60,6 +64,14 @@ export async function iniciarSesion(
             ? "Tu cuenta está suspendida. Contactá al equipo de Black Hub."
             : "Tu cuenta está inactiva. Contactá al equipo de Black Hub.",
       };
+    }
+
+    // Racha de login (para los logros automáticos de actividad de uso) y
+    // re-evaluación de logros oportunista — nunca bloquea el login si algo
+    // de esto falla (ambas funciones son silenciosas por diseño).
+    await registrarLogin(data.user.id);
+    if (perfil?.alumno) {
+      await evaluarLogros(perfil.alumno.id_alumno).catch(() => {});
     }
   }
 

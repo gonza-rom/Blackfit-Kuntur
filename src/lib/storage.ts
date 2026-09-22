@@ -12,6 +12,14 @@ export const BUCKET_FOTOS = "fotos-progreso";
 const TAM_MAXIMO_BYTES = 8 * 1024 * 1024; // 8 MB
 const TTL_URL_FIRMADA = 60 * 60; // 1 hora
 
+// Fotos de perfil (Usuario.foto_perfil) y logos de comercio (Comercio.logo).
+// A diferencia de las fotos de progreso, acá no hay nada sensible — es un
+// avatar que se muestra todo el tiempo en la app — así que el bucket es
+// PÚBLICO: se guarda la URL pública directa en la base, sin necesidad de
+// regenerar una URL firmada cada vez que se muestra.
+export const BUCKET_AVATARES = "avatares";
+const TAM_MAXIMO_AVATAR_BYTES = 4 * 1024 * 1024; // 4 MB
+
 let cliente: SupabaseClient | null | undefined;
 
 function clienteAdmin(): SupabaseClient | null {
@@ -41,6 +49,18 @@ async function asegurarBucket(sb: SupabaseClient): Promise<void> {
       .catch(() => {});
   }
   bucketAsegurado = true;
+}
+
+let bucketAvataresAsegurado = false;
+async function asegurarBucketAvatares(sb: SupabaseClient): Promise<void> {
+  if (bucketAvataresAsegurado) return;
+  const { data } = await sb.storage.getBucket(BUCKET_AVATARES);
+  if (!data) {
+    await sb.storage
+      .createBucket(BUCKET_AVATARES, { public: true, fileSizeLimit: TAM_MAXIMO_AVATAR_BYTES })
+      .catch(() => {});
+  }
+  bucketAvataresAsegurado = true;
 }
 
 function extensionDe(nombre: string, tipo: string): string {
@@ -126,4 +146,47 @@ export async function urlesFirmadasFotos(
     if (item.path && item.signedUrl) mapa.set(item.path, item.signedUrl);
   }
   return mapa;
+}
+
+/**
+ * Sube una foto de perfil (alumno/coach/beneficiario) o el logo de un
+ * comercio y devuelve la URL PÚBLICA lista para guardar directo en
+ * Usuario.foto_perfil / Comercio.logo (a diferencia de subirFotoProgreso,
+ * acá no hace falta firmar nada para mostrarla). `prefijo` es solo para
+ * separar carpetas dentro del bucket (ej. "usuarios" o "comercios") — el
+ * path completo es `${prefijo}/${id}.${ext}`, siempre el mismo nombre
+ * para un mismo id, así una foto nueva pisa la anterior sola (upsert) sin
+ * dejar huérfanos ni necesitar borrar aparte.
+ */
+export async function subirAvatar(
+  prefijo: "usuarios" | "comercios",
+  id: string,
+  archivo: File | null
+): Promise<string | null> {
+  if (!archivo || archivo.size === 0) return null;
+  if (!archivo.type.startsWith("image/")) return null;
+  if (archivo.size > TAM_MAXIMO_AVATAR_BYTES) return null;
+
+  const sb = clienteAdmin();
+  if (!sb) return null;
+
+  try {
+    await asegurarBucketAvatares(sb);
+    const ext = extensionDe(archivo.name, archivo.type);
+    const path = `${prefijo}/${id}.${ext}`;
+    const buffer = Buffer.from(await archivo.arrayBuffer());
+
+    const { error } = await sb.storage
+      .from(BUCKET_AVATARES)
+      .upload(path, buffer, { contentType: archivo.type, upsert: true });
+    if (error) return null;
+
+    const { data } = sb.storage.from(BUCKET_AVATARES).getPublicUrl(path);
+    // Cache-busting: la URL pública es siempre la misma para este id (el
+    // path no cambia), así que sin esto el navegador podría seguir
+    // mostrando la imagen vieja cacheada después de subir una nueva.
+    return `${data.publicUrl}?v=${Date.now()}`;
+  } catch {
+    return null;
+  }
 }

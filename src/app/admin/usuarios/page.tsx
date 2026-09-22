@@ -17,6 +17,28 @@ const ETIQUETA_ESTADO: Record<string, string> = {
   pendiente: "Pendiente",
 };
 
+const DIA_MS = 1000 * 60 * 60 * 24;
+
+// El conteo de días es independiente de `estado_membresia` a propósito:
+// ese campo es manual (nadie lo pasa a "vencida" solo cuando llega la
+// fecha — ver src/lib/membresia.ts), así que un usuario puede seguir
+// mostrando "Activa" con la fecha ya pasada. Este cálculo mira la fecha
+// real, no lo que quedó guardado.
+function etiquetaVencimiento(
+  membresia: { estado_membresia: string; fecha_vencimiento_membresia: Date } | undefined
+): { texto: string; clase: string } | null {
+  if (!membresia) return null;
+  const dias = Math.ceil(
+    (membresia.fecha_vencimiento_membresia.getTime() - Date.now()) / DIA_MS
+  );
+  if (dias < 0) {
+    return { texto: `Vencida hace ${Math.abs(dias)}d`, clase: "text-[#ffb4ab]" };
+  }
+  if (dias === 0) return { texto: "Vence hoy", clase: "text-[#eda100]" };
+  if (dias <= 5) return { texto: `Vence en ${dias}d`, clase: "text-[#eda100]" };
+  return { texto: `Vence en ${dias}d`, clase: "text-on-surface-variant" };
+}
+
 const ROLES_FILTRO_COMPLETO: RolUsuario[] = [
   "alumno",
   "entrenador",
@@ -201,6 +223,7 @@ export default async function AdminUsuariosPage(
         ) : (
           usuarios.map((usuario) => {
             const membresia = usuario.membresias[0];
+            const vencimiento = etiquetaVencimiento(membresia);
             return (
               <Link
                 key={usuario.id_usuario}
@@ -230,9 +253,18 @@ export default async function AdminUsuariosPage(
                     ))}
                   </div>
                 </div>
-                <span className="font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] text-on-surface-variant uppercase">
-                  {membresia ? ETIQUETA_ESTADO[membresia.estado_membresia] : "Sin membresía"}
-                </span>
+                <div className="flex flex-col items-end gap-0.5 shrink-0">
+                  <span className="font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] text-on-surface-variant uppercase">
+                    {membresia ? ETIQUETA_ESTADO[membresia.estado_membresia] : "Sin membresía"}
+                  </span>
+                  {vencimiento && (
+                    <span
+                      className={`font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.06em] ${vencimiento.clase}`}
+                    >
+                      {vencimiento.texto}
+                    </span>
+                  )}
+                </div>
               </Link>
             );
           })

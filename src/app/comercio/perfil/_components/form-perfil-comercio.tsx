@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { actualizarPerfilComercio } from "@/app/actions/comercio";
 
 const INPUT =
@@ -15,6 +15,7 @@ export function FormPerfilComercio({
   telefono,
   email,
   categoria,
+  logoActual,
 }: {
   nombre: string;
   descripcion: string | null;
@@ -22,11 +23,50 @@ export function FormPerfilComercio({
   telefono: string | null;
   email: string | null;
   categoria: string | null;
+  logoActual?: string | null;
 }) {
   const [state, action, pending] = useActionState(actualizarPerfilComercio, undefined);
+  const [preview, setPreview] = useState<string | null>(null);
 
   return (
     <form action={action} className="flex flex-col gap-4">
+      <div className="flex items-center gap-4">
+        <div className="w-20 h-20 rounded-xl overflow-hidden border border-[#262626] bg-[#1A1A1A] flex items-center justify-center shrink-0">
+          {preview || logoActual ? (
+            // eslint-disable-next-line @next/next/no-img-element -- logo subido a Supabase Storage, no un asset del build
+            <img
+              src={preview ?? logoActual ?? undefined}
+              alt="Logo del comercio"
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <span className="material-symbols-outlined text-3xl text-on-surface-variant">
+              storefront
+            </span>
+          )}
+        </div>
+        <div className="flex flex-col gap-1">
+          <label
+            htmlFor="logo"
+            className="font-[family-name:var(--font-sora)] text-sm font-bold text-primary-container cursor-pointer w-fit"
+          >
+            Cambiar logo
+          </label>
+          <input
+            id="logo"
+            name="logo"
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const archivo = e.target.files?.[0];
+              if (archivo) setPreview(URL.createObjectURL(archivo));
+            }}
+          />
+          <p className="text-xs text-on-surface-variant">JPG o PNG, máx. 4 MB</p>
+        </div>
+      </div>
+
       <div className="flex flex-col gap-2">
         <label htmlFor="nombre" className={LABEL}>
           Nombre del comercio

@@ -18,6 +18,7 @@ export default async function InformacionPersonalPage() {
           apellido={usuario.apellido}
           telefono={usuario.telefono}
           email={usuario.email}
+          fotoActual={usuario.foto_perfil}
         />
       </div>
     </main>

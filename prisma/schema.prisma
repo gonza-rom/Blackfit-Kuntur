@@ -147,6 +147,12 @@ model Usuario {
   telefono             String?
   foto_perfil          String?
   estado_usuario       EstadoUsuario @default(activo)
+  // Racha de días consecutivos logueándose (para el logro automático de
+  // "actividad de uso" en vez de solo entrenamientos) y la fecha del
+  // último login, para poder calcular esa racha — ver registrarLogin() en
+  // lib/gamificacion.ts, llamado desde iniciarSesion().
+  ultimo_login         DateTime?
+  racha_login_dias     Int           @default(0)
   fecha_creacion       DateTime      @default(now())
   fecha_actualizacion  DateTime      @updatedAt
 

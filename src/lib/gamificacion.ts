@@ -65,6 +65,7 @@ type EstadoAlumnoGamificacion = {
   puntos_totales: number;
   entrenamientosCompletados: number;
   rachaDias: number;
+  rachaLoginDias: number;
   objetivosCumplidos: number;
   volumenAcumulado: number;
 };
@@ -93,7 +94,11 @@ async function reunirEstadoAlumno(
   const [alumno, completados, objetivosCumplidos, series] = await Promise.all([
     prisma.alumno.findUnique({
       where: { id_alumno },
-      select: { id_usuario: true, puntos_totales: true },
+      select: {
+        id_usuario: true,
+        puntos_totales: true,
+        usuario: { select: { racha_login_dias: true } },
+      },
     }),
     prisma.entrenamiento.findMany({
       where: { id_alumno, estado: "completado" },
@@ -126,6 +131,7 @@ async function reunirEstadoAlumno(
     puntos_totales: alumno.puntos_totales,
     entrenamientosCompletados: completados.length,
     rachaDias: calcularRacha(completados.map((e) => e.fecha)),
+    rachaLoginDias: alumno.usuario.racha_login_dias,
     objetivosCumplidos,
     volumenAcumulado,
   };
@@ -138,6 +144,8 @@ function cumpleCriterio(
   switch (criterio.tipo) {
     case "racha_dias":
       return estado.rachaDias >= criterio.valor;
+    case "racha_login_dias":
+      return estado.rachaLoginDias >= criterio.valor;
     case "entrenamientos_totales":
       return estado.entrenamientosCompletados >= criterio.valor;
     case "puntos_totales":
@@ -247,6 +255,42 @@ export async function otorgarLogrosManualesIniciales(id_alumno: string): Promise
     data: logrosManuales.map((l) => ({ id_alumno, id_logro: l.id_logro })),
     skipDuplicates: true,
   });
+}
+
+/**
+ * Actualiza la racha de días logueados consecutivos de un usuario. Se
+ * llama en cada login exitoso (ver iniciarSesion en actions/auth.ts):
+ * si el login anterior fue AYER, suma uno a la racha; si ya fue HOY, no
+ * cambia (no hace falta contar dos logins el mismo día); en cualquier
+ * otro caso (o primer login de siempre) arranca de nuevo en 1. Nunca
+ * lanza — la gamificación no debe poder tumbar un login real.
+ */
+export async function registrarLogin(id_usuario: string): Promise<void> {
+  try {
+    const usuario = await prisma.usuario.findUnique({
+      where: { id_usuario },
+      select: { ultimo_login: true, racha_login_dias: true },
+    });
+    if (!usuario) return;
+
+    const hoy = claveDia();
+    const ayer = claveDia(new Date(Date.now() - DIA_MS));
+    const ultimo = usuario.ultimo_login ? claveDia(usuario.ultimo_login) : null;
+
+    const racha_login_dias =
+      ultimo === hoy
+        ? usuario.racha_login_dias
+        : ultimo === ayer
+          ? usuario.racha_login_dias + 1
+          : 1;
+
+    await prisma.usuario.update({
+      where: { id_usuario },
+      data: { ultimo_login: new Date(), racha_login_dias },
+    });
+  } catch {
+    // Silencioso a propósito.
+  }
 }
 
 // Logro automático por PR (PROMPT MAESTRO sección 15.A): solo los 4

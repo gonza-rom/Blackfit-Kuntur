@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerComercioActual } from "@/lib/auth";
@@ -26,13 +27,22 @@ export default async function ComercioBeneficiosPage() {
 
   return (
     <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-6">
-      <div>
-        <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
-          Tus beneficios
-        </h1>
-        <p className="text-sm text-on-surface-variant">
-          Los beneficios los crea y edita el administrador de Kuntur.
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
+            Tus beneficios
+          </h1>
+          <p className="text-sm text-on-surface-variant">
+            Creá, editá y borrá tus propios beneficios.
+          </p>
+        </div>
+        <Link
+          href="/comercio/beneficios/nuevo"
+          className="shrink-0 flex items-center gap-2 bg-primary-container text-black font-[family-name:var(--font-sora)] text-sm font-bold px-4 py-2 rounded-full"
+        >
+          <span className="material-symbols-outlined text-[18px]">add</span>
+          Nuevo
+        </Link>
       </div>
 
       {beneficios.length === 0 ? (
@@ -42,9 +52,10 @@ export default async function ComercioBeneficiosPage() {
       ) : (
         <div className="flex flex-col gap-2">
           {beneficios.map((beneficio) => (
-            <div
+            <Link
               key={beneficio.id_beneficio}
-              className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col gap-2"
+              href={`/comercio/beneficios/${beneficio.id_beneficio}/editar`}
+              className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col gap-2 hover:border-primary-container/50 transition-colors"
             >
               <div className="flex items-center justify-between">
                 <p className="font-[family-name:var(--font-sora)] text-base font-semibold text-on-surface">
@@ -75,7 +86,7 @@ export default async function ComercioBeneficiosPage() {
                   ))}
                 </div>
               )}
-            </div>
+            </Link>
           ))}
         </div>
       )}

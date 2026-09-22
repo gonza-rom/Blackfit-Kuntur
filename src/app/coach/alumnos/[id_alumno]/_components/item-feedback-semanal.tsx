@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { responderFeedbackSemanal } from "@/app/actions/coach";
 
 export function ItemFeedbackSemanal({
@@ -16,6 +16,16 @@ export function ItemFeedbackSemanal({
 }) {
   const [editar, setEditar] = useState(false);
   const [state, action, pending] = useActionState(responderFeedbackSemanal, undefined);
+
+  // Antes había que clickear "Listo" a mano para cerrar el form después de
+  // mandar la respuesta — quedaba abierto sin ningún cambio visible más
+  // que ese botón cambiando de texto. Ahora, apenas llega la confirmación,
+  // se deja ver un instante y se cierra solo.
+  useEffect(() => {
+    if (!state?.message) return;
+    const temporizador = setTimeout(() => setEditar(false), 900);
+    return () => clearTimeout(temporizador);
+  }, [state?.message]);
 
   return (
     <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-3 text-sm flex flex-col gap-2">
@@ -59,15 +69,17 @@ export function ItemFeedbackSemanal({
               disabled={pending}
               className="bg-primary-container text-black font-[family-name:var(--font-sora)] text-xs font-bold px-3 py-1.5 rounded disabled:opacity-60"
             >
-              {pending ? "Enviando..." : "Enviar respuesta"}
+              {pending ? "Enviando..." : "Mandar feedback"}
             </button>
-            <button
-              type="button"
-              onClick={() => setEditar(false)}
-              className="text-on-surface-variant text-xs px-2 py-1.5"
-            >
-              {state?.message ? "Listo" : "Cancelar"}
-            </button>
+            {!state?.message && (
+              <button
+                type="button"
+                onClick={() => setEditar(false)}
+                className="text-on-surface-variant text-xs px-2 py-1.5"
+              >
+                Cancelar
+              </button>
+            )}
           </div>
         </form>
       )}

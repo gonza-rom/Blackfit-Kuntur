@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { obtenerUsuarioActual, tieneRol, tieneAccesoAdmin, cuentaActiva } from "@/lib/auth";
 import { cerrarSesion } from "@/app/actions/auth";
 import { InstalarApp } from "@/components/instalar-app";
+import { BotonVolver } from "@/components/boton-volver";
 import { BottomNav } from "./_components/bottom-nav";
 import { SidebarNav } from "./_components/sidebar-nav";
 
@@ -36,6 +37,7 @@ export default async function AdminLayout({
       {/* TopAppBar (mobile) */}
       <header className="bg-surface border-b border-outline-variant fixed top-0 w-full z-50 flex justify-between items-center pl-[max(1.25rem,env(safe-area-inset-left))] pr-[max(1.25rem,env(safe-area-inset-right))] h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] box-border md:hidden">
         <div className="flex items-center gap-2">
+          <BotonVolver />
           <div className="w-8 h-8 rounded-full overflow-hidden border border-[#262626] bg-[#1A1A1A] flex items-center justify-center">
             <span className="font-[family-name:var(--font-sora)] text-[13px] font-bold text-primary-container">
               {inicial}

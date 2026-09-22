@@ -28,6 +28,7 @@ export default async function CoachPerfilPage() {
           apellido={usuario.apellido}
           telefono={usuario.telefono}
           email={usuario.email}
+          fotoActual={usuario.foto_perfil}
         />
       </div>
 

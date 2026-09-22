@@ -3,6 +3,7 @@ import { obtenerUsuarioActual, tieneRol, cuentaActiva } from "@/lib/auth";
 import { cerrarSesion } from "@/app/actions/auth";
 import { InstalarApp } from "@/components/instalar-app";
 import { LogoMarca } from "@/components/logo-marca";
+import { BotonVolver } from "@/components/boton-volver";
 import { BottomNav } from "./_components/bottom-nav";
 import { SidebarNav } from "./_components/sidebar-nav";
 
@@ -32,6 +33,7 @@ export default async function BeneficiarioLayout({
       {/* TopAppBar (mobile) */}
       <header className="bg-surface border-b border-outline-variant fixed top-0 w-full z-50 flex justify-between items-center pl-[max(1.25rem,env(safe-area-inset-left))] pr-[max(1.25rem,env(safe-area-inset-right))] h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] box-border md:hidden">
         <div className="flex items-center gap-2">
+          <BotonVolver />
           <LogoMarca marca="kuntur" size={32} className="border border-[#262626]" />
           <span className="font-[family-name:var(--font-sora)] text-primary-container tracking-tighter text-xl font-bold">
             KUNTUR

@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import { buscarSocio, validarBeneficio } from "@/app/actions/comercio";
+import { EscanerQR } from "./escaner-qr";
 
 const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
   day: "2-digit",
@@ -13,28 +14,40 @@ export function FormValidar() {
   const [busqueda, buscarAction, buscando] = useActionState(buscarSocio, undefined);
   const [resultado, validarAction, validando] = useActionState(validarBeneficio, undefined);
   const [idBeneficioElegido, setIdBeneficioElegido] = useState<string | null>(null);
+  const formBusquedaRef = useRef<HTMLFormElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const socioEncontrado = busqueda && !("error" in busqueda) ? busqueda : null;
 
   return (
     <div className="flex flex-col gap-6">
       {/* Paso 1: buscar socio */}
-      <form action={buscarAction} className="flex flex-col gap-3">
+      <form ref={formBusquedaRef} action={buscarAction} className="flex flex-col gap-3">
         <label
           htmlFor="identificador"
           className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface uppercase"
         >
-          Código QR, número de socio o email
+          DNI, email o código QR
         </label>
         <div className="flex gap-2">
           <input
+            ref={inputRef}
             id="identificador"
             name="identificador"
             type="text"
             required
             autoFocus
-            placeholder="Escaneá o ingresá el código"
+            placeholder="Escaneá el QR o ingresá DNI/email"
             className="flex-1 bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface font-[family-name:var(--font-inter)] text-base p-3 transition-colors"
+          />
+          <EscanerQR
+            onEscaneado={(codigo) => {
+              if (inputRef.current) inputRef.current.value = codigo;
+              // Submit real (requestSubmit dispara el submit nativo del
+              // form) — el mismo mecanismo que ya sabemos que funciona con
+              // <form action={dispatchDeUseActionState}> en esta app.
+              formBusquedaRef.current?.requestSubmit();
+            }}
           />
           <button
             type="submit"
@@ -56,14 +69,9 @@ export function FormValidar() {
       {socioEncontrado && (
         <div className="bg-[#1a1a1a] border border-outline-variant rounded-lg p-4 flex flex-col gap-4">
           <div className="flex items-center justify-between">
-            <div>
-              <p className="font-[family-name:var(--font-sora)] text-lg font-semibold text-on-surface">
-                {socioEncontrado.nombre} {socioEncontrado.apellido}
-              </p>
-              <p className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant">
-                SOCIO #{socioEncontrado.numero_socio}
-              </p>
-            </div>
+            <p className="font-[family-name:var(--font-sora)] text-lg font-semibold text-on-surface">
+              {socioEncontrado.nombre} {socioEncontrado.apellido}
+            </p>
             <span
               className={`font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] uppercase px-3 py-1.5 rounded-full border ${
                 socioEncontrado.membresia_activa
