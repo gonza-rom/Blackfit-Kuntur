@@ -8,9 +8,11 @@ type Alumno = { id_alumno: string; nombre: string; apellido: string };
 export function FormAplicarPlantilla({
   idPlantilla,
   alumnos,
+  idAlumnoInicial,
 }: {
   idPlantilla: string;
   alumnos: Alumno[];
+  idAlumnoInicial?: string;
 }) {
   const [state, action, pending] = useActionState(aplicarPlantilla, undefined);
 
@@ -37,7 +39,7 @@ export function FormAplicarPlantilla({
           id="id_alumno"
           name="id_alumno"
           required
-          defaultValue=""
+          defaultValue={idAlumnoInicial ?? ""}
           className="w-full bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface font-[family-name:var(--font-inter)] text-base p-3 transition-colors"
         >
           <option value="" disabled>

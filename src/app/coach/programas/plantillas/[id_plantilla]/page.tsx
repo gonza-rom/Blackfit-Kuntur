@@ -19,6 +19,8 @@ export default async function PlantillaDetallePage(
   if (!contexto) redirect("/panel");
 
   const { id_plantilla } = await props.params;
+  const { id_alumno: idAlumnoParam } = await props.searchParams;
+  const idAlumnoInicial = typeof idAlumnoParam === "string" ? idAlumnoParam : undefined;
 
   const [plantilla, bibliotecaSerializable, relacionesActivas] = await Promise.all([
     prisma.programaEntrenamiento.findUnique({
@@ -44,11 +46,10 @@ export default async function PlantillaDetallePage(
     }),
   ]);
 
-  if (
-    !plantilla ||
-    plantilla.id_entrenador !== contexto.id_entrenador ||
-    !plantilla.es_plantilla
-  ) {
+  // Biblioteca compartida entre todos los coaches: cualquiera puede ver,
+  // editar y aplicar cualquier plantilla — no hace falta ser quien la
+  // creó (mismo criterio que la biblioteca de ejercicios y la de logros).
+  if (!plantilla || !plantilla.es_plantilla) {
     notFound();
   }
 
@@ -75,7 +76,11 @@ export default async function PlantillaDetallePage(
           Aplicar a un alumno
         </h2>
         <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4">
-          <FormAplicarPlantilla idPlantilla={id_plantilla} alumnos={alumnos} />
+          <FormAplicarPlantilla
+            idPlantilla={id_plantilla}
+            alumnos={alumnos}
+            idAlumnoInicial={idAlumnoInicial}
+          />
         </div>
       </section>
 

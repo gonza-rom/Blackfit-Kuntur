@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { otorgarLogrosManualesIniciales } from "@/lib/gamificacion";
 
 export type EstadoAuth = { error?: string; message?: string } | undefined;
 
@@ -114,7 +115,7 @@ export async function registrarse(
     return { error: "No se pudo crear la cuenta. Intentá de nuevo." };
   }
 
-  await prisma.usuario.create({
+  const nuevoUsuario = await prisma.usuario.create({
     data: {
       id_usuario: data.user.id,
       email,
@@ -125,7 +126,15 @@ export async function registrarse(
       roles: { create: { rol: esBeneficiario ? "beneficiario" : "alumno" } },
       ...(esBeneficiario ? {} : { alumno: { create: {} } }),
     },
+    include: { alumno: true },
   });
+
+  // Arranca con todos los logros manuales de la biblioteca (ver
+  // otorgarLogrosManualesIniciales) — así nadie queda con menos insignias
+  // que el resto solo por registrarse después.
+  if (nuevoUsuario.alumno) {
+    await otorgarLogrosManualesIniciales(nuevoUsuario.alumno.id_alumno);
+  }
 
   if (!data.session) {
     return { message: "Cuenta creada. Revisá tu email para confirmarla." };

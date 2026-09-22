@@ -41,7 +41,7 @@ export default async function NuevoProgramaPage(
       <p className="text-sm text-on-surface-variant text-center">
         ¿Ya tenés una rutina armada?{" "}
         <Link
-          href="/coach/programas/plantillas"
+          href={`/coach/programas/plantillas?id_alumno=${id_alumno}`}
           className="text-primary-container underline underline-offset-2"
         >
           Aplicá una plantilla

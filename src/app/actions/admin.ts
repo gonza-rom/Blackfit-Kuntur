@@ -23,6 +23,7 @@ import {
   type UsuarioActual,
 } from "@/lib/auth";
 import { registrarAuditoria } from "@/lib/auditoria";
+import { otorgarLogrosManualesIniciales } from "@/lib/gamificacion";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   emailSinteticoBeneficiario,
@@ -132,11 +133,15 @@ export async function asignarRol(formData: FormData): Promise<void> {
     await prisma.usuarioRol.create({ data: { id_usuario, rol } });
 
     if (rol === "alumno") {
-      await prisma.alumno.upsert({
+      const alumno = await prisma.alumno.upsert({
         where: { id_usuario },
         update: {},
         create: { id_usuario },
       });
+      // Arranca con todos los logros manuales de la biblioteca — ver
+      // otorgarLogrosManualesIniciales en lib/gamificacion.ts. Idempotente
+      // (skipDuplicates), así que no importa si ya los tenía.
+      await otorgarLogrosManualesIniciales(alumno.id_alumno);
     }
     if (rol === "entrenador") {
       await prisma.entrenador.upsert({

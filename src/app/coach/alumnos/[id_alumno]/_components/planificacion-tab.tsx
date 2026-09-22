@@ -33,11 +33,13 @@ type Bloque = {
 export function PlanificacionTab({
   idAlumno,
   idPrograma,
+  nombrePrograma,
   tipoPlanificacion,
   bloques,
 }: {
   idAlumno: string;
   idPrograma: string;
+  nombrePrograma: string;
   tipoPlanificacion: string;
   bloques: Bloque[];
 }) {
@@ -74,6 +76,27 @@ export function PlanificacionTab({
 
   return (
     <div className="flex flex-col gap-6">
+      <section className="flex items-center justify-between gap-3">
+        <div>
+          <p className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] text-on-surface-variant uppercase">
+            Programa activo
+          </p>
+          <Link
+            href={`/coach/programas/${idPrograma}`}
+            className="font-[family-name:var(--font-sora)] text-base font-semibold text-on-surface hover:text-primary-container"
+          >
+            {nombrePrograma}
+          </Link>
+        </div>
+        <Link
+          href={`/coach/alumnos/${idAlumno}/programas/nuevo`}
+          className="shrink-0 flex items-center gap-1.5 border border-outline-variant text-on-surface font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] uppercase px-3 py-2 rounded-full"
+        >
+          <span className="material-symbols-outlined text-[16px]">sync_alt</span>
+          Cambiar programa
+        </Link>
+      </section>
+
       <section className="flex flex-col gap-2">
         <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
           Tipo de planificación

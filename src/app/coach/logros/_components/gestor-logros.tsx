@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { crearLogro, editarLogro, alternarActivoLogro } from "@/app/actions/coach";
+import { IconoLogro } from "@/components/icono-logro";
 
 export type LogroSerializado = {
   id_logro: string;
@@ -29,6 +30,13 @@ function FormLogro({
 }) {
   const accion = logro ? editarLogro : crearLogro;
   const [state, action, pending] = useActionState(accion, undefined);
+  // Un <input type="color"> nunca está "vacío": el navegador siempre manda
+  // algún hexadecimal, así que sin esto guardar cualquier cambio (aunque
+  // sea solo el nombre) le pisaba el color a un logro que no tenía uno
+  // asignado. Con el checkbox tildado el input queda `disabled` — los
+  // campos disabled no se mandan en el submit, así que el server ve
+  // "color" ausente y lo guarda como null (ver editarLogro/crearLogro).
+  const [sinColor, setSinColor] = useState(!logro?.color);
 
   return (
     <form
@@ -75,12 +83,24 @@ function FormLogro({
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label className={LABEL}>Color (opcional)</label>
+          <div className="flex items-center justify-between">
+            <label className={LABEL}>Color (opcional)</label>
+            <label className="flex items-center gap-1 text-[10px] text-on-surface-variant normal-case">
+              <input
+                type="checkbox"
+                checked={sinColor}
+                onChange={(e) => setSinColor(e.target.checked)}
+                className="w-3 h-3 accent-primary-container"
+              />
+              Sin color
+            </label>
+          </div>
           <input
             name="color"
             type="color"
+            disabled={sinColor}
             defaultValue={logro?.color ?? "#61edda"}
-            className={`${INPUT} h-[38px] p-1`}
+            className={`${INPUT} h-[38px] p-1 disabled:opacity-30`}
           />
         </div>
       </div>
@@ -141,7 +161,7 @@ export function GestorLogros({ logros }: { logros: LogroSerializado[] }) {
                     backgroundColor: logro.color ? `${logro.color}1a` : "#131313",
                   }}
                 >
-                  {logro.icono ?? "🏆"}
+                  <IconoLogro icono={logro.icono} />
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="font-[family-name:var(--font-sora)] text-sm font-semibold text-on-surface">

@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { otorgarLogroManual, quitarLogroAlumno } from "@/app/actions/coach";
 import { ConfirmForm } from "@/components/confirm-form";
+import { IconoLogro } from "@/components/icono-logro";
 
 export type LogroCatalogoItem = {
   id_logro: string;
@@ -63,7 +64,7 @@ export function LogrosAlumnoCoach({
                     backgroundColor: logro.color ? `${logro.color}1a` : "#131313",
                   }}
                 >
-                  {logro.icono ?? "🏆"}
+                  <IconoLogro icono={logro.icono} />
                 </span>
                 <span className="flex-1 text-sm text-on-surface truncate">{logro.titulo}</span>
                 <button
@@ -102,7 +103,7 @@ export function LogrosAlumnoCoach({
                   backgroundColor: logro.color ? `${logro.color}1a` : "#131313",
                 }}
               >
-                {logro.icono ?? "🏆"}
+                <IconoLogro icono={logro.icono} />
               </span>
               <p className="text-[11px] text-on-surface leading-tight">{logro.titulo}</p>
               <p className="text-[9px] text-on-surface-variant">{logro.fechaLabel}</p>

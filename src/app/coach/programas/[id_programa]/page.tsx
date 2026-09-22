@@ -3,10 +3,12 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
 import { obtenerEjerciciosCatalogoConDefaults } from "@/lib/catalogos";
-import { eliminarBloque, duplicarBloque, avisarAlumnoRutinaLista } from "@/app/actions/coach";
+import { eliminarBloque, duplicarBloque } from "@/app/actions/coach";
 import { FormNuevoBloque } from "./_components/form-nuevo-bloque";
 import { FormNuevoEjercicioBloque } from "./_components/form-nuevo-ejercicio-bloque";
 import { EjercicioProgramaItem } from "./_components/ejercicio-programa-item";
+import { BotonAvisarAlumno } from "./_components/boton-avisar-alumno";
+import { BotonGuardarComoPlantilla } from "./_components/boton-guardar-como-plantilla";
 
 export default async function ProgramaDetallePage(
   props: PageProps<"/coach/programas/[id_programa]">
@@ -67,18 +69,14 @@ export default async function ProgramaDetallePage(
             )}
           </div>
 
-          {programa.bloques.some((b) => b.ejercicios_programa.length > 0) && (
-            <form action={avisarAlumnoRutinaLista}>
-              <input type="hidden" name="id_programa" value={id_programa} />
-              <button
-                type="submit"
-                className="shrink-0 flex items-center gap-1.5 bg-primary-container text-black font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] uppercase font-bold px-3 py-2 rounded-full"
-              >
-                <span className="material-symbols-outlined text-[16px]">notifications_active</span>
-                Avisar al alumno
-              </button>
-            </form>
-          )}
+          <div className="flex flex-col items-end gap-2 shrink-0">
+            {programa.bloques.some((b) => b.ejercicios_programa.length > 0) && (
+              <BotonAvisarAlumno idPrograma={id_programa} />
+            )}
+            {programa.bloques.length > 0 && (
+              <BotonGuardarComoPlantilla idPrograma={id_programa} />
+            )}
+          </div>
         </div>
       </section>
 

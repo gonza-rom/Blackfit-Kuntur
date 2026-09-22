@@ -213,6 +213,42 @@ export async function evaluarLogros(id_alumno: string): Promise<string[]> {
   return nuevos;
 }
 
+// Un logro con criterio = null es 100% manual (ver comentario en
+// prisma/schema.prisma sobre Logro.criterio): evaluarLogros() nunca lo
+// asigna solo. El pedido acá es que un logro manual, apenas se crea desde
+// /coach/logros, quede otorgado a TODOS los alumnos existentes de una —
+// no es un "logro" en el sentido competitivo, es más una insignia que
+// aplica a toda la cartera. createMany + skipDuplicates para que sea
+// idempotente sin tener que chequear alumno por alumno.
+export async function otorgarLogroATodosLosAlumnos(id_logro: string): Promise<void> {
+  const alumnos = await prisma.alumno.findMany({ select: { id_alumno: true } });
+  if (alumnos.length === 0) return;
+
+  await prisma.logroAlumno.createMany({
+    data: alumnos.map((a) => ({ id_alumno: a.id_alumno, id_logro })),
+    skipDuplicates: true,
+  });
+}
+
+// Contraparte de la función de arriba: cuando se da de alta un alumno
+// nuevo (se registra solo, o lo crea el coach/admin), tiene que arrancar
+// con todos los logros manuales que ya existen en la biblioteca — si no,
+// quedaría con menos insignias que el resto de la cartera solo por haberse
+// sumado después. Los logros con criterio (los 9 automáticos del seed)
+// quedan afuera: esos se ganan de verdad vía evaluarLogros().
+export async function otorgarLogrosManualesIniciales(id_alumno: string): Promise<void> {
+  const logrosManuales = await prisma.logro.findMany({
+    where: { activo: true, criterio: { equals: Prisma.JsonNull } },
+    select: { id_logro: true },
+  });
+  if (logrosManuales.length === 0) return;
+
+  await prisma.logroAlumno.createMany({
+    data: logrosManuales.map((l) => ({ id_alumno, id_logro: l.id_logro })),
+    skipDuplicates: true,
+  });
+}
+
 // Logro automático por PR (PROMPT MAESTRO sección 15.A): solo los 4
 // levantamientos base, matcheados por nombre porque cada coach arma su
 // propia biblioteca de ejercicios con nombres libres. El orden importa —

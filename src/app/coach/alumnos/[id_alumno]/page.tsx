@@ -6,7 +6,6 @@ import { detectarAlertas, calcularEstadoSemaforo, ETIQUETA_ESTADO_SEMAFORO } fro
 import { urlesFirmadasFotos } from "@/lib/storage";
 import { calcularSemanaYDiasActivos } from "@/lib/alumno";
 import { obtenerOCrearProgramaActivo } from "@/app/actions/coach";
-import { SugerenciaIA } from "./_components/sugerencia-ia";
 import { ObjetivosAlumno, type ObjetivoSerializado } from "./_components/objetivos-alumno";
 import { BotonDesvincular } from "./_components/boton-desvincular";
 import { DatosAlumno } from "./_components/datos-alumno";
@@ -483,7 +482,6 @@ export default async function AlumnoDetallePage(
               </div>
             ))}
           </div>
-          <SugerenciaIA idAlumno={id_alumno} />
         </section>
       )}
 
@@ -823,6 +821,7 @@ export default async function AlumnoDetallePage(
             <PlanificacionTab
               idAlumno={id_alumno}
               idPrograma={programaActivo.id_programa}
+              nombrePrograma={programaActivo.nombre}
               tipoPlanificacion={programaConBloques?.tipo_planificacion ?? "fija"}
               bloques={programaConBloques?.bloques ?? []}
             />

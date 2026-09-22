@@ -80,7 +80,7 @@ export default async function CoachAlumnosPage() {
           }),
           prisma.programaEntrenamiento.findMany({
             where: { id_alumno: { in: idsAlumnos }, estado_programa: "activo", es_plantilla: false },
-            select: { id_alumno: true, nombre: true },
+            select: { id_alumno: true, id_programa: true, nombre: true },
           }),
           prisma.progresoFisico.findMany({
             where: { id_alumno: { in: idsAlumnos } },
@@ -100,7 +100,9 @@ export default async function CoachAlumnosPage() {
         ]);
 
   const mapaAlertas = new Map(alertasPorAlumno);
-  const mapaPrograma = new Map(programasActivos.map((p) => [p.id_alumno, p.nombre]));
+  const mapaPrograma = new Map(
+    programasActivos.map((p) => [p.id_alumno, { id_programa: p.id_programa, nombre: p.nombre }])
+  );
   const mapaUltimoEntrenamiento = new Map(ultimosEntrenamientos.map((e) => [e.id_alumno, e.fecha]));
   const mapaPeso = new Map(ultimosProgresos.map((p) => [p.id_alumno, p.peso_corporal]));
   const mapaFeedback = new Map(ultimosFeedbacks.map((f) => [f.id_alumno, f.respuesta_coach]));
@@ -197,8 +199,17 @@ export default async function CoachAlumnosPage() {
                       {fila.nombre}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-on-surface-variant whitespace-nowrap">
-                    {fila.programa ?? "Sin programa"}
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    {fila.programa ? (
+                      <Link
+                        href={`/coach/programas/${fila.programa.id_programa}`}
+                        className="text-on-surface-variant hover:text-primary-container hover:underline underline-offset-2"
+                      >
+                        {fila.programa.nombre}
+                      </Link>
+                    ) : (
+                      <span className="text-on-surface-variant">Sin programa</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span

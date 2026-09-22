@@ -13,7 +13,11 @@ import type {
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
 import { crearNotificacion } from "@/lib/notificaciones";
-import { evaluarLogros } from "@/lib/gamificacion";
+import {
+  evaluarLogros,
+  otorgarLogroATodosLosAlumnos,
+  otorgarLogrosManualesIniciales,
+} from "@/lib/gamificacion";
 import { TAG_CATALOGO_EJERCICIOS } from "@/lib/catalogos";
 import type { CampoComposicionCorporal } from "@/lib/composicion-corporal";
 import { subirFotoProgreso } from "@/lib/storage";
@@ -180,6 +184,10 @@ export async function crearYVincularAlumno(
     },
     include: { alumno: true },
   });
+
+  if (usuario.alumno) {
+    await otorgarLogrosManualesIniciales(usuario.alumno.id_alumno);
+  }
 
   if (vincular && usuario.alumno) {
     await prisma.relacionEntrenadorAlumno.create({
@@ -372,6 +380,27 @@ export async function eliminarEjercicio(
   redirect("/coach/ejercicios");
 }
 
+// Nunca deben quedar dos programas "activos" a la vez para el mismo
+// alumno — obtenerOCrearProgramaActivo() y el listado de /coach/alumnos
+// (columna "Programa") asumen que hay uno solo, y con dos activos cuál se
+// muestra queda no determinístico. Se llama antes de dejar un programa
+// nuevo (o recién editado) como activo, así el anterior pasa a
+// "finalizado" solo — nunca se borra ni se pierde su historial.
+async function finalizarProgramaActivoPrevio(
+  id_alumno: string,
+  excluirIdPrograma?: string
+): Promise<void> {
+  await prisma.programaEntrenamiento.updateMany({
+    where: {
+      id_alumno,
+      estado_programa: "activo",
+      es_plantilla: false,
+      ...(excluirIdPrograma ? { id_programa: { not: excluirIdPrograma } } : {}),
+    },
+    data: { estado_programa: "finalizado" },
+  });
+}
+
 export async function crearPrograma(
   _prev: EstadoCoach,
   formData: FormData
@@ -399,6 +428,10 @@ export async function crearPrograma(
   });
   if (!relacion || relacion.estado_relacion !== "activa") {
     return { error: "Ese alumno no está vinculado a tu cartera." };
+  }
+
+  if (estado_programa === "activo") {
+    await finalizarProgramaActivoPrevio(id_alumno);
   }
 
   const programa = await prisma.programaEntrenamiento.create({
@@ -449,6 +482,10 @@ export async function editarPrograma(
   });
   if (!programa || programa.id_entrenador !== contexto.id_entrenador || programa.es_plantilla) {
     return { error: "No autorizado sobre este programa." };
+  }
+
+  if (estado_programa === "activo" && programa.id_alumno) {
+    await finalizarProgramaActivoPrevio(programa.id_alumno, id_programa);
   }
 
   await prisma.programaEntrenamiento.update({
@@ -561,8 +598,11 @@ export async function editarPlantillaPrograma(
   const plantilla = await prisma.programaEntrenamiento.findUnique({
     where: { id_programa: id_plantilla },
   });
-  if (!plantilla || plantilla.id_entrenador !== contexto.id_entrenador || !plantilla.es_plantilla) {
-    return { error: "No autorizado sobre esta plantilla." };
+  // La biblioteca de plantillas es compartida entre todos los coaches
+  // (igual que la de ejercicios y la de logros) — cualquier coach puede
+  // editar cualquier plantilla, no hace falta que sea quien la creó.
+  if (!plantilla || !plantilla.es_plantilla) {
+    return { error: "Plantilla inválida." };
   }
 
   await prisma.programaEntrenamiento.update({
@@ -585,9 +625,9 @@ export async function eliminarPlantilla(formData: FormData): Promise<void> {
   const plantilla = await prisma.programaEntrenamiento.findUnique({
     where: { id_programa: id_plantilla },
   });
-  if (!plantilla || plantilla.id_entrenador !== contexto.id_entrenador || !plantilla.es_plantilla) {
-    return;
-  }
+  // Biblioteca compartida: cualquier coach puede borrar cualquier
+  // plantilla (mismo criterio que editarPlantillaPrograma).
+  if (!plantilla || !plantilla.es_plantilla) return;
 
   await prisma.programaEntrenamiento.delete({ where: { id_programa: id_plantilla } });
   revalidatePath("/coach/programas/plantillas");
@@ -628,12 +668,17 @@ export async function aplicarPlantilla(
     }),
   ]);
 
-  if (!plantilla || plantilla.id_entrenador !== contexto.id_entrenador || !plantilla.es_plantilla) {
+  // Biblioteca compartida: cualquier coach puede aplicar cualquier
+  // plantilla a un alumno de SU propia cartera (eso sí se sigue
+  // validando abajo, vía `relacion`).
+  if (!plantilla || !plantilla.es_plantilla) {
     return { error: "Plantilla inválida." };
   }
   if (!relacion || relacion.estado_relacion !== "activa") {
     return { error: "Ese alumno no está vinculado a tu cartera." };
   }
+
+  await finalizarProgramaActivoPrevio(id_alumno);
 
   const programa = await prisma.programaEntrenamiento.create({
     data: {
@@ -678,6 +723,69 @@ export async function aplicarPlantilla(
   });
 
   redirect(`/coach/programas/${programa.id_programa}`);
+}
+
+/**
+ * Inversa de aplicarPlantilla: clona un programa real (con sus bloques y
+ * ejercicios) en una plantilla nueva, para poder reusarlo con otros
+ * alumnos sin rehacerlo desde cero. El programa original del alumno no se
+ * toca — queda una copia independiente en la biblioteca compartida.
+ */
+export async function guardarComoPlantilla(
+  _prev: EstadoCoach,
+  formData: FormData
+): Promise<EstadoCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_programa = String(formData.get("id_programa") ?? "");
+  if (!id_programa) return { error: "Programa inválido." };
+
+  const programa = await prisma.programaEntrenamiento.findUnique({
+    where: { id_programa },
+    include: {
+      bloques: { include: { ejercicios_programa: true }, orderBy: { orden: "asc" } },
+    },
+  });
+
+  if (!programa || programa.id_entrenador !== contexto.id_entrenador || programa.es_plantilla) {
+    return { error: "No autorizado sobre este programa." };
+  }
+
+  const plantilla = await prisma.programaEntrenamiento.create({
+    data: {
+      id_entrenador: contexto.id_entrenador,
+      nombre: programa.nombre,
+      descripcion: programa.descripcion,
+      objetivo: programa.objetivo,
+      fecha_inicio: new Date(),
+      es_plantilla: true,
+      bloques: {
+        create: programa.bloques.map((b) => ({
+          nombre: b.nombre,
+          orden: b.orden,
+          semana_inicio: b.semana_inicio,
+          semana_fin: b.semana_fin,
+          tipo: b.tipo,
+          ejercicios_programa: {
+            create: b.ejercicios_programa.map((ep) => ({
+              id_ejercicio: ep.id_ejercicio,
+              series: ep.series,
+              repeticiones: ep.repeticiones,
+              peso_sugerido: ep.peso_sugerido,
+              tempo: ep.tempo,
+              descanso: ep.descanso,
+              metodo_entrenamiento: ep.metodo_entrenamiento,
+              tiempo_bajo_tension_sugerido: ep.tiempo_bajo_tension_sugerido,
+              orden: ep.orden,
+            })),
+          },
+        })),
+      },
+    },
+  });
+
+  redirect(`/coach/programas/plantillas/${plantilla.id_programa}`);
 }
 
 // ------------------------------------------------------------
@@ -972,7 +1080,9 @@ export async function crearBloque(
   const programa = await prisma.programaEntrenamiento.findUnique({
     where: { id_programa },
   });
-  if (!programa || programa.id_entrenador !== contexto.id_entrenador) {
+  // Un programa real solo lo toca su coach dueño; una plantilla es
+  // biblioteca compartida — cualquier coach puede agregarle bloques.
+  if (!programa || (programa.id_entrenador !== contexto.id_entrenador && !programa.es_plantilla)) {
     return { error: "No autorizado sobre este programa." };
   }
 
@@ -1021,7 +1131,10 @@ export async function crearEjercicioPrograma(
     where: { id_bloque },
     include: { programa: true },
   });
-  if (!bloque || bloque.programa.id_entrenador !== contexto.id_entrenador) {
+  if (
+    !bloque ||
+    (bloque.programa.id_entrenador !== contexto.id_entrenador && !bloque.programa.es_plantilla)
+  ) {
     return { error: "No autorizado sobre este bloque." };
   }
 
@@ -1048,13 +1161,18 @@ export async function crearEjercicioPrograma(
   return { message: "Ejercicio agregado al bloque." };
 }
 
-/** Trae el id_programa a partir de un id_bloque, validando que sea del entrenador logueado. */
+/**
+ * Trae el bloque a partir de su id, validando acceso: dueño si es un
+ * programa real, cualquier coach si es una plantilla (biblioteca
+ * compartida).
+ */
 async function bloqueDelEntrenador(id_bloque: string, id_entrenador: string) {
   const bloque = await prisma.bloqueEntrenamiento.findUnique({
     where: { id_bloque },
     include: { programa: true },
   });
-  if (!bloque || bloque.programa.id_entrenador !== id_entrenador) return null;
+  if (!bloque) return null;
+  if (bloque.programa.id_entrenador !== id_entrenador && !bloque.programa.es_plantilla) return null;
   return bloque;
 }
 
@@ -1082,7 +1200,11 @@ export async function actualizarEjercicioPrograma(
     where: { id_ejercicio_programa },
     include: { bloque: { include: { programa: true } } },
   });
-  if (!existente || existente.bloque.programa.id_entrenador !== contexto.id_entrenador) {
+  if (
+    !existente ||
+    (existente.bloque.programa.id_entrenador !== contexto.id_entrenador &&
+      !existente.bloque.programa.es_plantilla)
+  ) {
     return { error: "No autorizado sobre este ejercicio." };
   }
 
@@ -1114,7 +1236,13 @@ export async function eliminarEjercicioPrograma(formData: FormData): Promise<voi
     where: { id_ejercicio_programa },
     include: { bloque: { include: { programa: true } } },
   });
-  if (!existente || existente.bloque.programa.id_entrenador !== contexto.id_entrenador) return;
+  if (
+    !existente ||
+    (existente.bloque.programa.id_entrenador !== contexto.id_entrenador &&
+      !existente.bloque.programa.es_plantilla)
+  ) {
+    return;
+  }
 
   await prisma.ejercicioPrograma.delete({ where: { id_ejercicio_programa } });
   revalidatePath(`/coach/programas/${existente.bloque.id_programa}`);
@@ -1133,7 +1261,13 @@ export async function moverEjercicioPrograma(formData: FormData): Promise<void> 
     where: { id_ejercicio_programa },
     include: { bloque: { include: { programa: true } } },
   });
-  if (!actual || actual.bloque.programa.id_entrenador !== contexto.id_entrenador) return;
+  if (
+    !actual ||
+    (actual.bloque.programa.id_entrenador !== contexto.id_entrenador &&
+      !actual.bloque.programa.es_plantilla)
+  ) {
+    return;
+  }
 
   const hermanos = await prisma.ejercicioPrograma.findMany({
     where: { id_bloque: actual.id_bloque },
@@ -1191,7 +1325,12 @@ export async function duplicarBloque(formData: FormData): Promise<void> {
     where: { id_bloque },
     include: { programa: true, ejercicios_programa: { orderBy: { orden: "asc" } } },
   });
-  if (!original || original.programa.id_entrenador !== contexto.id_entrenador) return;
+  if (
+    !original ||
+    (original.programa.id_entrenador !== contexto.id_entrenador && !original.programa.es_plantilla)
+  ) {
+    return;
+  }
 
   const cantidadBloques = await prisma.bloqueEntrenamiento.count({
     where: { id_programa: original.id_programa },
@@ -1233,12 +1372,15 @@ export async function duplicarBloque(formData: FormData): Promise<void> {
 }
 
 /** Avisa al alumno (in-app + push) que la rutina está lista para arrancar. */
-export async function avisarAlumnoRutinaLista(formData: FormData): Promise<void> {
+export async function avisarAlumnoRutinaLista(
+  _prev: EstadoCoach,
+  formData: FormData
+): Promise<EstadoCoach> {
   const contexto = await obtenerEntrenadorActual();
-  if (!contexto) return;
+  if (!contexto) return { error: "No autorizado." };
 
   const id_programa = String(formData.get("id_programa") ?? "");
-  if (!id_programa) return;
+  if (!id_programa) return { error: "Programa inválido." };
 
   const programa = await prisma.programaEntrenamiento.findUnique({
     where: { id_programa },
@@ -1247,7 +1389,9 @@ export async function avisarAlumnoRutinaLista(formData: FormData): Promise<void>
   // Una plantilla (alumno null) nunca debería llegar acá — el botón no se
   // muestra en esa vista — pero se valida igual por si el id vino
   // manipulado directamente.
-  if (!programa || programa.id_entrenador !== contexto.id_entrenador || !programa.alumno) return;
+  if (!programa || programa.id_entrenador !== contexto.id_entrenador || !programa.alumno) {
+    return { error: "Programa inválido." };
+  }
 
   await crearNotificacion({
     id_usuario: programa.alumno.usuario.id_usuario,
@@ -1258,6 +1402,7 @@ export async function avisarAlumnoRutinaLista(formData: FormData): Promise<void>
   });
 
   revalidatePath(`/coach/programas/${id_programa}`);
+  return { message: "Aviso enviado." };
 }
 
 // ------------------------------------------------------------
@@ -1591,8 +1736,7 @@ const TIPOS_IMAGEN: Record<string, string> = {
 // a diferencia del PDF/Word (texto real, se lee con reglas sin IA — ver
 // extraerComposicionDeTexto), una foto no tiene texto extraíble, así que
 // acá sí hace falta un modelo con visión. Requiere ANTHROPIC_API_KEY; si
-// no está configurada, se avisa igual que en generarSugerenciaIA (ia.ts)
-// en vez de fallar en silencio.
+// no está configurada, se avisa en vez de fallar en silencio.
 async function leerComposicionDeImagen(
   buffer: Buffer,
   mediaType: string
@@ -1921,7 +2065,7 @@ export async function crearLogro(
     return { error: "Completá nombre y descripción." };
   }
 
-  await prisma.logro.create({
+  const logro = await prisma.logro.create({
     data: {
       codigo: generarCodigoLogro(titulo),
       titulo,
@@ -1933,8 +2077,16 @@ export async function crearLogro(
     },
   });
 
+  // Un logro manual (criterio null) es para toda la cartera, no algo que
+  // se gana: apenas se crea, se otorga a todos los alumnos que ya existen
+  // (los que se den de alta después lo reciben al crearse — ver
+  // otorgarLogrosManualesIniciales, usado en registrarse/asignarRol/
+  // crearYVincularAlumno).
+  await otorgarLogroATodosLosAlumnos(logro.id_logro);
+
   revalidatePath("/coach/logros");
-  return { message: "Logro creado." };
+  revalidatePath("/coach/alumnos");
+  return { message: "Logro creado y otorgado a todos los alumnos." };
 }
 
 export async function editarLogro(

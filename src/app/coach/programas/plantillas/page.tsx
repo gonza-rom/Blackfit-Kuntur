@@ -3,15 +3,36 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
 
-export default async function PlantillasPage() {
+export default async function PlantillasPage(
+  props: PageProps<"/coach/programas/plantillas">
+) {
   const contexto = await obtenerEntrenadorActual();
   if (!contexto) redirect("/panel");
 
-  const plantillas = await prisma.programaEntrenamiento.findMany({
-    where: { id_entrenador: contexto.id_entrenador, es_plantilla: true },
-    include: { _count: { select: { bloques: true } } },
-    orderBy: { nombre: "asc" },
-  });
+  const { id_alumno: idAlumnoParam } = await props.searchParams;
+  const idAlumno = typeof idAlumnoParam === "string" ? idAlumnoParam : undefined;
+  const sufijoQuery = idAlumno ? `?id_alumno=${idAlumno}` : "";
+
+  const [plantillas, relacionAlumno] = await Promise.all([
+    // Biblioteca compartida entre todos los coaches (igual que la de
+    // ejercicios y la de logros) — sin filtrar por id_entrenador.
+    prisma.programaEntrenamiento.findMany({
+      where: { es_plantilla: true },
+      include: {
+        _count: { select: { bloques: true } },
+        entrenador: { include: { usuario: true } },
+      },
+      orderBy: { nombre: "asc" },
+    }),
+    idAlumno
+      ? prisma.relacionEntrenadorAlumno.findUnique({
+          where: {
+            id_entrenador_id_alumno: { id_entrenador: contexto.id_entrenador, id_alumno: idAlumno },
+          },
+          include: { alumno: { include: { usuario: true } } },
+        })
+      : null,
+  ]);
 
   return (
     <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-6">
@@ -21,7 +42,8 @@ export default async function PlantillasPage() {
             Biblioteca de programas
           </h1>
           <p className="text-sm text-on-surface-variant">
-            Armá una plantilla una vez y aplicala a cada alumno, sin rehacerla de cero.
+            Compartida entre todos los coaches — armá una plantilla una vez y aplicala a
+            cualquier alumno, sin rehacerla de cero.
           </p>
         </div>
         <Link
@@ -33,16 +55,26 @@ export default async function PlantillasPage() {
         </Link>
       </div>
 
+      {relacionAlumno && (
+        <div className="bg-primary-container/10 border border-primary-container/30 rounded-xl p-3 text-sm text-on-surface">
+          Eligiendo plantilla para{" "}
+          <strong>
+            {relacionAlumno.alumno.usuario.nombre} {relacionAlumno.alumno.usuario.apellido}
+          </strong>
+          .
+        </div>
+      )}
+
       {plantillas.length === 0 ? (
         <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 text-on-surface-variant text-sm">
-          Todavía no armaste ninguna plantilla.
+          Todavía no hay ninguna plantilla armada.
         </div>
       ) : (
         <div className="flex flex-col gap-1">
           {plantillas.map((plantilla) => (
             <Link
               key={plantilla.id_programa}
-              href={`/coach/programas/plantillas/${plantilla.id_programa}`}
+              href={`/coach/programas/plantillas/${plantilla.id_programa}${sufijoQuery}`}
               className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex items-center justify-between"
             >
               <div>
@@ -52,6 +84,9 @@ export default async function PlantillasPage() {
                 {plantilla.objetivo && (
                   <p className="text-sm text-on-surface-variant">{plantilla.objetivo}</p>
                 )}
+                <p className="text-xs text-on-surface-variant">
+                  Creada por {plantilla.entrenador.usuario.nombre}
+                </p>
               </div>
               <span className="font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] text-on-surface-variant uppercase shrink-0">
                 {plantilla._count.bloques} bloque{plantilla._count.bloques === 1 ? "" : "s"}
