@@ -98,6 +98,8 @@ export default async function DiaPlanPage(
           peso_sugerido: ep.peso_sugerido?.toString() ?? "",
           descanso: ep.descanso ?? "",
           tempo: ep.tempo ?? "",
+          metodo_entrenamiento: ep.metodo_entrenamiento ?? "",
+          tiempo_bajo_tension_sugerido: ep.tiempo_bajo_tension_sugerido?.toString() ?? "",
           nota: ep.nota ?? "",
         })) ?? []}
       />

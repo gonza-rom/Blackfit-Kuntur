@@ -12,6 +12,8 @@ type EjercicioCatalogo = {
   peso_sugerido_default: string | null;
   tempo_default: string | null;
   descanso_default: string | null;
+  metodo_entrenamiento_default: string | null;
+  tiempo_bajo_tension_default: number | null;
 };
 
 type Fila = {
@@ -22,6 +24,8 @@ type Fila = {
   peso_sugerido: string;
   descanso: string;
   tempo: string;
+  metodo_entrenamiento: string;
+  tiempo_bajo_tension_sugerido: string;
   nota: string;
 };
 
@@ -37,6 +41,8 @@ function filaVacia(): Fila {
     peso_sugerido: "",
     descanso: "",
     tempo: "",
+    metodo_entrenamiento: "",
+    tiempo_bajo_tension_sugerido: "",
     nota: "",
   };
 }
@@ -77,6 +83,12 @@ export function FormDiaPlan({
       peso_sugerido: filas[i].peso_sugerido || ejercicio?.peso_sugerido_default || "",
       descanso: filas[i].descanso || ejercicio?.descanso_default || "",
       tempo: filas[i].tempo || ejercicio?.tempo_default || "",
+      metodo_entrenamiento:
+        filas[i].metodo_entrenamiento || ejercicio?.metodo_entrenamiento_default || "",
+      tiempo_bajo_tension_sugerido:
+        filas[i].tiempo_bajo_tension_sugerido ||
+        ejercicio?.tiempo_bajo_tension_default?.toString() ||
+        "",
     });
   }
 
@@ -171,7 +183,24 @@ export function FormDiaPlan({
                   value={fila.tempo}
                   onChange={(e) => actualizarFila(i, { tempo: e.target.value })}
                   placeholder="Tempo (opcional)"
-                  className={`col-span-2 ${inputClase}`}
+                  className={inputClase}
+                />
+                <input
+                  type="text"
+                  value={fila.metodo_entrenamiento}
+                  onChange={(e) => actualizarFila(i, { metodo_entrenamiento: e.target.value })}
+                  placeholder="Método (ej. drop set)"
+                  className={inputClase}
+                />
+                <input
+                  type="number"
+                  min={0}
+                  value={fila.tiempo_bajo_tension_sugerido}
+                  onChange={(e) =>
+                    actualizarFila(i, { tiempo_bajo_tension_sugerido: e.target.value })
+                  }
+                  placeholder="TUT sugerido (seg)"
+                  className={inputClase}
                 />
                 <input
                   type="text"

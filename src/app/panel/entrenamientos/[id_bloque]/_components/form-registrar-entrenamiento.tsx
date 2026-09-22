@@ -53,6 +53,19 @@ export function FormRegistrarEntrenamiento({
 
   const [paso, setPaso] = useState<"registrar" | "resumen">("registrar");
   const [completados, setCompletados] = useState<Set<string>>(new Set());
+  const [filasPorEjercicio, setFilasPorEjercicio] = useState<Record<string, number>>(() => {
+    const inicial: Record<string, number> = {};
+    for (const ep of ejercicios) inicial[ep.id_ejercicio_programa] = Math.max(1, ep.series);
+    return inicial;
+  });
+
+  function agregarFila(id: string) {
+    setFilasPorEjercicio((prev) => ({ ...prev, [id]: Math.min(15, (prev[id] ?? 1) + 1) }));
+  }
+
+  function quitarFila(id: string) {
+    setFilasPorEjercicio((prev) => ({ ...prev, [id]: Math.max(1, (prev[id] ?? 1) - 1) }));
+  }
   const [videoAbierto, setVideoAbierto] = useState<EjercicioDetalle | null>(null);
   const [resumen, setResumen] = useState<{ volumen: number; duracion: number; calorias: number } | null>(
     null
@@ -79,10 +92,12 @@ export function FormRegistrarEntrenamiento({
 
     let volumen = 0;
     for (const ep of ejercicios) {
-      const peso = Number(formData.get(`peso_${ep.id_ejercicio_programa}`)) || 0;
-      const reps = Number(formData.get(`reps_${ep.id_ejercicio_programa}`)) || 0;
-      const series = Number(formData.get(`series_${ep.id_ejercicio_programa}`)) || ep.series;
-      volumen += peso * reps * series;
+      const filas = filasPorEjercicio[ep.id_ejercicio_programa] ?? ep.series;
+      for (let n = 1; n <= filas; n++) {
+        const peso = Number(formData.get(`peso_${ep.id_ejercicio_programa}_${n}`)) || 0;
+        const reps = Number(formData.get(`reps_${ep.id_ejercicio_programa}_${n}`)) || 0;
+        volumen += peso * reps;
+      }
     }
     const duracion = Math.max(1, Math.round((Date.now() - inicioRef.current) / 60000));
     // Estimación gruesa (~6 kcal/min de trabajo con pesas) — se muestra
@@ -105,20 +120,29 @@ export function FormRegistrarEntrenamiento({
       duracion_minutos: resumen.duracion,
       calorias_estimadas: resumen.calorias,
       sensacion_general: sensacion,
-      series: ejercicios.map((ep) => ({
-        id_ejercicio_programa: ep.id_ejercicio_programa,
-        peso_utilizado: numeroOpcional(formData.get(`peso_${ep.id_ejercicio_programa}`)),
-        repeticiones_realizadas: numeroOpcional(
-          formData.get(`reps_${ep.id_ejercicio_programa}`)
-        ),
-        series_completadas: numeroOpcional(
-          formData.get(`series_${ep.id_ejercicio_programa}`)
-        ),
-        rpe: numeroOpcional(formData.get(`rpe_${ep.id_ejercicio_programa}`)),
-        descanso_real: numeroOpcional(formData.get(`descanso_${ep.id_ejercicio_programa}`)),
-        tiempo_bajo_tension: numeroOpcional(formData.get(`tut_${ep.id_ejercicio_programa}`)),
-        comentarios: textoOpcional(formData.get(`comentario_${ep.id_ejercicio_programa}`)),
-      })),
+      series: ejercicios.flatMap((ep) => {
+        const filas = filasPorEjercicio[ep.id_ejercicio_programa] ?? ep.series;
+        const rpe = numeroOpcional(formData.get(`rpe_${ep.id_ejercicio_programa}`));
+        const descanso_real = numeroOpcional(formData.get(`descanso_${ep.id_ejercicio_programa}`));
+        const tiempo_bajo_tension = numeroOpcional(formData.get(`tut_${ep.id_ejercicio_programa}`));
+        const comentarios = textoOpcional(formData.get(`comentario_${ep.id_ejercicio_programa}`));
+        return Array.from({ length: filas }, (_, i) => {
+          const n = i + 1;
+          return {
+            id_ejercicio_programa: ep.id_ejercicio_programa,
+            numero_serie: n,
+            peso_utilizado: numeroOpcional(formData.get(`peso_${ep.id_ejercicio_programa}_${n}`)),
+            repeticiones_realizadas: numeroOpcional(
+              formData.get(`reps_${ep.id_ejercicio_programa}_${n}`)
+            ),
+            series_completadas: null,
+            rpe,
+            descanso_real,
+            tiempo_bajo_tension,
+            comentarios,
+          };
+        });
+      }),
     };
 
     if (typeof navigator !== "undefined" && !navigator.onLine) {
@@ -298,27 +322,52 @@ export function FormRegistrarEntrenamiento({
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                <input
-                  name={`peso_${ep.id_ejercicio_programa}`}
-                  type="number"
-                  step="0.01"
-                  placeholder="Peso usado (kg)"
-                  className="bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface text-sm p-2.5"
-                />
-                <input
-                  name={`reps_${ep.id_ejercicio_programa}`}
-                  type="number"
-                  placeholder="Reps realizadas"
-                  className="bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface text-sm p-2.5"
-                />
-                <input
-                  name={`series_${ep.id_ejercicio_programa}`}
-                  type="number"
-                  defaultValue={ep.series}
-                  placeholder="Series completadas"
-                  className="bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface text-sm p-2.5"
-                />
+              <div className="flex flex-col gap-1.5">
+                {Array.from({ length: filasPorEjercicio[ep.id_ejercicio_programa] ?? ep.series }).map(
+                  (_, i) => {
+                    const n = i + 1;
+                    return (
+                      <div key={n} className="flex items-center gap-2">
+                        <span className="w-14 shrink-0 font-[family-name:var(--font-jetbrains-mono)] text-[11px] text-on-surface-variant">
+                          Serie {n}
+                        </span>
+                        <input
+                          name={`peso_${ep.id_ejercicio_programa}_${n}`}
+                          type="number"
+                          step="0.01"
+                          placeholder="Peso (kg)"
+                          className="min-w-0 flex-1 bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface text-sm p-2.5"
+                        />
+                        <input
+                          name={`reps_${ep.id_ejercicio_programa}_${n}`}
+                          type="number"
+                          placeholder="Reps"
+                          className="min-w-0 flex-1 bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface text-sm p-2.5"
+                        />
+                      </div>
+                    );
+                  }
+                )}
+                <div className="flex gap-3 mt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => agregarFila(ep.id_ejercicio_programa)}
+                    className="text-xs text-primary-container"
+                  >
+                    + Serie
+                  </button>
+                  {(filasPorEjercicio[ep.id_ejercicio_programa] ?? ep.series) > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => quitarFila(ep.id_ejercicio_programa)}
+                      className="text-xs text-on-surface-variant"
+                    >
+                      − Serie
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
                 <input
                   name={`rpe_${ep.id_ejercicio_programa}`}
                   type="number"
@@ -331,13 +380,13 @@ export function FormRegistrarEntrenamiento({
                 <input
                   name={`descanso_${ep.id_ejercicio_programa}`}
                   type="number"
-                  placeholder="Descanso real (seg)"
+                  placeholder="Descanso (seg)"
                   className="bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface text-sm p-2.5"
                 />
                 <input
                   name={`tut_${ep.id_ejercicio_programa}`}
                   type="number"
-                  placeholder="TUT real (seg)"
+                  placeholder="TUT (seg)"
                   className="bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface text-sm p-2.5"
                 />
               </div>

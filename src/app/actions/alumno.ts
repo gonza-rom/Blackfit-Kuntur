@@ -1,10 +1,8 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoActual } from "@/lib/auth";
-import { guardarSesionEntrenamiento, type SerieRegistrada } from "@/lib/alumno";
 import { registrarActividad, PUNTOS, claveDia } from "@/lib/gamificacion";
 import {
   subirFotoProgreso,
@@ -31,46 +29,6 @@ function numeroOpcional(valor: FormDataEntryValue | null): number | null {
 function textoOpcional(valor: FormDataEntryValue | null): string | null {
   const texto = String(valor ?? "").trim();
   return texto || null;
-}
-
-export async function registrarEntrenamiento(
-  _prev: EstadoAlumno,
-  formData: FormData
-): Promise<EstadoAlumno> {
-  const contexto = await obtenerAlumnoActual();
-  if (!contexto) return { error: "No autorizado." };
-
-  const id_bloque = String(formData.get("id_bloque") ?? "");
-  if (!id_bloque) return { error: "Falta el bloque." };
-
-  const bloque = await prisma.bloqueEntrenamiento.findUnique({
-    where: { id_bloque },
-    include: { ejercicios_programa: true },
-  });
-  if (!bloque) return { error: "Bloque inválido." };
-
-  const comentarioGeneral = textoOpcional(formData.get("comentario_general"));
-
-  const series: SerieRegistrada[] = bloque.ejercicios_programa.map((ep) => ({
-    id_ejercicio_programa: ep.id_ejercicio_programa,
-    peso_utilizado: numeroOpcional(formData.get(`peso_${ep.id_ejercicio_programa}`)),
-    repeticiones_realizadas: numeroOpcional(formData.get(`reps_${ep.id_ejercicio_programa}`)),
-    series_completadas: numeroOpcional(formData.get(`series_${ep.id_ejercicio_programa}`)),
-    rpe: numeroOpcional(formData.get(`rpe_${ep.id_ejercicio_programa}`)),
-    descanso_real: numeroOpcional(formData.get(`descanso_${ep.id_ejercicio_programa}`)),
-    tiempo_bajo_tension: numeroOpcional(formData.get(`tut_${ep.id_ejercicio_programa}`)),
-    comentarios: textoOpcional(formData.get(`comentario_${ep.id_ejercicio_programa}`)),
-  }));
-
-  const resultado = await guardarSesionEntrenamiento(
-    contexto.id_alumno,
-    id_bloque,
-    comentarioGeneral,
-    series
-  );
-  if (resultado.error) return { error: resultado.error };
-
-  redirect("/panel/entrenamientos");
 }
 
 // Solo borra — editar una sesión ya registrada (con sus series por

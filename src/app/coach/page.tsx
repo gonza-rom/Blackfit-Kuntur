@@ -3,6 +3,14 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
 import { detectarAlertas } from "@/lib/alertas";
+import { obtenerFeedActividad, type ItemActividad } from "@/lib/actividad-coach";
+
+const ICONO_ACTIVIDAD: Record<ItemActividad["tipo"], string> = {
+  completo: "✅",
+  pr: "🏆",
+  racha: "🔥",
+  pendiente: "⏳",
+};
 
 export default async function CoachPage() {
   const contexto = await obtenerEntrenadorActual();
@@ -24,6 +32,13 @@ export default async function CoachPage() {
     }),
   ]);
   const ultimosAlumnos = relacionesActivas.slice(0, 5);
+
+  const feedActividad = await obtenerFeedActividad(
+    relacionesActivas.map((r) => ({
+      id_alumno: r.alumno.id_alumno,
+      nombre: r.alumno.usuario.nombre,
+    }))
+  );
 
   const alertasPorAlumno = await Promise.all(
     relacionesActivas.map(async (r) => ({
@@ -56,6 +71,30 @@ export default async function CoachPage() {
           </span>
         </div>
       </section>
+
+      {feedActividad.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
+            Hoy
+          </h2>
+          <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col gap-2.5">
+            {feedActividad.slice(0, 10).map((item, i) => (
+              <Link
+                key={i}
+                href={`/coach/alumnos/${item.id_alumno}`}
+                className="flex items-center gap-2.5 text-sm text-on-surface"
+              >
+                <span className="shrink-0">{ICONO_ACTIVIDAD[item.tipo]}</span>
+                <span
+                  className={item.tipo === "pendiente" ? "text-on-surface-variant" : "text-on-surface"}
+                >
+                  {item.mensaje}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {conAlertas.length > 0 && (
         <section className="flex flex-col gap-2">

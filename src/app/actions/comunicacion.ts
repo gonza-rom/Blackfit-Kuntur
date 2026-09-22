@@ -99,6 +99,7 @@ export async function marcarNotificacionLeida(formData: FormData): Promise<void>
   });
 
   revalidatePath("/panel/notificaciones");
+  revalidatePath("/coach/notificaciones");
 }
 
 export async function marcarTodasLeidas(): Promise<void> {
@@ -111,4 +112,5 @@ export async function marcarTodasLeidas(): Promise<void> {
   });
 
   revalidatePath("/panel/notificaciones");
+  revalidatePath("/coach/notificaciones");
 }

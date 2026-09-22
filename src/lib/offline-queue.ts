@@ -11,6 +11,7 @@ export type SesionPendiente = {
   sensacion_general: number | null;
   series: {
     id_ejercicio_programa: string;
+    numero_serie: number | null;
     peso_utilizado: number | null;
     repeticiones_realizadas: number | null;
     series_completadas: number | null;

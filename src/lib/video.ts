@@ -1,7 +1,7 @@
-// Convierte un link de YouTube o Vimeo (los que carga el coach en
-// video_url del ejercicio) a su URL de embed. Si no reconoce el formato,
-// devuelve null y quien llama cae a un link "Abrir video" en vez de un
-// reproductor incrustado.
+// Convierte un link de YouTube, Vimeo o Google Drive (los que carga el
+// coach en video_url del ejercicio) a su URL de embed. Si no reconoce el
+// formato, devuelve null y quien llama cae a un link "Abrir video" en vez
+// de un reproductor incrustado.
 export function urlEmbedVideo(url: string): string | null {
   let u: URL;
   try {
@@ -35,6 +35,14 @@ export function urlEmbedVideo(url: string): string | null {
     return id ? `https://player.vimeo.com/video/${id}` : null;
   }
   if (host === "player.vimeo.com") return u.toString();
+
+  if (host === "drive.google.com") {
+    // Formatos típicos: /file/d/<id>/view y /open?id=<id>. El embed de
+    // Drive necesita /preview, no el link normal de "ver".
+    const match = u.pathname.match(/\/file\/d\/([^/]+)/);
+    const id = match ? match[1] : u.searchParams.get("id");
+    return id ? `https://drive.google.com/file/d/${id}/preview` : null;
+  }
 
   return null;
 }

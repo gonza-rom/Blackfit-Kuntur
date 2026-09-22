@@ -67,6 +67,16 @@ export default async function CoachPerfilPage() {
           </span>
           <span className="material-symbols-outlined text-on-surface-variant">chevron_right</span>
         </Link>
+        <Link
+          href="/coach/logros"
+          className="flex items-center justify-between bg-[#1A1A1A] border border-[#262626] rounded-xl p-4"
+        >
+          <span className="flex items-center gap-3 text-sm text-on-surface">
+            <span className="material-symbols-outlined text-on-surface-variant">emoji_events</span>
+            Biblioteca de logros
+          </span>
+          <span className="material-symbols-outlined text-on-surface-variant">chevron_right</span>
+        </Link>
       </div>
     </main>
   );

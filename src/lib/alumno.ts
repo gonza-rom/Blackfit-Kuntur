@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
-import { registrarActividad, PUNTOS } from "@/lib/gamificacion";
+import { registrarActividad, PUNTOS, levantamientoCompatiblePR, notificarNuevosPR } from "@/lib/gamificacion";
 
 const PROGRAMA_ACTIVO_INCLUDE = {
   bloques: {
@@ -206,6 +206,7 @@ export async function obtenerUltimoPR(id_alumno: string): Promise<UltimoPR> {
 
 export type SerieRegistrada = {
   id_ejercicio_programa: string;
+  numero_serie: number | null;
   peso_utilizado: number | null;
   repeticiones_realizadas: number | null;
   series_completadas: number | null;
@@ -235,7 +236,7 @@ export async function guardarSesionEntrenamiento(
 ): Promise<{ error?: string }> {
   const bloque = await prisma.bloqueEntrenamiento.findUnique({
     where: { id_bloque },
-    include: { programa: true, ejercicios_programa: true },
+    include: { programa: true, ejercicios_programa: { include: { ejercicio: true } } },
   });
 
   if (!bloque || bloque.programa.id_alumno !== id_alumno) {
@@ -243,6 +244,13 @@ export async function guardarSesionEntrenamiento(
   }
 
   const idsValidos = new Set(bloque.ejercicios_programa.map((ep) => ep.id_ejercicio_programa));
+
+  // Volumen total: se calcula acá, nunca se confía en un valor que mande
+  // el cliente, para que no se pueda falsear desde el navegador.
+  const volumenTotal = series.reduce(
+    (acc, s) => acc + (s.peso_utilizado ?? 0) * (s.repeticiones_realizadas ?? 0),
+    0
+  );
 
   const id_entrenamiento = await prisma.$transaction(async (tx) => {
     const entrenamiento = await tx.entrenamiento.create({
@@ -255,15 +263,12 @@ export async function guardarSesionEntrenamiento(
         duracion_minutos: resumen?.duracionMinutos ?? null,
         calorias_estimadas: resumen?.caloriasEstimadas ?? null,
         sensacion_general: resumen?.sensacionGeneral ?? null,
+        volumen_total: volumenTotal,
       },
     });
 
     for (const s of series) {
       if (!idsValidos.has(s.id_ejercicio_programa)) continue;
-
-      const ep = bloque.ejercicios_programa.find(
-        (e) => e.id_ejercicio_programa === s.id_ejercicio_programa
-      )!;
 
       const huboCarga =
         s.peso_utilizado !== null ||
@@ -280,9 +285,10 @@ export async function guardarSesionEntrenamiento(
         data: {
           id_entrenamiento: entrenamiento.id_entrenamiento,
           id_ejercicio_programa: s.id_ejercicio_programa,
+          numero_serie: s.numero_serie,
           peso_utilizado: s.peso_utilizado,
           repeticiones_realizadas: s.repeticiones_realizadas,
-          series_completadas: s.series_completadas ?? ep.series,
+          series_completadas: s.series_completadas,
           rpe: s.rpe,
           descanso_real: s.descanso_real,
           tiempo_bajo_tension: s.tiempo_bajo_tension,
@@ -293,6 +299,56 @@ export async function guardarSesionEntrenamiento(
 
     return entrenamiento.id_entrenamiento;
   });
+
+  // Logro automático por PR (levantamientos base) — best-effort, nunca
+  // bloquea ni rompe el guardado si algo falla.
+  try {
+    const epPorId = new Map(bloque.ejercicios_programa.map((ep) => [ep.id_ejercicio_programa, ep]));
+    const maximosHoyPorEjercicio = new Map<string, { nombre: string; peso: number }>();
+    for (const s of series) {
+      if (s.peso_utilizado === null) continue;
+      const ep = epPorId.get(s.id_ejercicio_programa);
+      if (!ep) continue;
+      const clave = levantamientoCompatiblePR(ep.ejercicio.nombre);
+      if (!clave) continue;
+      const actual = maximosHoyPorEjercicio.get(ep.id_ejercicio);
+      if (!actual || s.peso_utilizado > actual.peso) {
+        maximosHoyPorEjercicio.set(ep.id_ejercicio, { nombre: clave, peso: s.peso_utilizado });
+      }
+    }
+
+    if (maximosHoyPorEjercicio.size > 0) {
+      const historico = await prisma.serieEntrenamiento.findMany({
+        where: {
+          entrenamiento: { id_alumno, NOT: { id_entrenamiento } },
+          peso_utilizado: { not: null },
+          ejercicio_programa: {
+            id_ejercicio: { in: [...maximosHoyPorEjercicio.keys()] },
+          },
+        },
+        select: { peso_utilizado: true, ejercicio_programa: { select: { id_ejercicio: true } } },
+      });
+      const maximosPrevios = new Map<string, number>();
+      for (const s of historico) {
+        if (s.peso_utilizado === null) continue;
+        const id = s.ejercicio_programa.id_ejercicio;
+        const peso = Number(s.peso_utilizado);
+        const actual = maximosPrevios.get(id);
+        if (!actual || peso > actual) maximosPrevios.set(id, peso);
+      }
+
+      const prsNuevos: { nombreEjercicio: string; peso: number }[] = [];
+      for (const [id_ejercicio, hoy] of maximosHoyPorEjercicio) {
+        const previo = maximosPrevios.get(id_ejercicio);
+        if (previo === undefined || hoy.peso > previo) {
+          prsNuevos.push({ nombreEjercicio: hoy.nombre, peso: hoy.peso });
+        }
+      }
+      await notificarNuevosPR(id_alumno, prsNuevos);
+    }
+  } catch {
+    // Silencioso a propósito — nunca puede tumbar el guardado de la sesión.
+  }
 
   // Gamificación: puntos por el entrenamiento completado + re-evaluación de
   // logros. `motivo` incluye el id del entrenamiento => nunca suma dos veces

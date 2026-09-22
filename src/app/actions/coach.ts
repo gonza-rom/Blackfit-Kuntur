@@ -844,6 +844,8 @@ export type EjercicioDiaEntrada = {
   peso_sugerido: string;
   descanso: string;
   tempo: string;
+  metodo_entrenamiento: string;
+  tiempo_bajo_tension_sugerido: string;
   nota: string;
 };
 
@@ -926,6 +928,10 @@ export async function guardarDiaPlan(
             peso_sugerido: e.peso_sugerido || null,
             descanso: e.descanso || null,
             tempo: e.tempo || null,
+            metodo_entrenamiento: e.metodo_entrenamiento || null,
+            tiempo_bajo_tension_sugerido: e.tiempo_bajo_tension_sugerido
+              ? Number(e.tiempo_bajo_tension_sugerido) || null
+              : null,
             nota: e.nota || null,
             orden: orden++,
           },
@@ -1879,4 +1885,154 @@ export async function eliminarProgresoFisicoAlumno(formData: FormData): Promise<
 
   await prisma.progresoFisico.delete({ where: { id_progreso } });
   revalidatePath(`/coach/alumnos/${progreso.id_alumno}`);
+}
+
+// ------------------------------------------------------------
+// BIBLIOTECA GLOBAL DE LOGROS (PROMPT MAESTRO sección 15.B / 16)
+// El catálogo es único para toda la app (no está atado a un coach en
+// particular) — mismo diseño que Ejercicio, para que cualquier coach lo
+// vea y lo pueda usar con su propia cartera de alumnos.
+// ------------------------------------------------------------
+
+function generarCodigoLogro(titulo: string): string {
+  const base = titulo
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return `${base || "logro"}_${Date.now().toString(36)}`;
+}
+
+export async function crearLogro(
+  _prev: EstadoCoach,
+  formData: FormData
+): Promise<EstadoCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const titulo = String(formData.get("titulo") ?? "").trim();
+  const descripcion = String(formData.get("descripcion") ?? "").trim();
+  const icono = String(formData.get("icono") ?? "").trim() || null;
+  const color = String(formData.get("color") ?? "").trim() || null;
+  const categoria = String(formData.get("categoria") ?? "").trim() || null;
+
+  if (!titulo || !descripcion) {
+    return { error: "Completá nombre y descripción." };
+  }
+
+  await prisma.logro.create({
+    data: {
+      codigo: generarCodigoLogro(titulo),
+      titulo,
+      descripcion,
+      icono,
+      color,
+      categoria,
+      criterio: Prisma.JsonNull,
+    },
+  });
+
+  revalidatePath("/coach/logros");
+  return { message: "Logro creado." };
+}
+
+export async function editarLogro(
+  _prev: EstadoCoach,
+  formData: FormData
+): Promise<EstadoCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_logro = String(formData.get("id_logro") ?? "");
+  const titulo = String(formData.get("titulo") ?? "").trim();
+  const descripcion = String(formData.get("descripcion") ?? "").trim();
+  const icono = String(formData.get("icono") ?? "").trim() || null;
+  const color = String(formData.get("color") ?? "").trim() || null;
+  const categoria = String(formData.get("categoria") ?? "").trim() || null;
+
+  if (!id_logro || !titulo || !descripcion) {
+    return { error: "Completá nombre y descripción." };
+  }
+
+  await prisma.logro.update({
+    where: { id_logro },
+    data: { titulo, descripcion, icono, color, categoria },
+  });
+
+  revalidatePath("/coach/logros");
+  return { message: "Logro actualizado." };
+}
+
+// Nunca se borra de verdad: LogroAlumno tiene onDelete Cascade contra
+// Logro, así que un delete físico borraría el historial de badges ya
+// obtenidos por los alumnos. "Archivar" (activo=false) lo saca de la
+// biblioteca para otorgar nuevos sin tocar lo ya ganado.
+export async function alternarActivoLogro(formData: FormData): Promise<void> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return;
+
+  const id_logro = String(formData.get("id_logro") ?? "");
+  const logro = await prisma.logro.findUnique({ where: { id_logro } });
+  if (!logro) return;
+
+  await prisma.logro.update({ where: { id_logro }, data: { activo: !logro.activo } });
+  revalidatePath("/coach/logros");
+}
+
+export async function otorgarLogroManual(
+  _prev: EstadoCoach,
+  formData: FormData
+): Promise<EstadoCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_alumno = String(formData.get("id_alumno") ?? "");
+  const id_logro = String(formData.get("id_logro") ?? "");
+  if (!id_alumno || !id_logro) return { error: "Faltan datos." };
+
+  if (!(await alumnoDelEntrenador(id_alumno, contexto.id_entrenador))) {
+    return { error: "Ese alumno no está vinculado a tu cartera." };
+  }
+
+  const logro = await prisma.logro.findUnique({ where: { id_logro } });
+  if (!logro) return { error: "Ese logro no existe." };
+
+  try {
+    await prisma.logroAlumno.create({ data: { id_alumno, id_logro } });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return { error: "El alumno ya tiene ese logro." };
+    }
+    throw err;
+  }
+
+  const alumno = await prisma.alumno.findUnique({
+    where: { id_alumno },
+    select: { id_usuario: true },
+  });
+  if (alumno) {
+    await crearNotificacion({
+      id_usuario: alumno.id_usuario,
+      titulo: "¡Logro desbloqueado!",
+      contenido: `${logro.titulo} — ${logro.descripcion}`,
+      tipo: "logro",
+      url: "/panel/logros",
+    }).catch(() => {});
+  }
+
+  revalidatePath(`/coach/alumnos/${id_alumno}`);
+  return { message: "Logro otorgado." };
+}
+
+export async function quitarLogroAlumno(formData: FormData): Promise<void> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return;
+
+  const id_alumno = String(formData.get("id_alumno") ?? "");
+  const id_logro = String(formData.get("id_logro") ?? "");
+  if (!(await alumnoDelEntrenador(id_alumno, contexto.id_entrenador))) return;
+
+  await prisma.logroAlumno.deleteMany({ where: { id_alumno, id_logro } });
+  revalidatePath(`/coach/alumnos/${id_alumno}`);
 }

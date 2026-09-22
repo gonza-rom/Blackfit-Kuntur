@@ -5,6 +5,7 @@ import { useState, type ReactNode } from "react";
 const TABS = [
   { valor: "resumen", etiqueta: "Resumen" },
   { valor: "planificacion", etiqueta: "Planificación" },
+  { valor: "ejecucion", etiqueta: "Ejecución" },
   { valor: "objetivos", etiqueta: "Objetivos" },
   { valor: "composicion", etiqueta: "Composición" },
   { valor: "fotos", etiqueta: "Fotos" },

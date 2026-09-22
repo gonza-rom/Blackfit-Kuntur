@@ -213,6 +213,79 @@ export async function evaluarLogros(id_alumno: string): Promise<string[]> {
   return nuevos;
 }
 
+// Logro automático por PR (PROMPT MAESTRO sección 15.A): solo los 4
+// levantamientos base, matcheados por nombre porque cada coach arma su
+// propia biblioteca de ejercicios con nombres libres. El orden importa —
+// "peso muerto rumano" también matchea el patrón de "convencional", así
+// que rumano se chequea primero.
+const PATRONES_PR_COMPATIBLE: { clave: string; patrones: RegExp[] }[] = [
+  { clave: "Sentadilla", patrones: [/sentadilla/i, /back squat/i, /\bsquat\b/i] },
+  { clave: "Press de banca", patrones: [/press.*banca/i, /bench press/i, /press plano/i] },
+  {
+    clave: "Peso muerto rumano",
+    patrones: [/peso muerto rumano/i, /\brumano\b/i, /\brdl\b/i, /romanian deadlift/i],
+  },
+  { clave: "Peso muerto convencional", patrones: [/peso muerto/i, /\bdeadlift\b/i] },
+];
+
+/** Si el nombre del ejercicio corresponde a uno de los 4 levantamientos
+ *  base del sistema de PR automático, devuelve su nombre canónico. */
+export function levantamientoCompatiblePR(nombreEjercicio: string): string | null {
+  for (const { clave, patrones } of PATRONES_PR_COMPATIBLE) {
+    if (patrones.some((p) => p.test(nombreEjercicio))) return clave;
+  }
+  return null;
+}
+
+/**
+ * Notifica al alumno y a su coach cuando se supera el PR histórico en uno
+ * de los levantamientos compatibles. Se llama después de guardar una
+ * sesión (ver guardarSesionEntrenamiento) — nunca bloquea ni rompe el
+ * guardado si falla.
+ */
+export async function notificarNuevosPR(
+  id_alumno: string,
+  prsNuevos: { nombreEjercicio: string; peso: number }[]
+): Promise<void> {
+  if (prsNuevos.length === 0) return;
+
+  const alumno = await prisma.alumno.findUnique({
+    where: { id_alumno },
+    select: {
+      id_usuario: true,
+      relaciones: {
+        where: { estado_relacion: "activa" },
+        select: { entrenador: { select: { usuario: { select: { id_usuario: true } } } } },
+        take: 1,
+      },
+    },
+  });
+  if (!alumno) return;
+
+  const idCoachUsuario = alumno.relaciones[0]?.entrenador.usuario.id_usuario ?? null;
+
+  for (const pr of prsNuevos) {
+    const contenido = `🏆 Nuevo PR: ${pr.nombreEjercicio} — ${pr.peso}kg`;
+    await crearNotificacion({
+      id_usuario: alumno.id_usuario,
+      titulo: "¡Nuevo PR!",
+      contenido,
+      tipo: "pr",
+      url: "/panel/logros",
+    }).catch(() => {});
+
+    if (idCoachUsuario) {
+      await crearNotificacion({
+        id_usuario: idCoachUsuario,
+        titulo: "Nuevo PR de tu alumno",
+        contenido,
+        tipo: "pr",
+        url: `/coach/alumnos/${id_alumno}`,
+      }).catch(() => {});
+    }
+  }
+}
+
 /**
  * Otorga los puntos de un evento y re-evalúa los logros del alumno. Nunca
  * lanza: la gamificación es un extra, no debe tumbar la acción que la

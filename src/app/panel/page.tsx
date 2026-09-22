@@ -5,6 +5,14 @@ import { obtenerProgramaActivo, calcularBloqueActual, obtenerUltimoPR } from "@/
 
 const FORMATEADOR_FECHA_PR = new Intl.DateTimeFormat("es-AR", { day: "2-digit", month: "short" });
 
+const SENSACION_EMOJI: Record<number, string> = {
+  1: "😫",
+  2: "😕",
+  3: "🙂",
+  4: "😃",
+  5: "🤩",
+};
+
 export default async function PanelPage() {
   const contexto = await obtenerAlumnoActual();
 
@@ -34,6 +42,8 @@ export default async function PanelPage() {
     objetivosActivos,
     logrosObtenidos,
     ultimoPR,
+    ultimoEntrenamiento,
+    ultimosLogros,
   ] = await Promise.all([
     prisma.progresoFisico.findMany({
       where: { id_alumno },
@@ -56,6 +66,25 @@ export default async function PanelPage() {
     prisma.objetivo.count({ where: { id_alumno, estado: "activo" } }),
     prisma.logroAlumno.count({ where: { id_alumno } }),
     obtenerUltimoPR(id_alumno),
+    prisma.entrenamiento.findFirst({
+      where: { id_alumno, estado: "completado" },
+      orderBy: { fecha: "desc" },
+      select: {
+        id_entrenamiento: true,
+        fecha: true,
+        nombre: true,
+        comentarios: true,
+        duracion_minutos: true,
+        sensacion_general: true,
+        volumen_total: true,
+      },
+    }),
+    prisma.logroAlumno.findMany({
+      where: { id_alumno },
+      orderBy: { fecha_obtenido: "desc" },
+      take: 3,
+      select: { logro: { select: { titulo: true, icono: true, color: true } } },
+    }),
   ]);
 
   const bloqueActual = programa ? calcularBloqueActual(programa) : null;
@@ -127,6 +156,65 @@ export default async function PanelPage() {
           </div>
         )}
       </section>
+
+      {ultimoEntrenamiento && (
+        <section className="flex flex-col gap-2">
+          <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
+            Último entrenamiento
+          </h2>
+          <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col gap-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-[family-name:var(--font-sora)] text-base font-semibold text-on-surface">
+                  {ultimoEntrenamiento.nombre ?? "Sesión"}
+                </p>
+                <p className="text-[12px] text-on-surface-variant">
+                  {FORMATEADOR_FECHA_PR.format(ultimoEntrenamiento.fecha)}
+                </p>
+              </div>
+              {ultimoEntrenamiento.sensacion_general != null && (
+                <span className="text-2xl leading-none">
+                  {SENSACION_EMOJI[ultimoEntrenamiento.sensacion_general] ?? ""}
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-[#131313] border border-[#262626] rounded-lg p-2.5">
+                <p className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] text-on-surface-variant uppercase">
+                  Volumen
+                </p>
+                <p className="font-[family-name:var(--font-sora)] text-base font-bold text-on-surface tabular-nums">
+                  {ultimoEntrenamiento.volumen_total
+                    ? `${Number(ultimoEntrenamiento.volumen_total).toLocaleString("es-AR")} kg`
+                    : "—"}
+                </p>
+              </div>
+              <div className="bg-[#131313] border border-[#262626] rounded-lg p-2.5">
+                <p className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] text-on-surface-variant uppercase">
+                  Duración
+                </p>
+                <p className="font-[family-name:var(--font-sora)] text-base font-bold text-on-surface tabular-nums">
+                  {ultimoEntrenamiento.duracion_minutos
+                    ? `${ultimoEntrenamiento.duracion_minutos} min`
+                    : "—"}
+                </p>
+              </div>
+            </div>
+            {ultimoEntrenamiento.comentarios && (
+              <p className="text-sm text-on-surface-variant italic">
+                &ldquo;{ultimoEntrenamiento.comentarios}&rdquo;
+              </p>
+            )}
+            <Link
+              href={`/panel/entrenamientos/historial#${ultimoEntrenamiento.id_entrenamiento}`}
+              className="text-sm text-primary-container font-[family-name:var(--font-sora)] font-semibold flex items-center gap-1 self-start"
+            >
+              Ver resumen
+              <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+            </Link>
+          </div>
+        </section>
+      )}
 
       {ultimoPR && (
         <section className="flex flex-col gap-2">
@@ -289,6 +377,27 @@ export default async function PanelPage() {
             chevron_right
           </span>
         </Link>
+        {ultimosLogros.length > 0 && (
+          <div className="flex gap-2">
+            {ultimosLogros.map((l, i) => (
+              <div
+                key={i}
+                className="flex-1 bg-[#1A1A1A] border border-[#262626] rounded-xl p-3 flex flex-col items-center gap-1 text-center"
+              >
+                <span
+                  className="w-9 h-9 rounded-full flex items-center justify-center text-lg border"
+                  style={{
+                    borderColor: l.logro.color ?? "#262626",
+                    backgroundColor: l.logro.color ? `${l.logro.color}1a` : "#131313",
+                  }}
+                >
+                  {l.logro.icono ?? "🏆"}
+                </span>
+                <p className="text-[11px] text-on-surface leading-tight">{l.logro.titulo}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {tieneRol(usuario, "miembro_kuntur") && (

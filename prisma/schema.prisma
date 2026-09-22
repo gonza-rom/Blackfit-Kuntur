@@ -391,6 +391,10 @@ model Entrenamiento {
   duracion_minutos    Int?
   calorias_estimadas  Int?
   sensacion_general   Int?
+  // Volumen total (kg) = suma de peso_utilizado × repeticiones_realizadas
+  // de todas las series de la sesión. Se calcula en el servidor al guardar,
+  // nunca se confía en el valor que manda el cliente.
+  volumen_total       Decimal? @db.Decimal(10, 2)
 
   alumno   Alumno                 @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
   programa ProgramaEntrenamiento? @relation(fields: [id_programa], references: [id_programa])
@@ -405,6 +409,11 @@ model SerieEntrenamiento {
   id_entrenamiento        String
   id_ejercicio_programa   String
 
+  // Número de serie dentro del ejercicio (1, 2, 3...) para poder mostrarle
+  // al coach lo que hizo el alumno set por set. Nulo en filas viejas,
+  // creadas antes de este campo, que guardaban un solo valor agregado por
+  // ejercicio — ahí se sigue mostrando como una sola fila sin numerar.
+  numero_serie            Int?
   peso_utilizado          Decimal? @db.Decimal(6, 2)
   repeticiones_realizadas Int?
   series_completadas      Int?
@@ -715,8 +724,12 @@ model Logro {
   codigo          String   @unique
   titulo          String
   descripcion     String
-  icono           String?  // nombre de Material Symbol, ej "local_fire_department"
-  criterio        Json
+  icono           String?  // emoji o nombre de Material Symbol
+  color           String?  // hex, ej "#61edda" — para la tarjeta del logro
+  categoria       String?
+  // Nulo = logro 100% manual: el coach lo otorga a mano desde "+ Otorgar
+  // logro" en el perfil del alumno, nunca lo asigna evaluarLogros().
+  criterio        Json?
   activo          Boolean  @default(true)
   fecha_creacion  DateTime @default(now())
 

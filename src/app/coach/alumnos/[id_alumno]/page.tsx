@@ -15,6 +15,11 @@ import {
   type ProgresoSerializado,
 } from "./_components/progreso-fisico-coach";
 import { ItemFeedbackSemanal } from "./_components/item-feedback-semanal";
+import {
+  LogrosAlumnoCoach,
+  type LogroCatalogoItem,
+  type LogroObtenidoItem,
+} from "./_components/logros-alumno-coach";
 import { TabsAlumno } from "./_components/tabs-alumno";
 import { PlanificacionTab } from "./_components/planificacion-tab";
 import { FotosTab, type FotoSerializada } from "./_components/fotos-tab";
@@ -46,6 +51,14 @@ const ANGULOS_FOTO = ["frente", "espalda", "perfil_izquierdo", "perfil_derecho"]
 
 const ANCHO_SPARKLINE = 280;
 const ALTO_SPARKLINE = 60;
+
+const SENSACION_EMOJI: Record<number, string> = {
+  1: "😫",
+  2: "😕",
+  3: "🙂",
+  4: "😃",
+  5: "🤩",
+};
 
 const COLOR_SEMAFORO: Record<string, string> = {
   progresando: "text-primary-container border-primary-container/40 bg-primary-container/5",
@@ -142,6 +155,9 @@ export default async function AlumnoDetallePage(
     objetivos,
     seriesConPeso,
     programaConBloques,
+    sesionesEjecucion,
+    catalogoLogros,
+    logrosObtenidos,
   ] = await Promise.all([
     prisma.entrenamiento.findFirst({
       where: { id_alumno },
@@ -212,6 +228,53 @@ export default async function AlumnoDetallePage(
     prisma.programaEntrenamiento.findUnique({
       where: { id_programa: programaActivo.id_programa },
       include: { bloques: { include: { _count: { select: { ejercicios_programa: true } } } } },
+    }),
+    // Tab "Ejecución": últimas sesiones completadas, con cada serie real
+    // (numero_serie) para comparar contra lo prescrito por el coach.
+    prisma.entrenamiento.findMany({
+      where: { id_alumno, estado: "completado" },
+      orderBy: { fecha: "desc" },
+      take: 6,
+      select: {
+        id_entrenamiento: true,
+        fecha: true,
+        nombre: true,
+        comentarios: true,
+        sensacion_general: true,
+        series: {
+          orderBy: [{ id_ejercicio_programa: "asc" }, { numero_serie: "asc" }],
+          select: {
+            id_serie: true,
+            numero_serie: true,
+            peso_utilizado: true,
+            repeticiones_realizadas: true,
+            comentarios: true,
+            id_ejercicio_programa: true,
+            ejercicio_programa: {
+              select: {
+                series: true,
+                repeticiones: true,
+                peso_sugerido: true,
+                ejercicio: { select: { nombre: true } },
+              },
+            },
+          },
+        },
+      },
+    }),
+    prisma.logro.findMany({
+      where: { activo: true },
+      orderBy: { fecha_creacion: "asc" },
+      select: { id_logro: true, titulo: true, icono: true, color: true },
+    }),
+    prisma.logroAlumno.findMany({
+      where: { id_alumno },
+      orderBy: { fecha_obtenido: "desc" },
+      select: {
+        id_logro: true,
+        fecha_obtenido: true,
+        logro: { select: { titulo: true, icono: true, color: true } },
+      },
     }),
   ]);
 
@@ -287,6 +350,60 @@ export default async function AlumnoDetallePage(
       entradas: [...grupo.entradas].reverse(),
     })
   );
+
+  // Ejecución: agrupa las series reales de cada sesión por ejercicio, para
+  // mostrar "Serie 1 → 80×6" tal como lo cargó el alumno, comparado contra
+  // lo prescrito por el coach en ese ejercicio.
+  const sesionesEjecucionAgrupadas = sesionesEjecucion.map((s) => {
+    const porEjercicio = new Map<
+      string,
+      {
+        nombre: string;
+        prescrito: { series: number; repeticiones: string; peso_sugerido: number | null };
+        comentario: string | null;
+        sets: { numero_serie: number | null; peso: number | null; reps: number | null }[];
+      }
+    >();
+    for (const serie of s.series) {
+      const ep = serie.ejercicio_programa;
+      const grupo = porEjercicio.get(serie.id_ejercicio_programa) ?? {
+        nombre: ep.ejercicio.nombre,
+        prescrito: {
+          series: ep.series,
+          repeticiones: ep.repeticiones,
+          peso_sugerido: ep.peso_sugerido ? Number(ep.peso_sugerido) : null,
+        },
+        comentario: serie.comentarios,
+        sets: [],
+      };
+      grupo.sets.push({
+        numero_serie: serie.numero_serie,
+        peso: serie.peso_utilizado ? Number(serie.peso_utilizado) : null,
+        reps: serie.repeticiones_realizadas,
+      });
+      porEjercicio.set(serie.id_ejercicio_programa, grupo);
+    }
+    return {
+      id_entrenamiento: s.id_entrenamiento,
+      fecha: s.fecha,
+      nombre: s.nombre,
+      comentarios: s.comentarios,
+      sensacion_general: s.sensacion_general,
+      ejercicios: Array.from(porEjercicio.values()),
+    };
+  });
+
+  const idsObtenidos = new Set(logrosObtenidos.map((l) => l.id_logro));
+  const catalogoDisponible: LogroCatalogoItem[] = catalogoLogros.filter(
+    (l) => !idsObtenidos.has(l.id_logro)
+  );
+  const logrosObtenidosSerializados: LogroObtenidoItem[] = logrosObtenidos.map((l) => ({
+    id_logro: l.id_logro,
+    titulo: l.logro.titulo,
+    icono: l.logro.icono,
+    color: l.logro.color,
+    fechaLabel: FORMATEADOR_FECHA.format(l.fecha_obtenido),
+  }));
 
   const pesosOrdenados = [...progresos]
     .reverse()
@@ -369,6 +486,12 @@ export default async function AlumnoDetallePage(
           <SugerenciaIA idAlumno={id_alumno} />
         </section>
       )}
+
+      <LogrosAlumnoCoach
+        idAlumno={id_alumno}
+        catalogoDisponible={catalogoDisponible}
+        obtenidos={logrosObtenidosSerializados}
+      />
 
       <section className="flex flex-col gap-2">
         <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
@@ -462,6 +585,78 @@ export default async function AlumnoDetallePage(
           </div>
         )}
       </section>
+    </div>
+  );
+
+  const panelEjecucion = (
+    <div className="flex flex-col gap-4">
+      {sesionesEjecucionAgrupadas.length === 0 ? (
+        <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 text-on-surface-variant text-sm">
+          Todavía no completó ningún entrenamiento.
+        </div>
+      ) : (
+        sesionesEjecucionAgrupadas.map((sesion) => (
+          <section
+            key={sesion.id_entrenamiento}
+            className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col gap-3"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="font-[family-name:var(--font-sora)] text-base font-semibold text-on-surface">
+                  {sesion.nombre ?? "Entrenamiento"}
+                </h3>
+                <p className="text-xs text-on-surface-variant">
+                  {FORMATEADOR_FECHA.format(sesion.fecha)}
+                </p>
+              </div>
+              {sesion.sensacion_general != null && (
+                <span className="text-2xl leading-none" title="Estado de ánimo">
+                  {SENSACION_EMOJI[sesion.sensacion_general] ?? ""}
+                </span>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-2.5">
+              {sesion.ejercicios.map((ej, i) => (
+                <div
+                  key={i}
+                  className="bg-[#131313] border border-[#262626] rounded-lg p-3 flex flex-col gap-1.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-[family-name:var(--font-sora)] text-sm font-semibold text-on-surface">
+                      {ej.nombre}
+                    </span>
+                    <span className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.06em] text-on-surface-variant uppercase shrink-0">
+                      Prescrito: {ej.prescrito.series}×{ej.prescrito.repeticiones}
+                      {ej.prescrito.peso_sugerido ? ` @ ${ej.prescrito.peso_sugerido}kg` : ""}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {ej.sets.map((set, j) => (
+                      <span
+                        key={j}
+                        className="font-[family-name:var(--font-jetbrains-mono)] text-xs bg-[#262626] rounded px-2 py-1 text-on-surface tabular-nums"
+                      >
+                        Serie {set.numero_serie ?? j + 1} → {set.peso ?? "—"}
+                        {set.peso != null ? "kg" : ""} × {set.reps ?? "—"}
+                      </span>
+                    ))}
+                  </div>
+                  {ej.comentario && (
+                    <p className="text-xs text-on-surface-variant italic">“{ej.comentario}”</p>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {sesion.comentarios && (
+              <p className="text-sm text-on-surface border-t border-[#262626] pt-2.5">
+                {sesion.comentarios}
+              </p>
+            )}
+          </section>
+        ))
+      )}
     </div>
   );
 
@@ -632,6 +827,7 @@ export default async function AlumnoDetallePage(
               bloques={programaConBloques?.bloques ?? []}
             />
           ),
+          ejecucion: panelEjecucion,
           objetivos: <ObjetivosAlumno idAlumno={id_alumno} objetivos={objetivosSerializados} />,
           composicion: panelComposicion,
           fotos: <FotosTab idAlumno={id_alumno} fotos={fotosSerializadas} />,
