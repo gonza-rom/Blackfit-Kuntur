@@ -47,6 +47,15 @@ export default function RegistroBeneficiarioPage() {
               Registrate como alumno
             </Link>
           </p>
+          <p className="font-[family-name:var(--font-inter)] text-sm text-on-surface-variant">
+            ¿Tenés un comercio?{" "}
+            <Link
+              href="/registro/comercio"
+              className="text-primary-container font-semibold hover:underline underline-offset-4 transition-all"
+            >
+              Sumate como aliado
+            </Link>
+          </p>
         </div>
       </main>
     </div>

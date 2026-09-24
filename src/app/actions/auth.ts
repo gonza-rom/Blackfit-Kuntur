@@ -9,6 +9,7 @@ import {
   registrarLogin,
   evaluarLogros,
 } from "@/lib/gamificacion";
+import { crearNotificacion } from "@/lib/notificaciones";
 
 export type EstadoAuth = { error?: string; message?: string } | undefined;
 
@@ -87,10 +88,11 @@ export async function registrarse(
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   const confirmPassword = String(formData.get("confirmPassword") ?? "");
-  // Diferencia el alta de un alumno Black Fit del alta de un beneficiario
-  // Kuntur puro. Cualquier valor que no sea "beneficiario" cae en el alta
-  // de alumno (comportamiento por defecto de siempre).
-  const esBeneficiario = String(formData.get("tipo") ?? "") === "beneficiario";
+  // Tres altas posibles desde el mismo form: alumno (default), beneficiario
+  // Kuntur puro, o comercio (ver bloque de campos de negocio más abajo).
+  const tipo = String(formData.get("tipo") ?? "");
+  const esBeneficiario = tipo === "beneficiario";
+  const esComercio = tipo === "comercio";
 
   if (!nombre || !apellido || !email || !password) {
     return { error: "Completá todos los campos." };
@@ -100,6 +102,16 @@ export async function registrarse(
   }
   if (password !== confirmPassword) {
     return { error: "Las contraseñas no coinciden." };
+  }
+
+  const nombreComercio = String(formData.get("nombre_comercio") ?? "").trim();
+  const categoriaComercio = String(formData.get("categoria") ?? "").trim() || null;
+  const telefonoComercio = String(formData.get("telefono") ?? "").trim() || null;
+  const direccionComercio = String(formData.get("direccion") ?? "").trim() || null;
+  const descripcionComercio = String(formData.get("descripcion") ?? "").trim() || null;
+
+  if (esComercio && !nombreComercio) {
+    return { error: "Completá el nombre de tu comercio." };
   }
 
   // Sin esto, GoTrue usa el Site URL configurado en Supabase como destino
@@ -133,12 +145,33 @@ export async function registrarse(
       email,
       nombre,
       apellido,
-      // El beneficiario NO recibe perfil de Alumno ni ningún rol de Black
-      // Fit: solo el rol "beneficiario".
-      roles: { create: { rol: esBeneficiario ? "beneficiario" : "alumno" } },
-      ...(esBeneficiario ? {} : { alumno: { create: {} } }),
+      // El beneficiario no recibe perfil de Alumno ni ningún rol de Black
+      // Fit: solo el rol "beneficiario". El comercio se crea junto con su
+      // perfil de Comercio en el mismo paso — nunca queda el rol suelto
+      // sin fila Comercio (mismo cuidado que crearComercio en admin.ts).
+      // Arranca en "pendiente": un admin lo revisa antes de que sus
+      // beneficios puedan quedar visibles para los socios.
+      roles: {
+        create: { rol: esComercio ? "comercio" : esBeneficiario ? "beneficiario" : "alumno" },
+      },
+      ...(esComercio
+        ? {
+            comercio: {
+              create: {
+                nombre: nombreComercio,
+                categoria: categoriaComercio,
+                telefono: telefonoComercio,
+                direccion: direccionComercio,
+                descripcion: descripcionComercio,
+                estado: "pendiente",
+              },
+            },
+          }
+        : esBeneficiario
+          ? {}
+          : { alumno: { create: {} } }),
     },
-    include: { alumno: true },
+    include: { alumno: true, comercio: true },
   });
 
   // Arranca con todos los logros manuales de la biblioteca (ver
@@ -148,11 +181,35 @@ export async function registrarse(
     await otorgarLogrosManualesIniciales(nuevoUsuario.alumno.id_alumno);
   }
 
+  // Avisa a los admins que hay un comercio nuevo esperando revisión.
+  // Best-effort: nunca bloquea el alta si falla.
+  if (nuevoUsuario.comercio) {
+    try {
+      const admins = await prisma.usuario.findMany({
+        where: { roles: { some: { rol: { in: ["administrador", "admin_comercios"] } } } },
+        select: { id_usuario: true },
+      });
+      await Promise.all(
+        admins.map((a) =>
+          crearNotificacion({
+            id_usuario: a.id_usuario,
+            titulo: "Nuevo comercio para revisar",
+            contenido: `${nombreComercio} se registró y está esperando aprobación.`,
+            tipo: "comercio",
+            url: `/admin/comercios/${nuevoUsuario.comercio!.id_comercio}`,
+          })
+        )
+      );
+    } catch {
+      // Silencioso a propósito.
+    }
+  }
+
   if (!data.session) {
     return { message: "Cuenta creada. Revisá tu email para confirmarla." };
   }
 
-  redirect(esBeneficiario ? "/beneficiario" : "/panel");
+  redirect(esComercio ? "/comercio" : esBeneficiario ? "/beneficiario" : "/panel");
 }
 
 export async function cerrarSesion() {

@@ -91,6 +91,11 @@ enum EstadoEntrenamiento {
 enum EstadoComercio {
   activo
   inactivo
+  // Alta self-service desde /registro/comercio: queda pendiente hasta que
+  // un admin lo revisa y lo pasa a "activo" — un comercio creado a mano
+  // por un admin (crearComercio en actions/admin.ts) sigue arrancando en
+  // "activo" directamente, porque ahí la revisión ya la hizo el admin.
+  pendiente
 }
 
 enum EstadoBeneficio {

@@ -52,7 +52,7 @@ const ESTADOS_MEMBRESIA: EstadoMembresia[] = [
   "pendiente",
 ];
 
-const ESTADOS_COMERCIO: EstadoComercio[] = ["activo", "inactivo"];
+const ESTADOS_COMERCIO: EstadoComercio[] = ["activo", "inactivo", "pendiente"];
 const ESTADOS_BENEFICIO: EstadoBeneficio[] = ["activo", "inactivo", "vencido"];
 
 // Número de socio legible, ej. "K-000123". No es criptográficamente

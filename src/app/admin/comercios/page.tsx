@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 const ESTILO_ESTADO: Record<string, string> = {
   activo: "border-primary-container text-primary-container",
   inactivo: "border-outline-variant text-on-surface-variant",
+  pendiente: "border-[#eda100] text-[#eda100]",
 };
 
 export default async function AdminComerciosPage() {

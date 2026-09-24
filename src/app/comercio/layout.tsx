@@ -72,8 +72,19 @@ export default async function ComercioLayout({
       </aside>
 
       <div className="md:pl-[240px] lg:pl-[280px] flex-1 flex flex-col">
-        <div className="w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 pt-4">
+        <div className="w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 pt-4 flex flex-col gap-3">
           <InstalarApp />
+          {usuario.comercio.estado === "pendiente" && (
+            <div className="bg-[#eda100]/10 border border-[#eda100]/40 rounded-xl p-3 flex items-start gap-2.5">
+              <span className="material-symbols-outlined text-[#eda100] text-[20px] mt-0.5">
+                hourglass_top
+              </span>
+              <p className="text-sm text-[#eda100]">
+                Tu comercio está <span className="font-semibold">en revisión</span>. En cuanto lo
+                aprobemos vas a poder cargar tus beneficios y que los socios los vean.
+              </p>
+            </div>
+          )}
         </div>
         {children}
       </div>

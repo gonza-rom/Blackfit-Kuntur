@@ -140,7 +140,7 @@ export default function IniciarSesionPage() {
         </div>
 
         {/* Footer */}
-        <div className="mt-8 text-center">
+        <div className="mt-8 text-center flex flex-col gap-2">
           <p className="font-[family-name:var(--font-inter)] text-base text-on-surface-variant">
             ¿No tenés cuenta?{" "}
             <Link
@@ -148,6 +148,15 @@ export default function IniciarSesionPage() {
               className="text-primary-container font-semibold hover:underline underline-offset-4 transition-all"
             >
               Unite a BLACK HUB
+            </Link>
+          </p>
+          <p className="font-[family-name:var(--font-inter)] text-sm text-on-surface-variant">
+            ¿Tenés un comercio?{" "}
+            <Link
+              href="/registro/comercio"
+              className="text-primary-container font-semibold hover:underline underline-offset-4 transition-all"
+            >
+              Sumate como aliado Kuntur
             </Link>
           </p>
         </div>

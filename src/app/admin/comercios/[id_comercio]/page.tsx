@@ -5,7 +5,7 @@ import { obtenerPlanesMembresia } from "@/lib/catalogos";
 import { cambiarEstadoComercio, cambiarEstadoBeneficio } from "@/app/actions/admin";
 import { PlanesBeneficio } from "./_components/planes-beneficio";
 
-const ESTADOS_COMERCIO = ["activo", "inactivo"] as const;
+const ESTADOS_COMERCIO = ["activo", "inactivo", "pendiente"] as const;
 const ESTADOS_BENEFICIO = ["activo", "inactivo", "vencido"] as const;
 
 const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
