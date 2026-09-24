@@ -33,11 +33,24 @@ function fechaHaceDias(dias: number): Date {
   return new Date(Date.now() - dias * DIA_MS);
 }
 
+function diasHasta(fecha: Date): number {
+  return Math.ceil((fecha.getTime() - Date.now()) / DIA_MS);
+}
+
 function chipAdherencia(total: number, completados: number) {
   if (total === 0) return { texto: "—", clase: "text-on-surface-variant" };
   const pct = Math.round((completados / total) * 100);
   const clase = pct >= 80 ? "text-primary-container" : pct >= 50 ? "text-[#eda100]" : "text-error";
   return { texto: `${pct}%`, clase };
+}
+
+// null = nunca tuvo membresía. Negativo = ya venció hace esos días.
+function chipMembresia(dias: number | null): { texto: string; clase: string } {
+  if (dias === null) return { texto: "Sin membresía", clase: "text-on-surface-variant" };
+  if (dias < 0) return { texto: `Vencida (${Math.abs(dias)}d)`, clase: "text-error" };
+  if (dias === 0) return { texto: "Vence hoy", clase: "text-error" };
+  if (dias <= 7) return { texto: `${dias}d`, clase: "text-[#eda100]" };
+  return { texto: `${dias}d`, clase: "text-primary-container" };
 }
 
 export default async function CoachAlumnosPage() {
@@ -55,6 +68,7 @@ export default async function CoachAlumnosPage() {
   });
 
   const idsAlumnos = relaciones.map((r) => r.alumno.id_alumno);
+  const idsUsuarios = relaciones.map((r) => r.alumno.usuario.id_usuario);
   const hace30 = fechaHaceDias(30);
 
   const [
@@ -64,9 +78,10 @@ export default async function CoachAlumnosPage() {
     ultimosProgresos,
     ultimosFeedbacks,
     alertasPorAlumno,
+    ultimasMembresias,
   ] =
     idsAlumnos.length === 0
-      ? [[], [], [], [], [], []]
+      ? [[], [], [], [], [], [], []]
       : await Promise.all([
           prisma.entrenamiento.findMany({
             where: { id_alumno: { in: idsAlumnos }, fecha: { gte: hace30 } },
@@ -97,6 +112,15 @@ export default async function CoachAlumnosPage() {
           Promise.all(
             idsAlumnos.map(async (id_alumno) => [id_alumno, await detectarAlertas(id_alumno)] as const)
           ),
+          // Última membresía por usuario (la de fecha_vencimiento más lejana
+          // en el tiempo, sin importar el estado) — así el coach ve tanto
+          // la que está por vencer como la que ya venció.
+          prisma.membresia.findMany({
+            where: { id_usuario: { in: idsUsuarios } },
+            orderBy: { fecha_vencimiento_membresia: "desc" },
+            distinct: ["id_usuario"],
+            select: { id_usuario: true, fecha_vencimiento_membresia: true },
+          }),
         ]);
 
   const mapaAlertas = new Map(alertasPorAlumno);
@@ -106,6 +130,9 @@ export default async function CoachAlumnosPage() {
   const mapaUltimoEntrenamiento = new Map(ultimosEntrenamientos.map((e) => [e.id_alumno, e.fecha]));
   const mapaPeso = new Map(ultimosProgresos.map((p) => [p.id_alumno, p.peso_corporal]));
   const mapaFeedback = new Map(ultimosFeedbacks.map((f) => [f.id_alumno, f.respuesta_coach]));
+  const mapaMembresia = new Map(
+    ultimasMembresias.map((m) => [m.id_usuario, m.fecha_vencimiento_membresia])
+  );
 
   const conteoPorAlumno = new Map<string, { total: number; completados: number }>();
   for (const e of entrenamientos30d) {
@@ -115,29 +142,37 @@ export default async function CoachAlumnosPage() {
     conteoPorAlumno.set(e.id_alumno, actual);
   }
 
-  const filas = relaciones.map((relacion) => {
-    const id_alumno = relacion.alumno.id_alumno;
-    const conteo = conteoPorAlumno.get(id_alumno) ?? { total: 0, completados: 0 };
-    const feedbackRespuesta = mapaFeedback.has(id_alumno) ? mapaFeedback.get(id_alumno) : undefined;
+  const filas = relaciones
+    .map((relacion) => {
+      const id_alumno = relacion.alumno.id_alumno;
+      const conteo = conteoPorAlumno.get(id_alumno) ?? { total: 0, completados: 0 };
+      const feedbackRespuesta = mapaFeedback.has(id_alumno) ? mapaFeedback.get(id_alumno) : undefined;
+      const vencimiento = mapaMembresia.get(relacion.alumno.usuario.id_usuario) ?? null;
+      const diasMembresia = vencimiento ? diasHasta(vencimiento) : null;
 
-    return {
-      id_alumno,
-      relacion,
-      nombre: `${relacion.alumno.usuario.nombre} ${relacion.alumno.usuario.apellido}`,
-      programa: mapaPrograma.get(id_alumno) ?? null,
-      alertas: chipAlertas(mapaAlertas.get(id_alumno) ?? []),
-      adherencia: chipAdherencia(conteo.total, conteo.completados),
-      ultimoEntrenamiento: formatearFechaRelativa(mapaUltimoEntrenamiento.get(id_alumno) ?? null),
-      peso: mapaPeso.get(id_alumno),
-      feedback:
-        feedbackRespuesta === undefined
-          ? { texto: "—", clase: "text-on-surface-variant" }
-          : feedbackRespuesta === null
-            ? { texto: "Pendiente", clase: "text-[#eda100]" }
-            : { texto: "Respondido", clase: "text-primary-container" },
-      puntos: relacion.alumno.puntos_totales,
-    };
-  });
+      return {
+        id_alumno,
+        relacion,
+        nombre: `${relacion.alumno.usuario.nombre} ${relacion.alumno.usuario.apellido}`,
+        programa: mapaPrograma.get(id_alumno) ?? null,
+        alertas: chipAlertas(mapaAlertas.get(id_alumno) ?? []),
+        adherencia: chipAdherencia(conteo.total, conteo.completados),
+        ultimoEntrenamiento: formatearFechaRelativa(mapaUltimoEntrenamiento.get(id_alumno) ?? null),
+        peso: mapaPeso.get(id_alumno),
+        feedback:
+          feedbackRespuesta === undefined
+            ? { texto: "—", clase: "text-on-surface-variant" }
+            : feedbackRespuesta === null
+              ? { texto: "Pendiente", clase: "text-[#eda100]" }
+              : { texto: "Respondido", clase: "text-primary-container" },
+        puntos: relacion.alumno.puntos_totales,
+        diasMembresia,
+        membresia: chipMembresia(diasMembresia),
+      };
+    })
+    // Al que se le vence antes (o ya venció) aparece primero, así el coach
+    // ve de entrada a quién tiene que avisarle. Sin membresía queda al final.
+    .sort((a, b) => (a.diasMembresia ?? Infinity) - (b.diasMembresia ?? Infinity));
 
   return (
     <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-4xl lg:max-w-6xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-6">
@@ -176,7 +211,7 @@ export default async function CoachAlumnosPage() {
           <table className="w-full text-sm border-collapse min-w-[860px]">
             <thead>
               <tr className="border-b border-[#262626]">
-                {["Alumno", "Programa", "Alertas", "Cumplimiento (30d)", "Último entren.", "Peso", "Feedback semanal", "Puntos"].map(
+                {["Alumno", "Programa", "Membresía", "Alertas", "Cumplimiento (30d)", "Último entren.", "Peso", "Feedback semanal", "Puntos"].map(
                   (col) => (
                     <th
                       key={col}
@@ -210,6 +245,13 @@ export default async function CoachAlumnosPage() {
                     ) : (
                       <span className="text-on-surface-variant">Sin programa</span>
                     )}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap tabular-nums">
+                    <span
+                      className={`font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.06em] uppercase ${fila.membresia.clase}`}
+                    >
+                      {fila.membresia.texto}
+                    </span>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span

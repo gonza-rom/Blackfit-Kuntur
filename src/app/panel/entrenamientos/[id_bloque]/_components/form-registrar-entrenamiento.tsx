@@ -266,7 +266,7 @@ export function FormRegistrarEntrenamiento({
             disabled={enviando}
             className="w-full bg-primary-container text-black font-[family-name:var(--font-sora)] text-[16px] font-bold h-12 rounded hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-60"
           >
-            {enviando ? "Guardando..." : "Volver al inicio"}
+            {enviando ? "Enviando..." : "Enviar feedback al coach"}
           </button>
           <button
             type="button"
