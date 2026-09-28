@@ -5,6 +5,7 @@ import type { CategoriaBiblioteca } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual, obtenerAdministradorActual } from "@/lib/auth";
 import { registrarAuditoria } from "@/lib/auditoria";
+import { avisar } from "@/lib/aviso";
 import { TAG_CATALOGO_BIBLIOTECA } from "@/lib/catalogos";
 
 export type EstadoBiblioteca = { error?: string; message?: string } | undefined;
@@ -57,6 +58,7 @@ export async function crearRecursoBiblioteca(
     resultado: `creado:${recurso.titulo}`,
   });
 
+  await avisar("Recurso publicado.");
   updateTag(TAG_CATALOGO_BIBLIOTECA);
   revalidatePath("/coach/biblioteca");
   revalidatePath("/panel/biblioteca");
@@ -97,6 +99,7 @@ export async function editarRecursoBiblioteca(
     resultado: `editado:${titulo}`,
   });
 
+  await avisar("Recurso actualizado.");
   updateTag(TAG_CATALOGO_BIBLIOTECA);
   revalidatePath("/coach/biblioteca");
   revalidatePath("/panel/biblioteca");
@@ -120,6 +123,7 @@ export async function eliminarRecursoBiblioteca(formData: FormData): Promise<voi
     resultado: "eliminado",
   });
 
+  await avisar("Recurso eliminado.", "eliminado");
   updateTag(TAG_CATALOGO_BIBLIOTECA);
   revalidatePath("/coach/biblioteca");
   revalidatePath("/panel/biblioteca");

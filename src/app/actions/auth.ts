@@ -10,6 +10,7 @@ import {
   evaluarLogros,
 } from "@/lib/gamificacion";
 import { crearNotificacion } from "@/lib/notificaciones";
+import { avisar } from "@/lib/aviso";
 
 export type EstadoAuth = { error?: string; message?: string } | undefined;
 
@@ -209,6 +210,7 @@ export async function registrarse(
     return { message: "Cuenta creada. Revisá tu email para confirmarla." };
   }
 
+  await avisar("¡Cuenta creada! Bienvenido/a.");
   redirect(esComercio ? "/comercio" : esBeneficiario ? "/beneficiario" : "/panel");
 }
 

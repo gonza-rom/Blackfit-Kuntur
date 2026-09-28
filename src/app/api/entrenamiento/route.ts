@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { obtenerAlumnoActual } from "@/lib/auth";
+import { avisar } from "@/lib/aviso";
 import { guardarSesionEntrenamiento, type SerieRegistrada } from "@/lib/alumno";
 
 // Usado por la cola offline (src/lib/offline-queue.ts): cuando el
@@ -47,5 +48,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: resultado.error }, { status: 400 });
   }
 
+  await avisar("¡Entrenamiento registrado!");
   return NextResponse.json({ ok: true });
 }

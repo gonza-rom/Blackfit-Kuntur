@@ -23,6 +23,7 @@ import {
   type UsuarioActual,
 } from "@/lib/auth";
 import { registrarAuditoria } from "@/lib/auditoria";
+import { avisar } from "@/lib/aviso";
 import { otorgarLogrosManualesIniciales } from "@/lib/gamificacion";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -160,6 +161,7 @@ export async function asignarRol(formData: FormData): Promise<void> {
     resultado: `asignado:${rol}`,
   });
 
+  await avisar(`Rol "${rol}" asignado.`);
   revalidatePath(`/admin/usuarios/${id_usuario}`);
 }
 
@@ -200,6 +202,7 @@ export async function quitarRol(formData: FormData): Promise<void> {
     resultado: `quitado:${rol}`,
   });
 
+  await avisar(`Rol "${rol}" quitado.`, "eliminado");
   revalidatePath(`/admin/usuarios/${id_usuario}`);
 }
 
@@ -232,6 +235,7 @@ export async function cambiarEstadoUsuario(formData: FormData): Promise<void> {
     resultado: estado_usuario,
   });
 
+  await avisar(`Usuario marcado como ${estado_usuario}.`);
   revalidatePath(`/admin/usuarios/${id_usuario}`);
   revalidatePath("/admin/usuarios");
 }
@@ -300,6 +304,7 @@ export async function editarUsuario(
     resultado: `editado:${email}`,
   });
 
+  await avisar("Usuario actualizado.");
   revalidatePath(`/admin/usuarios/${id_usuario}`);
   revalidatePath("/admin/usuarios");
   redirect(`/admin/usuarios/${id_usuario}`);
@@ -350,6 +355,7 @@ export async function eliminarUsuario(
     resultado: `eliminado:${usuario.email}`,
   });
 
+  await avisar("Usuario eliminado.", "eliminado");
   revalidatePath("/admin/usuarios");
   redirect("/admin/usuarios");
 }
@@ -393,6 +399,7 @@ export async function editarMembresia(
     resultado: `editada:${plan.nombre}`,
   });
 
+  await avisar("Membresía actualizada.");
   revalidatePath(`/admin/usuarios/${membresia.id_usuario}`);
   redirect(`/admin/usuarios/${membresia.id_usuario}`);
 }
@@ -423,6 +430,7 @@ export async function eliminarMembresia(
     resultado: "eliminada",
   });
 
+  await avisar("Membresía eliminada.", "eliminado");
   revalidatePath(`/admin/usuarios/${membresia.id_usuario}`);
   redirect(`/admin/usuarios/${membresia.id_usuario}`);
 }
@@ -452,6 +460,7 @@ export async function crearPlanMembresia(
     },
   });
 
+  await avisar(`Plan "${nombre}" creado.`);
   updateTag(TAG_CATALOGO_PLANES);
   redirect("/admin/planes");
 }
@@ -486,6 +495,7 @@ export async function editarPlanMembresia(
     resultado: `editado:${nombre}`,
   });
 
+  await avisar(`Plan "${nombre}" actualizado.`);
   updateTag(TAG_CATALOGO_PLANES);
   revalidatePath(`/admin/planes/${id_plan_membresia}`);
   redirect("/admin/planes");
@@ -531,6 +541,7 @@ export async function eliminarPlanMembresia(
     resultado: `eliminado:${plan.nombre}`,
   });
 
+  await avisar(`Plan "${plan.nombre}" eliminado.`, "eliminado");
   updateTag(TAG_CATALOGO_PLANES);
   redirect("/admin/planes");
 }
@@ -588,6 +599,7 @@ export async function activarMembresia(
     resultado: `activada:${plan.nombre}`,
   });
 
+  await avisar(`Membresía "${plan.nombre}" activada.`);
   revalidatePath(`/admin/usuarios/${id_usuario}`);
   return { message: "Membresía activada." };
 }
@@ -619,6 +631,7 @@ export async function cambiarEstadoMembresia(formData: FormData): Promise<void> 
     resultado: `estado:${estado_membresia}`,
   });
 
+  await avisar(`Membresía marcada como ${estado_membresia}.`);
   revalidatePath(`/admin/usuarios/${membresia.id_usuario}`);
 }
 
@@ -784,6 +797,9 @@ export async function finalizarImportBeneficiarios(resumen: {
     resultado: `creados:${resumen.creados},actualizados:${resumen.actualizados},omitidos:${resumen.omitidos},errores:${resumen.errores}`,
   });
 
+  await avisar(
+    `Importación finalizada: ${resumen.creados} creado(s), ${resumen.actualizados} actualizado(s), ${resumen.errores} error(es).`
+  );
   revalidatePath("/admin/usuarios");
 }
 
@@ -851,6 +867,7 @@ export async function crearComercio(
     resultado: `creado:${comercio.nombre}`,
   });
 
+  await avisar(`Comercio "${comercio.nombre}" creado.`);
   revalidatePath("/admin/comercios");
   redirect(`/admin/comercios/${comercio.id_comercio}`);
 }
@@ -864,7 +881,7 @@ export async function cambiarEstadoComercio(formData: FormData): Promise<void> {
 
   if (!id_comercio || !ESTADOS_COMERCIO.includes(estado)) return;
 
-  await prisma.comercio.update({ where: { id_comercio }, data: { estado } });
+  const comercio = await prisma.comercio.update({ where: { id_comercio }, data: { estado } });
 
   await registrarAuditoria({
     id_usuario_actor: contexto.usuario.id_usuario,
@@ -874,6 +891,14 @@ export async function cambiarEstadoComercio(formData: FormData): Promise<void> {
     resultado: `estado:${estado}`,
   });
 
+  await avisar(
+    estado === "activo"
+      ? `Comercio "${comercio.nombre}" activado.`
+      : estado === "inactivo"
+        ? `Comercio "${comercio.nombre}" desactivado.`
+        : `Comercio "${comercio.nombre}" marcado como pendiente.`,
+    estado === "activo" ? "exito" : "info"
+  );
   revalidatePath(`/admin/comercios/${id_comercio}`);
   revalidatePath("/admin/comercios");
 }
@@ -911,6 +936,7 @@ export async function editarComercio(
     resultado: `editado:${comercio.nombre}`,
   });
 
+  await avisar(`Comercio "${comercio.nombre}" actualizado.`);
   revalidatePath(`/admin/comercios/${id_comercio}`);
   revalidatePath("/admin/comercios");
   redirect(`/admin/comercios/${id_comercio}`);
@@ -958,6 +984,7 @@ export async function crearBeneficio(
     resultado: `creado:${beneficio.titulo}`,
   });
 
+  await avisar(`Beneficio "${beneficio.titulo}" creado.`);
   revalidatePath(`/admin/comercios/${id_comercio}`);
   redirect(`/admin/comercios/${id_comercio}`);
 }
@@ -984,6 +1011,12 @@ export async function cambiarEstadoBeneficio(formData: FormData): Promise<void> 
     resultado: `estado:${estado}`,
   });
 
+  await avisar(
+    estado === "activo"
+      ? `Beneficio "${beneficio.titulo}" activado.`
+      : `Beneficio "${beneficio.titulo}" marcado como ${estado}.`,
+    estado === "activo" ? "exito" : "info"
+  );
   revalidatePath(`/admin/comercios/${beneficio.id_comercio}`);
 }
 
@@ -1026,6 +1059,7 @@ export async function editarBeneficio(
     resultado: `editado:${beneficio.titulo}`,
   });
 
+  await avisar(`Beneficio "${beneficio.titulo}" actualizado.`);
   revalidatePath(`/admin/comercios/${beneficio.id_comercio}`);
   redirect(`/admin/comercios/${beneficio.id_comercio}`);
 }
@@ -1053,6 +1087,7 @@ export async function asignarBeneficioPlan(formData: FormData): Promise<void> {
     resultado: `plan_asignado:${id_plan_membresia}`,
   });
 
+  await avisar("Plan asignado al beneficio.");
   if (id_comercio) revalidatePath(`/admin/comercios/${id_comercio}`);
 }
 
@@ -1075,6 +1110,7 @@ export async function quitarBeneficioPlan(formData: FormData): Promise<void> {
     resultado: `plan_quitado:${id_plan_membresia}`,
   });
 
+  await avisar("Plan quitado del beneficio.", "eliminado");
   if (id_comercio) revalidatePath(`/admin/comercios/${id_comercio}`);
 }
 
@@ -1115,6 +1151,7 @@ export async function eliminarBeneficio(
     resultado: `eliminado:${beneficio.titulo}`,
   });
 
+  await avisar(`Beneficio "${beneficio.titulo}" eliminado.`, "eliminado");
   revalidatePath(`/admin/comercios/${beneficio.id_comercio}`);
   redirect(`/admin/comercios/${beneficio.id_comercio}`);
 }
@@ -1161,6 +1198,7 @@ export async function eliminarComercio(
     resultado: `eliminado:${comercio.nombre}`,
   });
 
+  await avisar(`Comercio "${comercio.nombre}" eliminado.`, "eliminado");
   revalidatePath("/admin/comercios");
   redirect("/admin/comercios");
 }

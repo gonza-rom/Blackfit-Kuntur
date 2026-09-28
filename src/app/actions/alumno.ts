@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoActual } from "@/lib/auth";
+import { avisar } from "@/lib/aviso";
 import { registrarActividad, PUNTOS, claveDia } from "@/lib/gamificacion";
 import {
   subirFotoProgreso,
@@ -48,6 +49,7 @@ export async function eliminarEntrenamiento(formData: FormData): Promise<void> {
   if (!entrenamiento || entrenamiento.id_alumno !== contexto.id_alumno) return;
 
   await prisma.entrenamiento.delete({ where: { id_entrenamiento } });
+  await avisar("Entrenamiento eliminado.", "eliminado");
   revalidatePath("/panel/entrenamientos/historial");
   revalidatePath("/panel/entrenamientos");
 }
@@ -95,6 +97,7 @@ export async function registrarHabito(
     "Hábitos del día registrados"
   );
 
+  await avisar("Hábitos de hoy guardados.");
   revalidatePath("/panel/seguimiento/habitos");
   return { message: "Hábitos de hoy guardados." };
 }
@@ -113,6 +116,7 @@ export async function eliminarHabito(formData: FormData): Promise<void> {
   if (!habito || habito.id_alumno !== contexto.id_alumno) return;
 
   await prisma.habito.delete({ where: { id_habito } });
+  await avisar("Hábito eliminado.", "eliminado");
   revalidatePath("/panel/seguimiento/habitos");
 }
 
@@ -138,6 +142,7 @@ export async function registrarFeedbackDiario(
     "Feedback diario cargado"
   );
 
+  await avisar("Feedback diario guardado.");
   revalidatePath("/panel/seguimiento/feedback");
   return { message: "Feedback diario guardado." };
 }
@@ -165,6 +170,7 @@ export async function editarFeedbackDiario(
     data: { comentario_diario },
   });
 
+  await avisar("Feedback actualizado.");
   revalidatePath("/panel/seguimiento/feedback");
   return { message: "Feedback actualizado." };
 }
@@ -180,6 +186,7 @@ export async function eliminarFeedbackDiario(formData: FormData): Promise<void> 
   if (!existente || existente.id_alumno !== contexto.id_alumno) return;
 
   await prisma.feedbackDiario.delete({ where: { id_feedback_diario } });
+  await avisar("Feedback eliminado.", "eliminado");
   revalidatePath("/panel/seguimiento/feedback");
 }
 
@@ -204,6 +211,7 @@ export async function registrarFeedbackSemanal(
     },
   });
 
+  await avisar("Feedback semanal guardado.");
   revalidatePath("/panel/seguimiento/feedback");
   return { message: "Feedback semanal guardado." };
 }
@@ -231,6 +239,7 @@ export async function editarFeedbackSemanal(
     data: { comentario_semanal },
   });
 
+  await avisar("Feedback actualizado.");
   revalidatePath("/panel/seguimiento/feedback");
   return { message: "Feedback actualizado." };
 }
@@ -246,6 +255,7 @@ export async function eliminarFeedbackSemanal(formData: FormData): Promise<void>
   if (!existente || existente.id_alumno !== contexto.id_alumno) return;
 
   await prisma.feedbackSemanal.delete({ where: { id_feedback_semanal } });
+  await avisar("Feedback eliminado.", "eliminado");
   revalidatePath("/panel/seguimiento/feedback");
 }
 
@@ -273,6 +283,7 @@ export async function registrarProgresoFisico(
     },
   });
 
+  await avisar("Progreso físico guardado.");
   revalidatePath("/panel/seguimiento/progreso");
   return { message: "Progreso físico guardado." };
 }
@@ -305,6 +316,7 @@ export async function editarProgresoFisico(
     data: { peso_corporal, porcentaje_graso, masa_muscular },
   });
 
+  await avisar("Progreso actualizado.");
   revalidatePath("/panel/seguimiento/progreso");
   return { message: "Progreso actualizado." };
 }
@@ -320,6 +332,7 @@ export async function eliminarProgresoFisico(formData: FormData): Promise<void> 
   if (!existente || existente.id_alumno !== contexto.id_alumno) return;
 
   await prisma.progresoFisico.delete({ where: { id_progreso } });
+  await avisar("Registro de progreso eliminado.", "eliminado");
   revalidatePath("/panel/seguimiento/progreso");
 }
 
@@ -354,6 +367,7 @@ export async function registrarMedidaCorporal(
     }
   }
 
+  await avisar(foto ? "Medida y foto guardadas." : "Medida guardada.");
   revalidatePath("/panel/seguimiento/progreso");
   return {
     message: foto
@@ -404,6 +418,7 @@ export async function editarMedidaCorporal(
     data: { tipo_medida, valor_cm, foto_url },
   });
 
+  await avisar("Medida actualizada.");
   revalidatePath("/panel/seguimiento/progreso");
   return { message: "Medida actualizada." };
 }
@@ -420,5 +435,6 @@ export async function eliminarMedidaCorporal(formData: FormData): Promise<void> 
 
   await borrarFotoProgreso(existente.foto_url);
   await prisma.medidaCorporal.delete({ where: { id_medida } });
+  await avisar("Medida eliminada.", "eliminado");
   revalidatePath("/panel/seguimiento/progreso");
 }

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import { RegistroServiceWorker } from "@/components/registro-service-worker";
+import { AvisoGlobal } from "@/components/aviso-global";
 
 // Autohospedadas (en vez de next/font/google) porque Turbopack en esta
 // versión de Next pide un hash de archivo fijo a fonts.gstatic.com que
@@ -73,6 +74,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-dvh flex flex-col bg-black font-[family-name:var(--font-inter)]">
         <RegistroServiceWorker />
         {children}
+        <AvisoGlobal />
       </body>
     </html>
   );

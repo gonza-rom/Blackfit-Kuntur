@@ -11,6 +11,7 @@ import type {
   DiaSemana,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { avisar } from "@/lib/aviso";
 import { obtenerEntrenadorActual } from "@/lib/auth";
 import { crearNotificacion } from "@/lib/notificaciones";
 import {
@@ -59,6 +60,7 @@ export async function actualizarPerfilEntrenador(
     data: { especialidad, biografia },
   });
 
+  await avisar("Perfil actualizado.");
   revalidatePath("/coach/perfil");
   return { message: "Perfil actualizado." };
 }
@@ -113,6 +115,7 @@ export async function vincularAlumno(
     });
   }
 
+  await avisar("Alumno vinculado.");
   redirect("/coach/alumnos");
 }
 
@@ -203,6 +206,7 @@ export async function crearYVincularAlumno(
     resultado: vincular ? "creado_y_vinculado" : "creado",
   });
 
+  await avisar(vincular ? "Alumno creado y vinculado." : "Alumno creado.");
   revalidatePath("/coach/alumnos");
   redirect("/coach/alumnos");
 }
@@ -230,6 +234,7 @@ export async function desvincularAlumno(formData: FormData): Promise<void> {
     data: { estado_relacion: "finalizada", fecha_fin: new Date() },
   });
 
+  await avisar("Alumno desvinculado.", "eliminado");
   revalidatePath("/coach/alumnos");
   redirect("/coach/alumnos");
 }
@@ -275,6 +280,7 @@ export async function crearEjercicio(
     },
   });
 
+  await avisar("Ejercicio creado.");
   updateTag(TAG_CATALOGO_EJERCICIOS);
   redirect("/coach/ejercicios");
 }
@@ -322,6 +328,7 @@ export async function editarEjercicio(
     },
   });
 
+  await avisar("Ejercicio actualizado.");
   updateTag(TAG_CATALOGO_EJERCICIOS);
   redirect("/coach/ejercicios");
 }
@@ -376,6 +383,7 @@ export async function eliminarEjercicio(
     throw err;
   }
 
+  await avisar("Ejercicio eliminado.", "eliminado");
   updateTag(TAG_CATALOGO_EJERCICIOS);
   redirect("/coach/ejercicios");
 }
@@ -455,6 +463,7 @@ export async function crearPrograma(
     url: "/panel/entrenamientos",
   });
 
+  await avisar(`Programa "${nombre}" creado.`);
   redirect(`/coach/programas/${programa.id_programa}`);
 }
 
@@ -500,6 +509,7 @@ export async function editarPrograma(
     },
   });
 
+  await avisar("Programa actualizado.");
   revalidatePath(`/coach/programas/${id_programa}`);
   redirect(`/coach/programas/${id_programa}`);
 }
@@ -539,6 +549,7 @@ export async function eliminarPrograma(
     throw err;
   }
 
+  await avisar("Programa eliminado.", "eliminado");
   revalidatePath("/coach/alumnos");
   redirect(programa.id_alumno ? `/coach/alumnos/${programa.id_alumno}` : "/coach/alumnos");
 }
@@ -578,6 +589,7 @@ export async function crearPlantillaPrograma(
     },
   });
 
+  await avisar("Plantilla creada.");
   redirect(`/coach/programas/plantillas/${plantilla.id_programa}`);
 }
 
@@ -610,6 +622,7 @@ export async function editarPlantillaPrograma(
     data: { nombre, descripcion, objetivo },
   });
 
+  await avisar("Plantilla actualizada.");
   revalidatePath(`/coach/programas/plantillas/${id_plantilla}`);
   revalidatePath("/coach/programas/plantillas");
   return { message: "Plantilla actualizada." };
@@ -630,6 +643,7 @@ export async function eliminarPlantilla(formData: FormData): Promise<void> {
   if (!plantilla || !plantilla.es_plantilla) return;
 
   await prisma.programaEntrenamiento.delete({ where: { id_programa: id_plantilla } });
+  await avisar("Plantilla eliminada.", "eliminado");
   revalidatePath("/coach/programas/plantillas");
 }
 
@@ -722,6 +736,7 @@ export async function aplicarPlantilla(
     url: "/panel/entrenamientos",
   });
 
+  await avisar("Plantilla aplicada al alumno.");
   redirect(`/coach/programas/${programa.id_programa}`);
 }
 
@@ -785,6 +800,7 @@ export async function guardarComoPlantilla(
     },
   });
 
+  await avisar("Programa guardado como plantilla.");
   redirect(`/coach/programas/plantillas/${plantilla.id_programa}`);
 }
 
@@ -854,6 +870,7 @@ export async function establecerTipoPlanificacion(formData: FormData): Promise<v
     data: { tipo_planificacion: tipo },
   });
 
+  await avisar("Tipo de planificación actualizado.");
   revalidatePath(`/coach/alumnos/${programa.id_alumno}`);
 }
 
@@ -904,6 +921,7 @@ export async function crearGrupoSemanas(formData: FormData): Promise<void> {
     })),
   });
 
+  await avisar("Semanas creadas.");
   revalidatePath(`/coach/alumnos/${programa.id_alumno}`);
 }
 
@@ -941,6 +959,7 @@ export async function eliminarGrupoSemanas(
     throw err;
   }
 
+  await avisar("Semanas eliminadas.", "eliminado");
   revalidatePath(`/coach/alumnos/${programa.id_alumno}`);
   return undefined;
 }
@@ -1056,6 +1075,7 @@ export async function guardarDiaPlan(
     throw err;
   }
 
+  await avisar("Día guardado.");
   revalidatePath(`/coach/alumnos/${id_alumno}`);
   redirect(`/coach/alumnos/${id_alumno}?tab=planificacion`);
 }
@@ -1101,6 +1121,7 @@ export async function crearBloque(
     },
   });
 
+  await avisar("Bloque creado.");
   revalidatePath(`/coach/programas/${id_programa}`);
   return { message: "Bloque creado." };
 }
@@ -1157,6 +1178,7 @@ export async function crearEjercicioPrograma(
     },
   });
 
+  await avisar("Ejercicio agregado al bloque.");
   revalidatePath(`/coach/programas/${bloque.id_programa}`);
   return { message: "Ejercicio agregado al bloque." };
 }
@@ -1221,6 +1243,7 @@ export async function actualizarEjercicioPrograma(
     },
   });
 
+  await avisar("Ejercicio actualizado.");
   revalidatePath(`/coach/programas/${existente.bloque.id_programa}`);
   return { message: "Ejercicio actualizado." };
 }
@@ -1245,6 +1268,7 @@ export async function eliminarEjercicioPrograma(formData: FormData): Promise<voi
   }
 
   await prisma.ejercicioPrograma.delete({ where: { id_ejercicio_programa } });
+  await avisar("Ejercicio quitado del bloque.", "eliminado");
   revalidatePath(`/coach/programas/${existente.bloque.id_programa}`);
 }
 
@@ -1304,6 +1328,7 @@ export async function eliminarBloque(formData: FormData): Promise<void> {
   if (!bloque) return;
 
   await prisma.bloqueEntrenamiento.delete({ where: { id_bloque } });
+  await avisar("Bloque eliminado.", "eliminado");
   revalidatePath(`/coach/programas/${bloque.id_programa}`);
 }
 
@@ -1368,6 +1393,7 @@ export async function duplicarBloque(formData: FormData): Promise<void> {
     },
   });
 
+  await avisar("Bloque duplicado.");
   revalidatePath(`/coach/programas/${original.id_programa}`);
 }
 
@@ -1401,6 +1427,7 @@ export async function avisarAlumnoRutinaLista(
     url: "/panel/entrenamientos",
   });
 
+  await avisar("Aviso enviado al alumno.");
   revalidatePath(`/coach/programas/${id_programa}`);
   return { message: "Aviso enviado." };
 }
@@ -1450,6 +1477,7 @@ export async function actualizarDatosAlumno(
     data: { objetivo, fecha_nacimiento },
   });
 
+  await avisar("Datos del alumno actualizados.");
   revalidatePath(`/coach/alumnos/${id_alumno}`);
   return { message: "Datos del alumno actualizados." };
 }
@@ -1494,6 +1522,7 @@ export async function crearObjetivo(
     },
   });
 
+  await avisar("Objetivo creado.");
   revalidatePath(`/coach/alumnos/${id_alumno}`);
   return { message: "Objetivo creado." };
 }
@@ -1567,6 +1596,7 @@ export async function actualizarObjetivo(
     }
   }
 
+  await avisar("Objetivo actualizado.");
   revalidatePath(`/coach/alumnos/${objetivo.id_alumno}`);
   return { message: "Objetivo actualizado." };
 }
@@ -1584,6 +1614,7 @@ export async function eliminarObjetivo(formData: FormData): Promise<void> {
   }
 
   await prisma.objetivo.delete({ where: { id_objetivo } });
+  await avisar("Objetivo eliminado.", "eliminado");
   revalidatePath(`/coach/alumnos/${objetivo.id_alumno}`);
 }
 
@@ -1628,6 +1659,7 @@ export async function responderFeedbackSemanal(
     url: "/panel/seguimiento/feedback",
   });
 
+  await avisar("Respuesta enviada.");
   revalidatePath(`/coach/alumnos/${feedback.id_alumno}`);
   revalidatePath("/panel/seguimiento/feedback");
   return { message: "Respuesta enviada." };
@@ -1954,6 +1986,7 @@ export async function subirFotoProgresoAngulo(
     return { error: "No se pudo subir la foto. Probá de nuevo." };
   }
 
+  await avisar("Foto guardada.");
   revalidatePath(`/coach/alumnos/${id_alumno}`);
   return { message: "Foto guardada." };
 }
@@ -1986,6 +2019,7 @@ export async function crearProgresoFisicoAlumno(
     },
   });
 
+  await avisar("Medición cargada.");
   revalidatePath(`/coach/alumnos/${id_alumno}`);
   return { message: "Medición cargada." };
 }
@@ -2015,6 +2049,7 @@ export async function editarProgresoFisicoAlumno(
     },
   });
 
+  await avisar("Medición actualizada.");
   revalidatePath(`/coach/alumnos/${progreso.id_alumno}`);
   return { message: "Medición actualizada." };
 }
@@ -2028,6 +2063,7 @@ export async function eliminarProgresoFisicoAlumno(formData: FormData): Promise<
   if (!progreso) return;
 
   await prisma.progresoFisico.delete({ where: { id_progreso } });
+  await avisar("Medición eliminada.", "eliminado");
   revalidatePath(`/coach/alumnos/${progreso.id_alumno}`);
 }
 
@@ -2084,6 +2120,7 @@ export async function crearLogro(
   // crearYVincularAlumno).
   await otorgarLogroATodosLosAlumnos(logro.id_logro);
 
+  await avisar("Logro creado y otorgado a todos los alumnos.");
   revalidatePath("/coach/logros");
   revalidatePath("/coach/alumnos");
   return { message: "Logro creado y otorgado a todos los alumnos." };
@@ -2112,6 +2149,7 @@ export async function editarLogro(
     data: { titulo, descripcion, icono, color, categoria },
   });
 
+  await avisar("Logro actualizado.");
   revalidatePath("/coach/logros");
   return { message: "Logro actualizado." };
 }
@@ -2129,6 +2167,7 @@ export async function alternarActivoLogro(formData: FormData): Promise<void> {
   if (!logro) return;
 
   await prisma.logro.update({ where: { id_logro }, data: { activo: !logro.activo } });
+  await avisar(logro.activo ? "Logro desactivado." : "Logro activado.");
   revalidatePath("/coach/logros");
 }
 
@@ -2173,6 +2212,7 @@ export async function otorgarLogroManual(
     }).catch(() => {});
   }
 
+  await avisar("Logro otorgado.");
   revalidatePath(`/coach/alumnos/${id_alumno}`);
   return { message: "Logro otorgado." };
 }
@@ -2186,5 +2226,6 @@ export async function quitarLogroAlumno(formData: FormData): Promise<void> {
   if (!(await alumnoDelEntrenador(id_alumno, contexto.id_entrenador))) return;
 
   await prisma.logroAlumno.deleteMany({ where: { id_alumno, id_logro } });
+  await avisar("Logro quitado.", "eliminado");
   revalidatePath(`/coach/alumnos/${id_alumno}`);
 }

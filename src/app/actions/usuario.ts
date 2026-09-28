@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { obtenerUsuarioActual } from "@/lib/auth";
 import { subirAvatar } from "@/lib/storage";
+import { avisar } from "@/lib/aviso";
 
 export type EstadoUsuario = { error?: string; message?: string } | undefined;
 
@@ -37,6 +38,7 @@ export async function actualizarInformacionPersonal(
     data: { nombre, apellido, telefono, ...(foto_perfil ? { foto_perfil } : {}) },
   });
 
+  await avisar("Tus datos se actualizaron.");
   revalidatePath("/panel/perfil");
   revalidatePath("/panel/perfil/informacion-personal");
   revalidatePath("/coach/perfil");

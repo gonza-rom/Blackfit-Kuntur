@@ -7,6 +7,7 @@ import type { EstadoBeneficio } from "@prisma/client";
 import { obtenerComercioActual } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { registrarAuditoria } from "@/lib/auditoria";
+import { avisar } from "@/lib/aviso";
 import { subirAvatar } from "@/lib/storage";
 
 // ------------------------------------------------------------
@@ -57,6 +58,7 @@ export async function actualizarPerfilComercio(
     resultado: "actualizado",
   });
 
+  await avisar("Perfil del comercio actualizado.");
   revalidatePath("/comercio/perfil");
   revalidatePath("/comercio");
   return { message: "Perfil actualizado." };
@@ -245,6 +247,11 @@ export async function validarBeneficio(
   else if (!beneficioOk) mensaje = "Este beneficio no está vigente.";
   else if (!planAsociado) mensaje = "Este beneficio no está disponible para el plan del socio.";
 
+  await avisar(
+    aprobado ? `Beneficio aceptado para ${usuario.nombre} ${usuario.apellido}.` : `Beneficio rechazado: ${mensaje}`,
+    aprobado ? "exito" : "info"
+  );
+
   return {
     resultado,
     mensaje,
@@ -308,6 +315,7 @@ export async function crearBeneficioComercio(
     resultado: `creado:${beneficio.titulo}`,
   });
 
+  await avisar(`Beneficio "${beneficio.titulo}" creado.`);
   revalidatePath("/comercio/beneficios");
   redirect(`/comercio/beneficios/${beneficio.id_beneficio}/editar`);
 }
@@ -356,6 +364,7 @@ export async function editarBeneficioComercio(
     resultado: `editado:${beneficio.titulo}`,
   });
 
+  await avisar(`Beneficio "${beneficio.titulo}" actualizado.`);
   revalidatePath(`/comercio/beneficios/${id_beneficio}/editar`);
   revalidatePath("/comercio/beneficios");
   return { message: "Beneficio actualizado." };
@@ -382,6 +391,7 @@ export async function cambiarEstadoBeneficioComercio(formData: FormData): Promis
     resultado: `estado:${estado}`,
   });
 
+  await avisar(estado === "activo" ? "Beneficio activado." : `Beneficio marcado como ${estado}.`, estado === "activo" ? "exito" : "info");
   revalidatePath(`/comercio/beneficios/${id_beneficio}/editar`);
   revalidatePath("/comercio/beneficios");
 }
@@ -424,6 +434,7 @@ export async function eliminarBeneficioComercio(
     resultado: `eliminado:${beneficio.titulo}`,
   });
 
+  await avisar(`Beneficio "${beneficio.titulo}" eliminado.`, "eliminado");
   revalidatePath("/comercio/beneficios");
   redirect("/comercio/beneficios");
 }
@@ -453,6 +464,7 @@ export async function asignarBeneficioPlanComercio(formData: FormData): Promise<
     resultado: `plan_asignado:${id_plan_membresia}`,
   });
 
+  await avisar("Plan asignado al beneficio.");
   revalidatePath(`/comercio/beneficios/${id_beneficio}/editar`);
 }
 
@@ -477,5 +489,6 @@ export async function quitarBeneficioPlanComercio(formData: FormData): Promise<v
     resultado: `plan_quitado:${id_plan_membresia}`,
   });
 
+  await avisar("Plan quitado del beneficio.", "eliminado");
   revalidatePath(`/comercio/beneficios/${id_beneficio}/editar`);
 }
