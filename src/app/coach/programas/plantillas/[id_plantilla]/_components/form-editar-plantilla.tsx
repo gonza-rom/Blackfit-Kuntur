@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
 import { editarPlantillaPrograma, eliminarPlantilla } from "@/app/actions/coach";
 import { ConfirmForm } from "@/components/confirm-form";
+import { useEditorEnLinea } from "@/lib/use-editor-en-linea";
 
 const INPUT =
   "w-full bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface text-sm p-2.5 transition-colors";
@@ -16,8 +17,8 @@ type Plantilla = {
 };
 
 export function FormEditarPlantilla({ plantilla }: { plantilla: Plantilla }) {
-  const [editar, setEditar] = useState(false);
   const [state, action, pending] = useActionState(editarPlantillaPrograma, undefined);
+  const [editar, setEditar] = useEditorEnLinea(state, pending);
 
   if (editar) {
     return (

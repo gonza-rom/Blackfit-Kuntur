@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { crearLogro, editarLogro, alternarActivoLogro } from "@/app/actions/coach";
 import { IconoLogro } from "@/components/icono-logro";
 
@@ -38,12 +38,17 @@ function FormLogro({
   // "color" ausente y lo guarda como null (ver editarLogro/crearLogro).
   const [sinColor, setSinColor] = useState(!logro?.color);
 
+  // Se cierra recién cuando la acción terminó bien. Antes el form hacía
+  // `await action(fd); onListo()`, pero `action` de useActionState no
+  // devuelve una promesa: el form se desmontaba en pleno envío y los errores
+  // de validación nunca se veían.
+  useEffect(() => {
+    if (state?.message && !state.error) onListo?.();
+  }, [state, onListo]);
+
   return (
     <form
-      action={async (fd) => {
-        await action(fd);
-        onListo?.();
-      }}
+      action={action}
       className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col gap-3"
     >
       {logro && <input type="hidden" name="id_logro" value={logro.id_logro} />}

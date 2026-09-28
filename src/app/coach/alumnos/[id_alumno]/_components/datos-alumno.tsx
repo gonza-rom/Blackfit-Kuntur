@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
 import { actualizarDatosAlumno } from "@/app/actions/coach";
+import { useEditorEnLinea } from "@/lib/use-editor-en-linea";
 
 const INPUT =
   "w-full bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface text-sm p-2.5";
@@ -17,8 +18,8 @@ export function DatosAlumno({
   objetivo: string | null;
   fechaNacimiento: string | null; // YYYY-MM-DD
 }) {
-  const [editar, setEditar] = useState(false);
   const [state, action, pending] = useActionState(actualizarDatosAlumno, undefined);
+  const [editar, setEditar] = useEditorEnLinea(state, pending);
 
   return (
     <div className="flex flex-col gap-1">

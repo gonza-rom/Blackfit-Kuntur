@@ -1,10 +1,12 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
 import {
   editarRecursoBiblioteca,
   eliminarRecursoBiblioteca,
 } from "@/app/actions/biblioteca";
+import { useEditorEnLinea } from "@/lib/use-editor-en-linea";
+import { ConfirmForm } from "@/components/confirm-form";
 
 const CATEGORIAS = [
   { value: "ejercicios", label: "Ejercicios" },
@@ -32,8 +34,8 @@ export type RecursoSerializado = {
 };
 
 export function RecursoItem({ recurso }: { recurso: RecursoSerializado }) {
-  const [editar, setEditar] = useState(false);
   const [state, action, pending] = useActionState(editarRecursoBiblioteca, undefined);
+  const [editar, setEditar] = useEditorEnLinea(state, pending);
 
   if (editar) {
     return (
@@ -147,7 +149,7 @@ export function RecursoItem({ recurso }: { recurso: RecursoSerializado }) {
         >
           <span className="material-symbols-outlined text-[20px]">edit</span>
         </button>
-        <form action={eliminarRecursoBiblioteca}>
+        <ConfirmForm action={eliminarRecursoBiblioteca} mensaje={`¿Eliminar el recurso "${recurso.titulo}"?`}>
           <input type="hidden" name="id_recurso" value={recurso.id_recurso} />
           <button
             type="submit"
@@ -156,7 +158,7 @@ export function RecursoItem({ recurso }: { recurso: RecursoSerializado }) {
           >
             <span className="material-symbols-outlined text-[20px]">delete</span>
           </button>
-        </form>
+        </ConfirmForm>
       </div>
     </div>
   );

@@ -7,6 +7,8 @@ import {
   eliminarProgresoFisicoAlumno,
   extraerComposicionDeDocumento,
 } from "@/app/actions/coach";
+import { useEditorEnLinea } from "@/lib/use-editor-en-linea";
+import { ConfirmForm } from "@/components/confirm-form";
 
 // Orden y unidades como los muestra la balanza/InBody.
 const CAMPOS = [
@@ -242,8 +244,8 @@ export function ProgresoFisicoCoach({
 
 function EntradaItem({ entrada }: { entrada: ProgresoSerializado }) {
   const [abierto, setAbierto] = useState(false);
-  const [editar, setEditar] = useState(false);
   const [state, action, pending] = useActionState(editarProgresoFisicoAlumno, undefined);
+  const [editar, setEditar] = useEditorEnLinea(state, pending);
 
   const conValor = CAMPOS.filter((c) => entrada.valores[c.name] != null);
   const resumen = CAMPOS.filter(
@@ -288,7 +290,7 @@ function EntradaItem({ entrada }: { entrada: ProgresoSerializado }) {
               {editar ? "close" : "edit"}
             </span>
           </button>
-          <form action={eliminarProgresoFisicoAlumno}>
+          <ConfirmForm action={eliminarProgresoFisicoAlumno} mensaje="¿Eliminar esta medición?">
             <input type="hidden" name="id_progreso" value={entrada.id_progreso} />
             <button
               type="submit"
@@ -297,7 +299,7 @@ function EntradaItem({ entrada }: { entrada: ProgresoSerializado }) {
             >
               <span className="material-symbols-outlined text-[16px]">delete</span>
             </button>
-          </form>
+          </ConfirmForm>
         </div>
       </div>
 

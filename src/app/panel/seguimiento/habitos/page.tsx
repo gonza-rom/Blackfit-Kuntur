@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoActual } from "@/lib/auth";
 import { eliminarHabito } from "@/app/actions/alumno";
 import { FormHabito } from "./_components/form-habito";
+import { ConfirmForm } from "@/components/confirm-form";
 
 const FORMATEADOR_DIA = new Intl.DateTimeFormat("es-AR", {
   weekday: "short",
@@ -77,7 +78,7 @@ export default async function HabitosPage() {
                   {h.cardio ? " · cardio" : ""}
                   {h.movilidad ? " · movilidad" : ""}
                 </span>
-                <form action={eliminarHabito}>
+                <ConfirmForm action={eliminarHabito} mensaje="¿Eliminar el registro de hábitos de este día?">
                   <input type="hidden" name="id_habito" value={h.id_habito} />
                   <button
                     type="submit"
@@ -86,7 +87,7 @@ export default async function HabitosPage() {
                   >
                     <span className="material-symbols-outlined text-[18px]">delete</span>
                   </button>
-                </form>
+                </ConfirmForm>
               </div>
             ))}
           </div>

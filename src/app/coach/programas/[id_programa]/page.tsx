@@ -9,6 +9,7 @@ import { FormNuevoEjercicioBloque } from "./_components/form-nuevo-ejercicio-blo
 import { EjercicioProgramaItem } from "./_components/ejercicio-programa-item";
 import { BotonAvisarAlumno } from "./_components/boton-avisar-alumno";
 import { BotonGuardarComoPlantilla } from "./_components/boton-guardar-como-plantilla";
+import { ConfirmForm } from "@/components/confirm-form";
 
 export default async function ProgramaDetallePage(
   props: PageProps<"/coach/programas/[id_programa]">
@@ -111,7 +112,7 @@ export default async function ProgramaDetallePage(
                     <span className="material-symbols-outlined text-[18px]">content_copy</span>
                   </button>
                 </form>
-                <form action={eliminarBloque}>
+                <ConfirmForm action={eliminarBloque} mensaje="¿Eliminar este bloque y todos sus ejercicios?">
                   <input type="hidden" name="id_bloque" value={bloque.id_bloque} />
                   <button
                     type="submit"
@@ -120,7 +121,7 @@ export default async function ProgramaDetallePage(
                   >
                     <span className="material-symbols-outlined text-[18px]">delete</span>
                   </button>
-                </form>
+                </ConfirmForm>
               </div>
             </div>
 

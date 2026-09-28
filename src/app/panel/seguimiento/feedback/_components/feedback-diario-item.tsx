@@ -1,7 +1,9 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
 import { editarFeedbackDiario, eliminarFeedbackDiario } from "@/app/actions/alumno";
+import { useEditorEnLinea } from "@/lib/use-editor-en-linea";
+import { ConfirmForm } from "@/components/confirm-form";
 
 export function FeedbackDiarioItem({
   id,
@@ -12,8 +14,8 @@ export function FeedbackDiarioItem({
   fecha: string;
   comentario: string;
 }) {
-  const [editar, setEditar] = useState(false);
   const [state, action, pending] = useActionState(editarFeedbackDiario, undefined);
+  const [editar, setEditar] = useEditorEnLinea(state, pending);
 
   return (
     <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-3 text-sm">
@@ -30,7 +32,7 @@ export function FeedbackDiarioItem({
               {editar ? "close" : "edit"}
             </span>
           </button>
-          <form action={eliminarFeedbackDiario}>
+          <ConfirmForm action={eliminarFeedbackDiario} mensaje="¿Eliminar este feedback?">
             <input type="hidden" name="id_feedback_diario" value={id} />
             <button
               type="submit"
@@ -39,7 +41,7 @@ export function FeedbackDiarioItem({
             >
               <span className="material-symbols-outlined text-[16px]">delete</span>
             </button>
-          </form>
+          </ConfirmForm>
         </div>
       </div>
 

@@ -1,11 +1,13 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
 import {
   actualizarEjercicioPrograma,
   eliminarEjercicioPrograma,
   moverEjercicioPrograma,
 } from "@/app/actions/coach";
+import { ConfirmForm } from "@/components/confirm-form";
+import { useEditorEnLinea } from "@/lib/use-editor-en-linea";
 
 export type EjercicioProgramaData = {
   id_ejercicio_programa: string;
@@ -31,16 +33,13 @@ export function EjercicioProgramaItem({
   esPrimero: boolean;
   esUltimo: boolean;
 }) {
-  const [editando, setEditando] = useState(false);
   const [state, action, pending] = useActionState(actualizarEjercicioPrograma, undefined);
+  const [editando, setEditando] = useEditorEnLinea(state, pending);
 
   if (editando) {
     return (
       <form
-        action={async (formData) => {
-          await action(formData);
-          setEditando(false);
-        }}
+        action={action}
         className="flex flex-col gap-2 bg-[#131313] border border-primary-container/40 rounded-lg p-3"
       >
         <input type="hidden" name="id_ejercicio_programa" value={ejercicio.id_ejercicio_programa} />
@@ -174,7 +173,7 @@ export function EjercicioProgramaItem({
         >
           <span className="material-symbols-outlined text-[18px]">edit</span>
         </button>
-        <form action={eliminarEjercicioPrograma}>
+        <ConfirmForm action={eliminarEjercicioPrograma} mensaje={`¿Quitar "${ejercicio.nombre}" del bloque?`}>
           <input type="hidden" name="id_ejercicio_programa" value={ejercicio.id_ejercicio_programa} />
           <button
             type="submit"
@@ -183,7 +182,7 @@ export function EjercicioProgramaItem({
           >
             <span className="material-symbols-outlined text-[18px]">delete</span>
           </button>
-        </form>
+        </ConfirmForm>
       </div>
     </div>
   );

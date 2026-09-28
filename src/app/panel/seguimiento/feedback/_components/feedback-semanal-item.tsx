@@ -1,7 +1,9 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
 import { editarFeedbackSemanal, eliminarFeedbackSemanal } from "@/app/actions/alumno";
+import { useEditorEnLinea } from "@/lib/use-editor-en-linea";
+import { ConfirmForm } from "@/components/confirm-form";
 
 export function FeedbackSemanalItem({
   id,
@@ -14,8 +16,8 @@ export function FeedbackSemanalItem({
   comentario: string;
   respuesta?: string | null;
 }) {
-  const [editar, setEditar] = useState(false);
   const [state, action, pending] = useActionState(editarFeedbackSemanal, undefined);
+  const [editar, setEditar] = useEditorEnLinea(state, pending);
 
   return (
     <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-3 text-sm">
@@ -32,7 +34,7 @@ export function FeedbackSemanalItem({
               {editar ? "close" : "edit"}
             </span>
           </button>
-          <form action={eliminarFeedbackSemanal}>
+          <ConfirmForm action={eliminarFeedbackSemanal} mensaje="¿Eliminar este feedback semanal?">
             <input type="hidden" name="id_feedback_semanal" value={id} />
             <button
               type="submit"
@@ -41,7 +43,7 @@ export function FeedbackSemanalItem({
             >
               <span className="material-symbols-outlined text-[16px]">delete</span>
             </button>
-          </form>
+          </ConfirmForm>
         </div>
       </div>
 

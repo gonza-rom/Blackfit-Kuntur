@@ -2,6 +2,8 @@
 
 import { useActionState, useState } from "react";
 import { editarProgresoFisico, eliminarProgresoFisico } from "@/app/actions/alumno";
+import { useEditorEnLinea } from "@/lib/use-editor-en-linea";
+import { ConfirmForm } from "@/components/confirm-form";
 
 const INPUT =
   "w-full bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface text-sm p-2 transition-colors";
@@ -23,9 +25,9 @@ export function ProgresoFisicoItem({
   extra?: { label: string; valor: string }[];
   cargadoPorCoach?: boolean;
 }) {
-  const [editar, setEditar] = useState(false);
   const [verMas, setVerMas] = useState(false);
   const [state, action, pending] = useActionState(editarProgresoFisico, undefined);
+  const [editar, setEditar] = useEditorEnLinea(state, pending);
 
   return (
     <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-3 text-sm">
@@ -56,7 +58,7 @@ export function ProgresoFisicoItem({
               {editar ? "close" : "edit"}
             </span>
           </button>
-          <form action={eliminarProgresoFisico}>
+          <ConfirmForm action={eliminarProgresoFisico} mensaje="¿Eliminar este registro de progreso?">
             <input type="hidden" name="id_progreso" value={id} />
             <button
               type="submit"
@@ -65,7 +67,7 @@ export function ProgresoFisicoItem({
             >
               <span className="material-symbols-outlined text-[16px]">delete</span>
             </button>
-          </form>
+          </ConfirmForm>
         </div>
       </div>
 

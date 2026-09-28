@@ -2,6 +2,8 @@
 
 import { useActionState, useState } from "react";
 import { editarMedidaCorporal, eliminarMedidaCorporal } from "@/app/actions/alumno";
+import { useEditorEnLinea } from "@/lib/use-editor-en-linea";
+import { ConfirmForm } from "@/components/confirm-form";
 
 const INPUT =
   "w-full bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface text-sm p-2 transition-colors";
@@ -19,9 +21,9 @@ export function MedidaCorporalItem({
   valorCm: string;
   fotoUrl: string | null;
 }) {
-  const [editar, setEditar] = useState(false);
   const [ampliada, setAmpliada] = useState(false);
   const [state, action, pending] = useActionState(editarMedidaCorporal, undefined);
+  const [editar, setEditar] = useEditorEnLinea(state, pending);
 
   return (
     <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-3 text-sm">
@@ -59,7 +61,7 @@ export function MedidaCorporalItem({
               {editar ? "close" : "edit"}
             </span>
           </button>
-          <form action={eliminarMedidaCorporal}>
+          <ConfirmForm action={eliminarMedidaCorporal} mensaje="¿Eliminar esta medida?">
             <input type="hidden" name="id_medida" value={id} />
             <button
               type="submit"
@@ -68,7 +70,7 @@ export function MedidaCorporalItem({
             >
               <span className="material-symbols-outlined text-[16px]">delete</span>
             </button>
-          </form>
+          </ConfirmForm>
         </div>
       </div>
 

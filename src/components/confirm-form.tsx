@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useFormStatus } from "react-dom";
 
 // Reemplazo de `<form onSubmit={() => confirm(...)}>` por un modal propio,
 // con el mismo lenguaje visual del resto de la app (en vez del diálogo
@@ -34,8 +35,11 @@ import { useEffect, useRef, useState } from "react";
 // se cierra solo cuando pasa de true a false — o sea, cuando la acción ya
 // terminó. Si la acción hace redirect() en el éxito, todo el árbol se
 // desmonta solo y esto ni corre. Para acciones sin useActionState (sin
-// path de error, siempre terminan en redirect), `pending` queda undefined
-// y no hace falta.
+// `pending` del llamador), <BotonConfirmar> observa el envío del form del
+// modal con useFormStatus y cierra el modal al terminar — antes quedaba
+// abierto para siempre si la acción no redirigía. También deshabilita el
+// botón mientras se envía, para que un doble click no dispare la acción dos
+// veces.
 export function ConfirmForm({
   action,
   mensaje,
@@ -127,16 +131,31 @@ export function ConfirmForm({
               >
                 {cancelLabel}
               </button>
-              <button
-                type="submit"
-                className="font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] uppercase px-4 py-2 rounded-full bg-[#ffb4ab] text-[#3a0a09] hover:opacity-90 transition-opacity"
-              >
-                {confirmLabel}
-              </button>
+              <BotonConfirmar label={confirmLabel} onTerminar={() => setCampos(null)} />
             </form>
           </div>
         </div>
       )}
     </>
+  );
+}
+
+function BotonConfirmar({ label, onTerminar }: { label: string; onTerminar: () => void }) {
+  const { pending } = useFormStatus();
+  const eraPending = useRef(false);
+
+  useEffect(() => {
+    if (eraPending.current && !pending) onTerminar();
+    eraPending.current = pending;
+  }, [pending, onTerminar]);
+
+  return (
+    <button
+      type="submit"
+      disabled={pending}
+      className="font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] uppercase px-4 py-2 rounded-full bg-[#ffb4ab] text-[#3a0a09] hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-wait"
+    >
+      {pending ? "Procesando..." : label}
+    </button>
   );
 }

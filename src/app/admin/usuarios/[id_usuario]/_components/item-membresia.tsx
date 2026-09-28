@@ -1,12 +1,13 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
 import {
   cambiarEstadoMembresia,
   editarMembresia,
   eliminarMembresia,
 } from "@/app/actions/admin";
 import { ConfirmForm } from "@/components/confirm-form";
+import { useEditorEnLinea } from "@/lib/use-editor-en-linea";
 
 const ESTADOS_MEMBRESIA = ["activa", "vencida", "cancelada", "suspendida", "pendiente"] as const;
 
@@ -32,8 +33,8 @@ function aFechaInput(fecha: Date): string {
 }
 
 export function ItemMembresia({ membresia, planes }: { membresia: Membresia; planes: Plan[] }) {
-  const [editando, setEditando] = useState(false);
   const [estadoEdit, accionEdit, pendingEdit] = useActionState(editarMembresia, undefined);
+  const [editando, setEditando] = useEditorEnLinea(estadoEdit, pendingEdit);
   const [estadoDelete, accionDelete, pendingDelete] = useActionState(eliminarMembresia, undefined);
 
   return (
@@ -49,6 +50,7 @@ export function ItemMembresia({ membresia, planes }: { membresia: Membresia; pla
         <input type="hidden" name="id_membresia" value={membresia.id_membresia} />
         <select
           name="estado_membresia"
+          key={membresia.estado_membresia}
           defaultValue={membresia.estado_membresia}
           className="bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface text-xs p-2"
         >

@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { crearObjetivo, actualizarObjetivo, eliminarObjetivo } from "@/app/actions/coach";
 import { ConfirmForm } from "@/components/confirm-form";
+import { useEditorEnLinea } from "@/lib/use-editor-en-linea";
 
 export type ObjetivoSerializado = {
   id_objetivo: string;
@@ -149,8 +150,8 @@ export function ObjetivosAlumno({
 }
 
 function ObjetivoItem({ objetivo }: { objetivo: ObjetivoSerializado }) {
-  const [editar, setEditar] = useState(false);
   const [state, action, pending] = useActionState(actualizarObjetivo, undefined);
+  const [editar, setEditar] = useEditorEnLinea(state, pending);
 
   const pct =
     objetivo.meta > 0

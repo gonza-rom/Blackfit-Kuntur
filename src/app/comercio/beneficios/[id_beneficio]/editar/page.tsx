@@ -48,6 +48,7 @@ export default async function EditarBeneficioComercioPage(
             <input type="hidden" name="id_beneficio" value={id_beneficio} />
             <select
               name="estado"
+              key={beneficio.estado}
               defaultValue={beneficio.estado}
               className="bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface text-sm p-2.5"
             >

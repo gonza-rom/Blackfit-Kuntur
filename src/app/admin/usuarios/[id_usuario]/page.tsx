@@ -128,6 +128,7 @@ export default async function AdminUsuarioDetallePage(
             <input type="hidden" name="id_usuario" value={id_usuario} />
             <select
               name="estado_usuario"
+              key={usuario.estado_usuario}
               defaultValue={usuario.estado_usuario}
               className="bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface text-xs p-2"
             >
