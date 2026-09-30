@@ -29,7 +29,7 @@ export default async function HistorialPage() {
   const entrenamientosAgrupados = entrenamientos.map((entrenamiento) => {
     const porEjercicio = new Map<
       string,
-      { nombre: string; sets: { numero_serie: number | null; peso: number | null; reps: number | null }[] }
+      { nombre: string; sets: { numero_serie: number | null; numero_ronda: number | null; peso: number | null; reps: number | null }[] }
     >();
     for (const serie of entrenamiento.series) {
       const grupo = porEjercicio.get(serie.id_ejercicio_programa) ?? {
@@ -38,6 +38,7 @@ export default async function HistorialPage() {
       };
       grupo.sets.push({
         numero_serie: serie.numero_serie,
+        numero_ronda: serie.numero_ronda,
         peso: serie.peso_utilizado ? Number(serie.peso_utilizado) : null,
         reps: serie.repeticiones_realizadas,
       });
@@ -117,7 +118,7 @@ export default async function HistorialPage() {
                             key={j}
                             className="font-[family-name:var(--font-jetbrains-mono)] text-xs bg-[#262626] rounded px-2 py-1 text-on-surface-variant tabular-nums"
                           >
-                            Serie {set.numero_serie ?? j + 1} → {set.peso ?? "—"}
+                            {set.numero_ronda ? `Ronda ${set.numero_ronda}` : `Serie ${set.numero_serie ?? j + 1}`} → {set.peso ?? "—"}
                             {set.peso != null ? "kg" : ""} × {set.reps ?? "—"}
                           </span>
                         ))}

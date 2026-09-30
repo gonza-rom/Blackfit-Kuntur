@@ -332,8 +332,35 @@ model BloqueEntrenamiento {
 
   programa         ProgramaEntrenamiento @relation(fields: [id_programa], references: [id_programa], onDelete: Cascade)
   ejercicios_programa EjercicioPrograma[]
+  grupos           GrupoEjercicios[]
 
   @@map("bloques_entrenamiento")
+}
+
+// Bloque de ejercicios DENTRO de un día (superserie, triserie, circuito):
+// los ejercicios se hacen uno tras otro, por rondas. Ojo con el nombre:
+// BloqueEntrenamiento es el DÍA de la planificación (histórico), esto es
+// la agrupación de ejercicios dentro de ese día. El tipo (superserie = 2,
+// triserie = 3, circuito = 4+) nunca se guarda: se deduce de la cantidad
+// de ejercicios (ver tipoDeBloque en lib/plan-dia.ts), así no puede
+// quedar desincronizado. Cada ejercicio sigue siendo su propio
+// EjercicioPrograma con sus reps/peso — el grupo solo aporta la
+// configuración común.
+model GrupoEjercicios {
+  id_grupo                  String  @id @default(uuid())
+  id_bloque                 String
+  nombre                    String? // opcional — si falta se muestra "Bloque A/B/C..."
+  rondas                    Int
+  descanso_entre_ejercicios String?
+  descanso_entre_rondas     String?
+  tempo                     String?
+  nota                      String?
+
+  bloque      BloqueEntrenamiento @relation(fields: [id_bloque], references: [id_bloque], onDelete: Cascade)
+  ejercicios  EjercicioPrograma[]
+
+  @@index([id_bloque])
+  @@map("grupos_ejercicios")
 }
 
 model Ejercicio {
@@ -376,10 +403,20 @@ model EjercicioPrograma {
   tiempo_bajo_tension_sugerido Int? // segundos, nunca obligatorio
   nota                     String?
   orden                    Int
+  // Bloque (superserie/circuito) al que pertenece dentro del día. Nulo =
+  // ejercicio individual. Si pertenece a uno, `series` = rondas del grupo.
+  id_grupo                 String?
+  // true = el coach lo sacó del plan pero el alumno ya había registrado
+  // series con él: no se puede borrar sin perder historial/PR, así que se
+  // oculta del plan y se conserva para el historial.
+  archivado                Boolean  @default(false)
 
   bloque       BloqueEntrenamiento @relation(fields: [id_bloque], references: [id_bloque], onDelete: Cascade)
   ejercicio    Ejercicio           @relation(fields: [id_ejercicio], references: [id_ejercicio])
+  grupo        GrupoEjercicios?    @relation(fields: [id_grupo], references: [id_grupo], onDelete: SetNull)
   series_registradas SerieEntrenamiento[]
+
+  @@index([id_grupo])
 
   @@map("ejercicios_programa")
 }
@@ -425,6 +462,9 @@ model SerieEntrenamiento {
   // creadas antes de este campo, que guardaban un solo valor agregado por
   // ejercicio — ahí se sigue mostrando como una sola fila sin numerar.
   numero_serie            Int?
+  // Ronda del bloque (superserie/circuito) en la que se hizo. Nulo en
+  // ejercicios individuales y en filas viejas.
+  numero_ronda            Int?
   peso_utilizado          Decimal? @db.Decimal(6, 2)
   repeticiones_realizadas Int?
   series_completadas      Int?

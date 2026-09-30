@@ -24,6 +24,13 @@ import type { CampoComposicionCorporal } from "@/lib/composicion-corporal";
 import { subirFotoProgreso } from "@/lib/storage";
 import { extraerComposicionDeTexto, extraerFechaDeTexto } from "@/lib/parseo-composicion-corporal";
 import { registrarAuditoria } from "@/lib/auditoria";
+import {
+  obtenerOCrearDia,
+  guardarContenidoDia,
+  clonarEjerciciosEnDia,
+  INCLUDE_DIA_CLONABLE,
+  type ItemDiaEntrada,
+} from "@/lib/plan-dia-server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { emailSinteticoAlumno } from "@/lib/importarBeneficiarios";
 
@@ -670,9 +677,7 @@ export async function aplicarPlantilla(
   const [plantilla, relacion] = await Promise.all([
     prisma.programaEntrenamiento.findUnique({
       where: { id_programa: id_plantilla },
-      include: {
-        bloques: { include: { ejercicios_programa: true }, orderBy: { orden: "asc" } },
-      },
+      include: { bloques: { include: INCLUDE_DIA_CLONABLE, orderBy: { orden: "asc" } } },
     }),
     prisma.relacionEntrenadorAlumno.findUnique({
       where: {
@@ -694,38 +699,24 @@ export async function aplicarPlantilla(
 
   await finalizarProgramaActivoPrevio(id_alumno);
 
-  const programa = await prisma.programaEntrenamiento.create({
-    data: {
-      id_alumno,
-      id_entrenador: contexto.id_entrenador,
-      nombre: plantilla.nombre,
-      descripcion: plantilla.descripcion,
-      objetivo: plantilla.objetivo,
-      fecha_inicio: fecha_inicioRaw ? new Date(fecha_inicioRaw) : new Date(),
-      estado_programa: "activo",
-      bloques: {
-        create: plantilla.bloques.map((b) => ({
-          nombre: b.nombre,
-          orden: b.orden,
-          semana_inicio: b.semana_inicio,
-          semana_fin: b.semana_fin,
-          tipo: b.tipo,
-          ejercicios_programa: {
-            create: b.ejercicios_programa.map((ep) => ({
-              id_ejercicio: ep.id_ejercicio,
-              series: ep.series,
-              repeticiones: ep.repeticiones,
-              peso_sugerido: ep.peso_sugerido,
-              tempo: ep.tempo,
-              descanso: ep.descanso,
-              metodo_entrenamiento: ep.metodo_entrenamiento,
-              tiempo_bajo_tension_sugerido: ep.tiempo_bajo_tension_sugerido,
-              orden: ep.orden,
-            })),
-          },
-        })),
+  // Se clona día por día (con sus bloques/superseries) dentro de una
+  // transacción, en vez de un create anidado: los bloques necesitan su
+  // id nuevo antes de poder colgarles los ejercicios.
+  const programa = await prisma.$transaction(async (tx) => {
+    const nuevo = await tx.programaEntrenamiento.create({
+      data: {
+        id_alumno,
+        id_entrenador: contexto.id_entrenador,
+        nombre: plantilla.nombre,
+        descripcion: plantilla.descripcion,
+        objetivo: plantilla.objetivo,
+        tipo_planificacion: plantilla.tipo_planificacion,
+        fecha_inicio: fecha_inicioRaw ? new Date(fecha_inicioRaw) : new Date(),
+        estado_programa: "activo",
       },
-    },
+    });
+    await clonarDiasDePrograma(tx, nuevo.id_programa, plantilla.bloques);
+    return nuevo;
   });
 
   await crearNotificacion({
@@ -758,50 +749,54 @@ export async function guardarComoPlantilla(
 
   const programa = await prisma.programaEntrenamiento.findUnique({
     where: { id_programa },
-    include: {
-      bloques: { include: { ejercicios_programa: true }, orderBy: { orden: "asc" } },
-    },
+    include: { bloques: { include: INCLUDE_DIA_CLONABLE, orderBy: { orden: "asc" } } },
   });
 
   if (!programa || programa.id_entrenador !== contexto.id_entrenador || programa.es_plantilla) {
     return { error: "No autorizado sobre este programa." };
   }
 
-  const plantilla = await prisma.programaEntrenamiento.create({
-    data: {
-      id_entrenador: contexto.id_entrenador,
-      nombre: programa.nombre,
-      descripcion: programa.descripcion,
-      objetivo: programa.objetivo,
-      fecha_inicio: new Date(),
-      es_plantilla: true,
-      bloques: {
-        create: programa.bloques.map((b) => ({
-          nombre: b.nombre,
-          orden: b.orden,
-          semana_inicio: b.semana_inicio,
-          semana_fin: b.semana_fin,
-          tipo: b.tipo,
-          ejercicios_programa: {
-            create: b.ejercicios_programa.map((ep) => ({
-              id_ejercicio: ep.id_ejercicio,
-              series: ep.series,
-              repeticiones: ep.repeticiones,
-              peso_sugerido: ep.peso_sugerido,
-              tempo: ep.tempo,
-              descanso: ep.descanso,
-              metodo_entrenamiento: ep.metodo_entrenamiento,
-              tiempo_bajo_tension_sugerido: ep.tiempo_bajo_tension_sugerido,
-              orden: ep.orden,
-            })),
-          },
-        })),
+  const plantilla = await prisma.$transaction(async (tx) => {
+    const nueva = await tx.programaEntrenamiento.create({
+      data: {
+        id_entrenador: contexto.id_entrenador,
+        nombre: programa.nombre,
+        descripcion: programa.descripcion,
+        objetivo: programa.objetivo,
+        tipo_planificacion: programa.tipo_planificacion,
+        fecha_inicio: new Date(),
+        es_plantilla: true,
       },
-    },
+    });
+    await clonarDiasDePrograma(tx, nueva.id_programa, programa.bloques);
+    return nueva;
   });
 
   await avisar("Programa guardado como plantilla.");
   redirect(`/coach/programas/plantillas/${plantilla.id_programa}`);
+}
+
+// Copia todos los días de un programa a otro (plantilla ⇄ programa real)
+// conservando semanas, día de la semana y bloques/superseries.
+async function clonarDiasDePrograma(
+  tx: Prisma.TransactionClient,
+  id_programa_destino: string,
+  bloques: Prisma.BloqueEntrenamientoGetPayload<{ include: typeof INCLUDE_DIA_CLONABLE }>[]
+) {
+  for (const b of bloques) {
+    const nuevo = await tx.bloqueEntrenamiento.create({
+      data: {
+        id_programa: id_programa_destino,
+        nombre: b.nombre,
+        orden: b.orden,
+        semana_inicio: b.semana_inicio,
+        semana_fin: b.semana_fin,
+        tipo: b.tipo,
+        dia_semana: b.dia_semana,
+      },
+    });
+    await clonarEjerciciosEnDia(tx, nuevo.id_bloque, b.ejercicios_programa, b.grupos);
+  }
 }
 
 // ------------------------------------------------------------
@@ -964,17 +959,6 @@ export async function eliminarGrupoSemanas(
   return undefined;
 }
 
-export type EjercicioDiaEntrada = {
-  id_ejercicio: string;
-  series: string;
-  repeticiones: string;
-  peso_sugerido: string;
-  descanso: string;
-  tempo: string;
-  metodo_entrenamiento: string;
-  tiempo_bajo_tension_sugerido: string;
-  nota: string;
-};
 
 export type EstadoDiaPlan = { error?: string; message?: string } | undefined;
 
@@ -997,9 +981,10 @@ export async function guardarDiaPlan(
   const semana_fin = Number(formData.get("semana_fin") ?? "");
   const dia_semana = String(formData.get("dia_semana") ?? "") as DiaSemana;
 
-  let entradas: EjercicioDiaEntrada[];
+  let items: ItemDiaEntrada[];
   try {
-    entradas = JSON.parse(String(formData.get("entradas") ?? "[]"));
+    items = JSON.parse(String(formData.get("items") ?? "[]"));
+    if (!Array.isArray(items)) throw new Error();
   } catch {
     return { error: "Datos inválidos." };
   }
@@ -1019,65 +1004,96 @@ export async function guardarDiaPlan(
   }
   const id_alumno = programa.id_alumno;
 
-  const validas = entradas.filter((e) => e.id_ejercicio && e.series && e.repeticiones);
-
-  try {
-    await prisma.$transaction(async (tx) => {
-      // No hay @@unique sobre (id_programa, semana_inicio, semana_fin,
-      // dia_semana), así que "encontrar o crear" el bloque del día se
-      // resuelve a mano en vez de con upsert.
-      const existente = await tx.bloqueEntrenamiento.findFirst({
-        where: { id_programa, semana_inicio, semana_fin, dia_semana },
-      });
-      const bloque =
-        existente ??
-        (await tx.bloqueEntrenamiento.create({
-          data: {
-            id_programa,
-            nombre: ETIQUETA_DIA[dia_semana],
-            orden: DIAS_SEMANA.indexOf(dia_semana),
-            semana_inicio,
-            semana_fin,
-            dia_semana,
-          },
-        }));
-
-      await tx.ejercicioPrograma.deleteMany({ where: { id_bloque: bloque.id_bloque } });
-
-      let orden = 1;
-      for (const e of validas) {
-        await tx.ejercicioPrograma.create({
-          data: {
-            id_bloque: bloque.id_bloque,
-            id_ejercicio: e.id_ejercicio,
-            series: Number(e.series) || 1,
-            repeticiones: e.repeticiones,
-            peso_sugerido: e.peso_sugerido || null,
-            descanso: e.descanso || null,
-            tempo: e.tempo || null,
-            metodo_entrenamiento: e.metodo_entrenamiento || null,
-            tiempo_bajo_tension_sugerido: e.tiempo_bajo_tension_sugerido
-              ? Number(e.tiempo_bajo_tension_sugerido) || null
-              : null,
-            nota: e.nota || null,
-            orden: orden++,
-          },
-        });
-      }
-    });
-  } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
-      return {
-        error:
-          "Este día ya tiene entrenamientos reales registrados por el alumno — no se puede reemplazar la lista de ejercicios sin perder ese historial. Armá una semana nueva para el cambio en vez de editar esta.",
-      };
-    }
-    throw err;
+  // Todos los ejercicios tienen que existir en la biblioteca — mejor un
+  // mensaje claro acá que un error de FK a mitad de la transacción.
+  const idsEjercicio = new Set(
+    items
+      .flatMap((item) =>
+        item.tipo === "grupo" ? item.ejercicios.map((e) => e.id_ejercicio) : [item.ejercicio.id_ejercicio]
+      )
+      .filter(Boolean)
+  );
+  const encontrados = await prisma.ejercicio.count({
+    where: { id_ejercicio: { in: [...idsEjercicio] } },
+  });
+  if (encontrados !== idsEjercicio.size) {
+    return { error: "Algún ejercicio ya no existe en la biblioteca. Elegilo de nuevo." };
+  }
+  const bloqueSinEjercicios = items.some(
+    (item) => item.tipo === "grupo" && !item.ejercicios.some((e) => e.id_ejercicio)
+  );
+  if (bloqueSinEjercicios) {
+    return { error: "Hay un bloque sin ejercicios. Agregale al menos uno o quitalo." };
   }
 
-  await avisar("Día guardado.");
+  await prisma.$transaction(async (tx) => {
+    const dia = await obtenerOCrearDia(tx, id_programa, semana_inicio, semana_fin, dia_semana);
+    await guardarContenidoDia(tx, dia.id_bloque, items);
+  });
+
+  await avisar("Día guardado. El alumno ya ve los cambios.");
   revalidatePath(`/coach/alumnos/${id_alumno}`);
+  revalidatePath("/panel");
+  revalidatePath("/panel/entrenamientos");
   redirect(`/coach/alumnos/${id_alumno}?tab=planificacion`);
+}
+
+// Copia un bloque (superserie/triserie/circuito) ya guardado a otro día
+// y/o semana del mismo programa, a continuación de lo que ese día ya
+// tenga. Se llama directo desde el editor del día (no es un <form>: vive
+// dentro del form grande del editor).
+export async function copiarBloqueADia(datos: {
+  id_grupo: string;
+  semana_inicio: number;
+  semana_fin: number;
+  dia_semana: string;
+}): Promise<EstadoCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const { id_grupo, semana_inicio, semana_fin } = datos;
+  const dia_semana = datos.dia_semana as DiaSemana;
+  if (
+    !id_grupo ||
+    !DIAS_SEMANA.includes(dia_semana) ||
+    !Number.isInteger(semana_inicio) ||
+    !Number.isInteger(semana_fin) ||
+    semana_inicio < 1 ||
+    semana_fin > 4 ||
+    semana_inicio > semana_fin
+  ) {
+    return { error: "Elegí un día y una semana válidos." };
+  }
+
+  const grupo = await prisma.grupoEjercicios.findUnique({
+    where: { id_grupo },
+    include: {
+      bloque: { include: { programa: true } },
+      ejercicios: { where: { archivado: false }, orderBy: { orden: "asc" } },
+    },
+  });
+  if (!grupo || grupo.bloque.programa.id_entrenador !== contexto.id_entrenador) {
+    return { error: "No autorizado sobre este bloque." };
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const destino = await obtenerOCrearDia(
+      tx,
+      grupo.bloque.id_programa,
+      semana_inicio,
+      semana_fin,
+      dia_semana
+    );
+    await clonarEjerciciosEnDia(tx, destino.id_bloque, grupo.ejercicios, [grupo]);
+  });
+
+  const semanas =
+    semana_inicio === semana_fin ? `semana ${semana_inicio}` : `semanas ${semana_inicio}-${semana_fin}`;
+  await avisar(`Bloque copiado a ${ETIQUETA_DIA[dia_semana]} (${semanas}).`);
+  if (grupo.bloque.programa.id_alumno) {
+    revalidatePath(`/coach/alumnos/${grupo.bloque.programa.id_alumno}`);
+  }
+  return { message: "Bloque copiado." };
 }
 
 export async function crearBloque(
@@ -1159,8 +1175,9 @@ export async function crearEjercicioPrograma(
     return { error: "No autorizado sobre este bloque." };
   }
 
-  const cantidadEjercicios = await prisma.ejercicioPrograma.count({
+  const ultimo = await prisma.ejercicioPrograma.aggregate({
     where: { id_bloque },
+    _max: { orden: true },
   });
 
   await prisma.ejercicioPrograma.create({
@@ -1174,7 +1191,7 @@ export async function crearEjercicioPrograma(
       descanso,
       metodo_entrenamiento,
       tiempo_bajo_tension_sugerido: tutRaw ? Number(tutRaw) : null,
-      orden: cantidadEjercicios + 1,
+      orden: (ultimo._max.orden ?? 0) + 1,
     },
   });
 
@@ -1257,7 +1274,10 @@ export async function eliminarEjercicioPrograma(formData: FormData): Promise<voi
 
   const existente = await prisma.ejercicioPrograma.findUnique({
     where: { id_ejercicio_programa },
-    include: { bloque: { include: { programa: true } } },
+    include: {
+      bloque: { include: { programa: true } },
+      _count: { select: { series_registradas: true } },
+    },
   });
   if (
     !existente ||
@@ -1267,7 +1287,16 @@ export async function eliminarEjercicioPrograma(formData: FormData): Promise<voi
     return;
   }
 
-  await prisma.ejercicioPrograma.delete({ where: { id_ejercicio_programa } });
+  // Con series ya registradas no se puede borrar sin perder historial y
+  // PR del alumno: se archiva (desaparece del plan, queda en el historial).
+  if (existente._count.series_registradas > 0) {
+    await prisma.ejercicioPrograma.update({
+      where: { id_ejercicio_programa },
+      data: { archivado: true, id_grupo: null },
+    });
+  } else {
+    await prisma.ejercicioPrograma.delete({ where: { id_ejercicio_programa } });
+  }
   await avisar("Ejercicio quitado del bloque.", "eliminado");
   revalidatePath(`/coach/programas/${existente.bloque.id_programa}`);
 }
@@ -1294,7 +1323,7 @@ export async function moverEjercicioPrograma(formData: FormData): Promise<void> 
   }
 
   const hermanos = await prisma.ejercicioPrograma.findMany({
-    where: { id_bloque: actual.id_bloque },
+    where: { id_bloque: actual.id_bloque, archivado: false },
     orderBy: { orden: "asc" },
   });
   const idx = hermanos.findIndex((e) => e.id_ejercicio_programa === id_ejercicio_programa);
@@ -1327,7 +1356,18 @@ export async function eliminarBloque(formData: FormData): Promise<void> {
   const bloque = await bloqueDelEntrenador(id_bloque, contexto.id_entrenador);
   if (!bloque) return;
 
-  await prisma.bloqueEntrenamiento.delete({ where: { id_bloque } });
+  try {
+    await prisma.bloqueEntrenamiento.delete({ where: { id_bloque } });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
+      await avisar(
+        "No se puede eliminar: el alumno ya registró entrenamientos en este bloque. Quitale los ejercicios en vez de borrarlo.",
+        "info"
+      );
+      return;
+    }
+    throw err;
+  }
   await avisar("Bloque eliminado.", "eliminado");
   revalidatePath(`/coach/programas/${bloque.id_programa}`);
 }
@@ -1348,7 +1388,7 @@ export async function duplicarBloque(formData: FormData): Promise<void> {
 
   const original = await prisma.bloqueEntrenamiento.findUnique({
     where: { id_bloque },
-    include: { programa: true, ejercicios_programa: { orderBy: { orden: "asc" } } },
+    include: { programa: true, ...INCLUDE_DIA_CLONABLE },
   });
   if (
     !original ||
@@ -1366,31 +1406,21 @@ export async function duplicarBloque(formData: FormData): Promise<void> {
       ? original.semana_fin - original.semana_inicio + 1
       : null;
 
-  await prisma.bloqueEntrenamiento.create({
-    data: {
-      id_programa: original.id_programa,
-      nombre: `${original.nombre} (copia)`,
-      orden: cantidadBloques + 1,
-      tipo: original.tipo,
-      semana_inicio: original.semana_fin != null ? original.semana_fin + 1 : null,
-      semana_fin:
-        original.semana_fin != null && duracionSemanas != null
-          ? original.semana_fin + duracionSemanas
-          : null,
-      ejercicios_programa: {
-        create: original.ejercicios_programa.map((ep) => ({
-          id_ejercicio: ep.id_ejercicio,
-          series: ep.series,
-          repeticiones: ep.repeticiones,
-          peso_sugerido: ep.peso_sugerido,
-          tempo: ep.tempo,
-          descanso: ep.descanso,
-          metodo_entrenamiento: ep.metodo_entrenamiento,
-          tiempo_bajo_tension_sugerido: ep.tiempo_bajo_tension_sugerido,
-          orden: ep.orden,
-        })),
+  await prisma.$transaction(async (tx) => {
+    const copia = await tx.bloqueEntrenamiento.create({
+      data: {
+        id_programa: original.id_programa,
+        nombre: `${original.nombre} (copia)`,
+        orden: cantidadBloques + 1,
+        tipo: original.tipo,
+        semana_inicio: original.semana_fin != null ? original.semana_fin + 1 : null,
+        semana_fin:
+          original.semana_fin != null && duracionSemanas != null
+            ? original.semana_fin + duracionSemanas
+            : null,
       },
-    },
+    });
+    await clonarEjerciciosEnDia(tx, copia.id_bloque, original.ejercicios_programa, original.grupos);
   });
 
   await avisar("Bloque duplicado.");

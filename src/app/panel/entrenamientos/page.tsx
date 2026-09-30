@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoActual } from "@/lib/auth";
 import { obtenerProgramaActivo, calcularBloqueActual } from "@/lib/alumno";
 import { FilterChips } from "./_components/filter-chips";
+import { resumenDia } from "@/lib/plan-dia";
 
 type EntrenamientoItem = {
   id_entrenamiento: string;
@@ -92,7 +93,7 @@ export default async function EntrenamientosPage() {
                     <span className="material-symbols-outlined text-[16px]">
                       fitness_center
                     </span>
-                    {bloqueActual.ejercicios_programa.length} ejercicios
+                    {resumenDia(bloqueActual.ejercicios_programa)}
                     {bloqueActual.tipo && (
                       <>
                         <span className="w-1 h-1 rounded-full bg-outline-variant mx-1" />
@@ -196,7 +197,7 @@ export default async function EntrenamientosPage() {
                     <p className="font-[family-name:var(--font-inter)] text-[12px] text-on-surface-variant">
                       {bloque.semana_inicio && bloque.semana_fin
                         ? `Semana ${bloque.semana_inicio}-${bloque.semana_fin}`
-                        : `${bloque.ejercicios_programa.length} ejercicios`}
+                        : resumenDia(bloque.ejercicios_programa)}
                     </p>
                   </div>
                   <span className="material-symbols-outlined text-on-surface-variant text-[20px]">

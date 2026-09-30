@@ -8,7 +8,7 @@ import { eliminarBloque, duplicarBloque } from "@/app/actions/coach";
 // depende de que el programa tenga alumno.
 import { FormNuevoBloque } from "../../[id_programa]/_components/form-nuevo-bloque";
 import { FormNuevoEjercicioBloque } from "../../[id_programa]/_components/form-nuevo-ejercicio-bloque";
-import { EjercicioProgramaItem } from "../../[id_programa]/_components/ejercicio-programa-item";
+import { ListaEjerciciosDia } from "../../[id_programa]/_components/lista-ejercicios-dia";
 import { FormAplicarPlantilla } from "./_components/form-aplicar-plantilla";
 import { FormEditarPlantilla } from "./_components/form-editar-plantilla";
 import { ConfirmForm } from "@/components/confirm-form";
@@ -31,9 +31,11 @@ export default async function PlantillaDetallePage(
           orderBy: { orden: "asc" },
           include: {
             ejercicios_programa: {
+              where: { archivado: false },
               orderBy: { orden: "asc" },
               include: { ejercicio: true },
             },
+            grupos: true,
           },
         },
       },
@@ -129,28 +131,7 @@ export default async function PlantillaDetallePage(
               </div>
             </div>
 
-            {bloque.ejercicios_programa.length > 0 && (
-              <div className="flex flex-col gap-1">
-                {bloque.ejercicios_programa.map((ep, idx) => (
-                  <EjercicioProgramaItem
-                    key={ep.id_ejercicio_programa}
-                    ejercicio={{
-                      id_ejercicio_programa: ep.id_ejercicio_programa,
-                      nombre: ep.ejercicio.nombre,
-                      series: ep.series,
-                      repeticiones: ep.repeticiones,
-                      peso_sugerido: ep.peso_sugerido ? ep.peso_sugerido.toString() : null,
-                      tempo: ep.tempo,
-                      descanso: ep.descanso,
-                      metodo_entrenamiento: ep.metodo_entrenamiento,
-                      tiempo_bajo_tension_sugerido: ep.tiempo_bajo_tension_sugerido,
-                    }}
-                    esPrimero={idx === 0}
-                    esUltimo={idx === bloque.ejercicios_programa.length - 1}
-                  />
-                ))}
-              </div>
-            )}
+            <ListaEjerciciosDia ejercicios={bloque.ejercicios_programa} grupos={bloque.grupos} />
 
             <FormNuevoEjercicioBloque idBloque={bloque.id_bloque} biblioteca={bibliotecaSerializable} />
           </div>

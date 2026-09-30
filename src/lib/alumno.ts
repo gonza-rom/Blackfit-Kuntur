@@ -7,9 +7,11 @@ const PROGRAMA_ACTIVO_INCLUDE = {
     orderBy: { orden: "asc" },
     include: {
       ejercicios_programa: {
+        where: { archivado: false },
         orderBy: { orden: "asc" },
         include: { ejercicio: true },
       },
+      grupos: true,
     },
   },
 } satisfies Prisma.ProgramaEntrenamientoInclude;
@@ -207,6 +209,9 @@ export async function obtenerUltimoPR(id_alumno: string): Promise<UltimoPR> {
 export type SerieRegistrada = {
   id_ejercicio_programa: string;
   numero_serie: number | null;
+  // Ronda del bloque (superserie/circuito). Opcional: la cola offline puede
+  // traer sesiones guardadas antes de que existiera este campo.
+  numero_ronda?: number | null;
   peso_utilizado: number | null;
   repeticiones_realizadas: number | null;
   series_completadas: number | null;
@@ -286,6 +291,7 @@ export async function guardarSesionEntrenamiento(
           id_entrenamiento: entrenamiento.id_entrenamiento,
           id_ejercicio_programa: s.id_ejercicio_programa,
           numero_serie: s.numero_serie,
+          numero_ronda: s.numero_ronda ?? null,
           peso_utilizado: s.peso_utilizado,
           repeticiones_realizadas: s.repeticiones_realizadas,
           series_completadas: s.series_completadas,

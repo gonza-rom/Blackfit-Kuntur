@@ -3,7 +3,8 @@ import type { DiaSemana } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
 import { obtenerEjerciciosCatalogoConDefaults } from "@/lib/catalogos";
-import { FormDiaPlan } from "./_components/form-dia-plan";
+import { agruparItemsDia } from "@/lib/plan-dia";
+import { FormDiaPlan, type ItemInicial, type OpcionSemanas } from "./_components/form-dia-plan";
 
 const DIAS_VALIDOS = [
   "lunes",
@@ -48,11 +49,26 @@ export default async function DiaPlanPage(
     notFound();
   }
 
-  const [programa, ejercicioExistente, catalogo] = await Promise.all([
-    prisma.programaEntrenamiento.findUnique({ where: { id_programa } }),
+  const [programa, diaExistente, catalogo] = await Promise.all([
+    prisma.programaEntrenamiento.findUnique({
+      where: { id_programa },
+      include: {
+        bloques: {
+          where: { dia_semana: { not: null } },
+          select: { semana_inicio: true, semana_fin: true },
+        },
+      },
+    }),
     prisma.bloqueEntrenamiento.findFirst({
       where: { id_programa, semana_inicio, semana_fin, dia_semana: dia as DiaSemana },
-      include: { ejercicios_programa: { orderBy: { orden: "asc" }, include: { ejercicio: true } } },
+      include: {
+        ejercicios_programa: {
+          where: { archivado: false },
+          orderBy: { orden: "asc" },
+          include: { ejercicio: true },
+        },
+        grupos: true,
+      },
     }),
     obtenerEjerciciosCatalogoConDefaults(),
   ]);
@@ -70,6 +86,61 @@ export default async function DiaPlanPage(
     include: { usuario: { select: { nombre: true, apellido: true } } },
   });
   if (!alumno) notFound();
+
+  // Semanas a las que se puede copiar un bloque, según el tipo de
+  // planificación del programa (mismo criterio que la pestaña Planificación).
+  let opcionesSemanas: OpcionSemanas[];
+  if (programa.tipo_planificacion === "fija") {
+    opcionesSemanas = [{ semana_inicio: 1, semana_fin: 4, etiqueta: "Semanas 1 a 4" }];
+  } else if (programa.tipo_planificacion === "semanal") {
+    opcionesSemanas = [1, 2, 3, 4].map((s) => ({ semana_inicio: s, semana_fin: s, etiqueta: `Semana ${s}` }));
+  } else {
+    const vistos = new Map<string, OpcionSemanas>();
+    for (const b of [...programa.bloques, { semana_inicio, semana_fin }]) {
+      if (b.semana_inicio == null || b.semana_fin == null) continue;
+      vistos.set(`${b.semana_inicio}-${b.semana_fin}`, {
+        semana_inicio: b.semana_inicio,
+        semana_fin: b.semana_fin,
+        etiqueta:
+          b.semana_inicio === b.semana_fin
+            ? `Semana ${b.semana_inicio}`
+            : `Semanas ${b.semana_inicio} a ${b.semana_fin}`,
+      });
+    }
+    opcionesSemanas = [...vistos.values()].sort((a, b) => a.semana_inicio - b.semana_inicio);
+  }
+
+  const aFila = (ep: NonNullable<typeof diaExistente>["ejercicios_programa"][number]) => ({
+    id_ejercicio_programa: ep.id_ejercicio_programa,
+    id_ejercicio: ep.id_ejercicio,
+    nombre: ep.ejercicio.nombre,
+    series: String(ep.series),
+    repeticiones: ep.repeticiones,
+    peso_sugerido: ep.peso_sugerido?.toString() ?? "",
+    descanso: ep.descanso ?? "",
+    tempo: ep.tempo ?? "",
+    metodo_entrenamiento: ep.metodo_entrenamiento ?? "",
+    tiempo_bajo_tension_sugerido: ep.tiempo_bajo_tension_sugerido?.toString() ?? "",
+    nota: ep.nota ?? "",
+  });
+
+  const itemsIniciales: ItemInicial[] = diaExistente
+    ? agruparItemsDia(diaExistente.ejercicios_programa, diaExistente.grupos).map((item) =>
+        item.tipo === "ejercicio"
+          ? { tipo: "ejercicio", ejercicio: aFila(item.ejercicio) }
+          : {
+              tipo: "grupo",
+              id_grupo: item.grupo.id_grupo,
+              nombre: item.grupo.nombre ?? "",
+              rondas: String(item.grupo.rondas),
+              descanso_entre_ejercicios: item.grupo.descanso_entre_ejercicios ?? "",
+              descanso_entre_rondas: item.grupo.descanso_entre_rondas ?? "",
+              tempo: item.grupo.tempo ?? "",
+              nota: item.grupo.nota ?? "",
+              ejercicios: item.ejercicios.map(aFila),
+            }
+      )
+    : [];
 
   return (
     <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-6">
@@ -90,18 +161,8 @@ export default async function DiaPlanPage(
         semanaFin={semana_fin}
         diaSemana={dia}
         catalogo={catalogo}
-        ejerciciosIniciales={ejercicioExistente?.ejercicios_programa.map((ep) => ({
-          id_ejercicio: ep.id_ejercicio,
-          nombre: ep.ejercicio.nombre,
-          series: String(ep.series),
-          repeticiones: ep.repeticiones,
-          peso_sugerido: ep.peso_sugerido?.toString() ?? "",
-          descanso: ep.descanso ?? "",
-          tempo: ep.tempo ?? "",
-          metodo_entrenamiento: ep.metodo_entrenamiento ?? "",
-          tiempo_bajo_tension_sugerido: ep.tiempo_bajo_tension_sugerido?.toString() ?? "",
-          nota: ep.nota ?? "",
-        })) ?? []}
+        itemsIniciales={itemsIniciales}
+        opcionesSemanas={opcionesSemanas}
       />
     </main>
   );

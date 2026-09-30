@@ -16,9 +16,11 @@ export default async function RegistrarEntrenamientoPage(
     include: {
       programa: true,
       ejercicios_programa: {
+        where: { archivado: false },
         orderBy: { orden: "asc" },
         include: { ejercicio: true },
       },
+      grupos: true,
     },
   });
 
@@ -28,6 +30,7 @@ export default async function RegistrarEntrenamientoPage(
 
   const ejercicios = bloque.ejercicios_programa.map((ep) => ({
     id_ejercicio_programa: ep.id_ejercicio_programa,
+    id_grupo: ep.id_grupo,
     series: ep.series,
     repeticiones: ep.repeticiones,
     peso_sugerido: ep.peso_sugerido ? ep.peso_sugerido.toString() : null,
@@ -35,6 +38,7 @@ export default async function RegistrarEntrenamientoPage(
     descanso: ep.descanso,
     metodo_entrenamiento: ep.metodo_entrenamiento,
     tiempo_bajo_tension_sugerido: ep.tiempo_bajo_tension_sugerido,
+    nota: ep.nota,
     ejercicio: {
       id_ejercicio: ep.ejercicio.id_ejercicio,
       nombre: ep.ejercicio.nombre,
@@ -43,6 +47,16 @@ export default async function RegistrarEntrenamientoPage(
       instrucciones: ep.ejercicio.instrucciones,
       video_url: ep.ejercicio.video_url,
     },
+  }));
+
+  const grupos = bloque.grupos.map((g) => ({
+    id_grupo: g.id_grupo,
+    nombre: g.nombre,
+    rondas: g.rondas,
+    descanso_entre_ejercicios: g.descanso_entre_ejercicios,
+    descanso_entre_rondas: g.descanso_entre_rondas,
+    tempo: g.tempo,
+    nota: g.nota,
   }));
 
   const ETIQUETA_DIA: Record<string, string> = {
@@ -64,7 +78,7 @@ export default async function RegistrarEntrenamientoPage(
         <p className="text-sm text-on-surface-variant">{bloque.programa.nombre}</p>
       </div>
 
-      <FormRegistrarEntrenamiento idBloque={id_bloque} ejercicios={ejercicios} />
+      <FormRegistrarEntrenamiento idBloque={id_bloque} ejercicios={ejercicios} grupos={grupos} />
     </main>
   );
 }

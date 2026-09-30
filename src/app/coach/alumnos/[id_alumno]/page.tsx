@@ -226,7 +226,11 @@ export default async function AlumnoDetallePage(
     }),
     prisma.programaEntrenamiento.findUnique({
       where: { id_programa: programaActivo.id_programa },
-      include: { bloques: { include: { _count: { select: { ejercicios_programa: true } } } } },
+      include: {
+        bloques: {
+          include: { _count: { select: { ejercicios_programa: { where: { archivado: false } } } } },
+        },
+      },
     }),
     // Tab "Ejecución": últimas sesiones completadas, con cada serie real
     // (numero_serie) para comparar contra lo prescrito por el coach.
@@ -245,6 +249,7 @@ export default async function AlumnoDetallePage(
           select: {
             id_serie: true,
             numero_serie: true,
+            numero_ronda: true,
             peso_utilizado: true,
             repeticiones_realizadas: true,
             comentarios: true,
@@ -360,7 +365,7 @@ export default async function AlumnoDetallePage(
         nombre: string;
         prescrito: { series: number; repeticiones: string; peso_sugerido: number | null };
         comentario: string | null;
-        sets: { numero_serie: number | null; peso: number | null; reps: number | null }[];
+        sets: { numero_serie: number | null; numero_ronda: number | null; peso: number | null; reps: number | null }[];
       }
     >();
     for (const serie of s.series) {
@@ -377,6 +382,7 @@ export default async function AlumnoDetallePage(
       };
       grupo.sets.push({
         numero_serie: serie.numero_serie,
+        numero_ronda: serie.numero_ronda,
         peso: serie.peso_utilizado ? Number(serie.peso_utilizado) : null,
         reps: serie.repeticiones_realizadas,
       });
@@ -635,7 +641,7 @@ export default async function AlumnoDetallePage(
                         key={j}
                         className="font-[family-name:var(--font-jetbrains-mono)] text-xs bg-[#262626] rounded px-2 py-1 text-on-surface tabular-nums"
                       >
-                        Serie {set.numero_serie ?? j + 1} → {set.peso ?? "—"}
+                        {set.numero_ronda ? `Ronda ${set.numero_ronda}` : `Serie ${set.numero_serie ?? j + 1}`} → {set.peso ?? "—"}
                         {set.peso != null ? "kg" : ""} × {set.reps ?? "—"}
                       </span>
                     ))}

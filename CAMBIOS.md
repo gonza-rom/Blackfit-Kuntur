@@ -284,3 +284,60 @@ deployar:
   - lo de la entrega anterior: puntos al entrenar / hábitos / feedback,
     desbloqueo de logros y push, alta y login de un `beneficiario`, y el
     botón de WhatsApp con un teléfono de coach cargado.
+
+---
+
+# Módulo de bloques: superseries, triseries y circuitos
+
+## Qué hace
+- En **Alumnos → Alumno → Planificación → Día**, el botón **+ Agregar** ofrece
+  *Agregar ejercicio* (individual) o *Agregar bloque*. Un bloque admite
+  cualquier cantidad de ejercicios y el tipo se reconoce solo: 1 = individual,
+  2 = superserie, 3 = triserie, 4 o más = circuito (`tipoDeBloque` en
+  `src/lib/plan-dia.ts`). El nombre es opcional: si falta se muestra
+  "Bloque A/B/C…".
+- Por bloque se configuran rondas, descanso entre ejercicios, descanso entre
+  rondas, tempo y nota del coach. Cada ejercicio conserva sus propias reps,
+  peso sugerido (vacío = peso corporal) y nota.
+- Los ejercicios se buscan en la Biblioteca y se reordenan con flechas o
+  arrastrando (drag & drop), tanto los items del día como los ejercicios
+  dentro de un bloque. También hay *Duplicar bloque* (en el mismo día) y
+  *Copiar a otro día / semana* (con las semanas que permita el tipo de
+  planificación: fija, semanal o personalizada).
+- El alumno recibe exactamente la misma estructura: los ejercicios del bloque
+  aparecen lado a lado (con scroll horizontal desde 3 ejercicios), con
+  pestañas por ronda, un check por ejercicio y ronda, el contador `x/N rondas`
+  y "Bloque completado ✓" al final. El nombre del ejercicio sigue abriendo el
+  video, igual que antes.
+- Cada ejercicio de cada ronda se guarda como una serie propia
+  (`series_entrenamiento`, con `numero_serie` y `numero_ronda`), así que PR,
+  volumen, estadísticas y logros funcionan igual que con ejercicios sueltos.
+  Los historiales del coach y del alumno muestran "Ronda N".
+
+## Historial protegido
+Guardar un día ya no borra y recrea los ejercicios. Cada fila existente se
+**actualiza en su lugar**, así el alumno ve el cambio y sus series viejas
+siguen enganchadas. Si el coach quita o reemplaza un ejercicio que ya tiene
+series registradas, esa fila se **archiva** (`ejercicios_programa.archivado`):
+desaparece del plan, pero el historial y los PR quedan intactos. Esto además
+elimina el error anterior "este día ya tiene entrenamientos registrados" al
+editar un día. La lógica está en `guardarContenidoDia`
+(`src/lib/plan-dia-server.ts`).
+
+Aplicar una plantilla, guardar un programa como plantilla y duplicar un día
+ahora copian también los bloques. De paso, se corrigió que al copiar se
+perdieran `dia_semana`, `nota` y `tipo_planificacion`.
+
+## Migración de base de datos
+`prisma/migrations/20260929000000_bloques_superseries_circuitos/` es aditiva
+y no toca datos: crea la tabla `grupos_ejercicios` y agrega
+`ejercicios_programa.id_grupo`, `ejercicios_programa.archivado` (default
+false) y `series_entrenamiento.numero_ronda`. Todo lo que ya estaba armado
+queda como ejercicios individuales.
+
+**Hay que aplicarla antes de deployar el código**, porque el código nuevo lee
+esas columnas:
+
+```bash
+npx prisma migrate deploy
+```

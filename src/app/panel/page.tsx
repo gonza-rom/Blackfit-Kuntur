@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoActual, tieneRol } from "@/lib/auth";
 import { obtenerProgramaActivo, calcularBloqueActual, obtenerUltimoPR } from "@/lib/alumno";
+import { resumenDia } from "@/lib/plan-dia";
 
 const FORMATEADOR_FECHA_PR = new Intl.DateTimeFormat("es-AR", { day: "2-digit", month: "short" });
 
@@ -132,7 +133,7 @@ export default async function PanelPage() {
                     <span className="material-symbols-outlined text-[16px]">
                       fitness_center
                     </span>{" "}
-                    {bloqueActual.ejercicios_programa.length} ejercicios
+                    {resumenDia(bloqueActual.ejercicios_programa)}
                   </p>
                 </div>
                 <span
