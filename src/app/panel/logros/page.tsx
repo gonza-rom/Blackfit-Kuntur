@@ -57,8 +57,10 @@ export default async function LogrosPage() {
       orderBy: { fecha: "desc" },
       take: 8,
     }),
+    // Activos + los que el alumno YA ganó aunque el coach los haya
+    // archivado después: un logro obtenido queda en su perfil para siempre.
     prisma.logro.findMany({
-      where: { activo: true },
+      where: { OR: [{ activo: true }, { alumnos: { some: { id_alumno } } }] },
       orderBy: { fecha_creacion: "asc" },
     }),
     prisma.logroAlumno.findMany({

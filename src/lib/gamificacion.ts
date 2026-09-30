@@ -265,13 +265,13 @@ export async function otorgarLogrosManualesIniciales(id_alumno: string): Promise
  * otro caso (o primer login de siempre) arranca de nuevo en 1. Nunca
  * lanza — la gamificación no debe poder tumbar un login real.
  */
-export async function registrarLogin(id_usuario: string): Promise<void> {
+export async function registrarLogin(id_usuario: string): Promise<boolean> {
   try {
     const usuario = await prisma.usuario.findUnique({
       where: { id_usuario },
       select: { ultimo_login: true, racha_login_dias: true },
     });
-    if (!usuario) return;
+    if (!usuario) return false;
 
     const hoy = claveDia();
     const ayer = claveDia(new Date(Date.now() - DIA_MS));
@@ -284,10 +284,34 @@ export async function registrarLogin(id_usuario: string): Promise<void> {
           ? usuario.racha_login_dias + 1
           : 1;
 
+    // Ya registrado hoy: nada que actualizar (evita una escritura por cada
+    // página que abre el alumno).
+    if (ultimo === hoy) return false;
+
     await prisma.usuario.update({
       where: { id_usuario },
       data: { ultimo_login: new Date(), racha_login_dias },
     });
+    return true;
+  } catch {
+    // Silencioso a propósito.
+    return false;
+  }
+}
+
+/**
+ * Actividad diaria del alumno en la app, aunque no vuelva a iniciar sesión.
+ * La PWA mantiene la sesión abierta durante semanas, así que contar la
+ * racha solo en iniciarSesion() dejaba "7/30 días seguidos" imposibles y
+ * los logros sin evaluar hasta entrar a "Mis logros". Se llama desde el
+ * layout de /panel (vía after(), sin frenar el render): la primera visita
+ * de cada día suma a la racha y re-evalúa los logros, que quedan
+ * guardados en LogroAlumno. Las demás visitas del día no hacen nada.
+ */
+export async function registrarVisitaDiaria(id_usuario: string, id_alumno: string | null): Promise<void> {
+  try {
+    const primeraDelDia = await registrarLogin(id_usuario);
+    if (primeraDelDia && id_alumno) await evaluarLogros(id_alumno);
   } catch {
     // Silencioso a propósito.
   }

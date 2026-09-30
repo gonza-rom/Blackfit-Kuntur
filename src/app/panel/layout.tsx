@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import Link from "next/link";
 import {
   obtenerUsuarioActual,
@@ -14,6 +15,7 @@ import { InstalarApp } from "@/components/instalar-app";
 import { LogoMarcaPanel } from "@/components/logo-marca-panel";
 import { BotonVolver } from "@/components/boton-volver";
 import { verificarRecordatorioMembresia } from "@/lib/membresia";
+import { registrarVisitaDiaria } from "@/lib/gamificacion";
 import { BottomNav } from "./_components/bottom-nav";
 import { SidebarNav } from "./_components/sidebar-nav";
 
@@ -67,6 +69,11 @@ export default async function PanelLayout({
   // No bloquea el render: si falla (ej. sin fila de membresía todavía)
   // no debe tumbar la navegación del alumno.
   verificarRecordatorioMembresia(usuario.id_usuario).catch(() => {});
+
+  // Racha diaria + logros: después de responder, para no demorar la página.
+  const id_usuario = usuario.id_usuario;
+  const id_alumno = usuario.alumno?.id_alumno ?? null;
+  after(() => registrarVisitaDiaria(id_usuario, id_alumno));
 
   return (
     <div className="bg-background text-on-surface antialiased min-h-dvh flex flex-col pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(5rem+env(safe-area-inset-bottom))] md:pt-0 md:pb-0 font-[family-name:var(--font-inter)]">
