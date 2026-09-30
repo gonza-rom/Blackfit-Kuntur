@@ -223,8 +223,12 @@ export function FormRegistrarEntrenamiento({
     }
   }
 
-  if (paso === "resumen" && resumen) {
-    return (
+  // El resumen se muestra ENCIMA del form, que queda montado pero oculto:
+  // "Enviar feedback al coach" lee los pesos/reps de ese form. Antes el
+  // resumen reemplazaba al form, formRef quedaba en null y el botón no
+  // hacía nada (y "Volver a editar" perdía todo lo cargado).
+  const vistaResumen =
+    paso === "resumen" && resumen ? (
       <div className="flex flex-col gap-5">
         <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-5 flex flex-col gap-4">
           <h2 className="font-[family-name:var(--font-sora)] text-lg font-bold text-on-surface">
@@ -326,12 +330,16 @@ export function FormRegistrarEntrenamiento({
           </button>
         </div>
       </div>
-    );
-  }
+    ) : null;
 
   return (
     <>
-      <form ref={formRef} onSubmit={irAResumen} className="flex flex-col gap-4">
+      {vistaResumen}
+      <form
+        ref={formRef}
+        onSubmit={irAResumen}
+        className={`${vistaResumen ? "hidden" : "flex"} flex-col gap-4`}
+      >
         {items.map((item) => {
           if (item.tipo === "grupo") {
             const delBloque = item.ejercicios;
