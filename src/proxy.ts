@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/proxy";
 
-const RUTAS_PROTEGIDAS = ["/panel", "/coach", "/admin", "/comercio", "/beneficiario"];
+const RUTAS_PROTEGIDAS = ["/panel", "/coach", "/admin", "/comercio", "/beneficiario", "/membresia-vencida"];
 const RUTAS_SOLO_INVITADOS = ["/iniciar-sesion", "/registro"];
 
 export default async function proxy(request: NextRequest) {

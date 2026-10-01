@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { obtenerUsuarioActual } from "@/lib/auth";
+import { obtenerUsuarioActual, accesoAlumnoBloqueado } from "@/lib/auth";
 import { subirAvatar } from "@/lib/storage";
 import { avisar } from "@/lib/aviso";
 
@@ -13,7 +13,7 @@ export async function actualizarInformacionPersonal(
   formData: FormData
 ): Promise<EstadoUsuario> {
   const usuario = await obtenerUsuarioActual();
-  if (!usuario) return { error: "No autorizado." };
+  if (!usuario || (await accesoAlumnoBloqueado(usuario))) return { error: "No autorizado." };
 
   const nombre = String(formData.get("nombre") ?? "").trim();
   const apellido = String(formData.get("apellido") ?? "").trim();

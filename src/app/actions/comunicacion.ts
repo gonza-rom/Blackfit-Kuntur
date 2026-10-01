@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { obtenerUsuarioActual } from "@/lib/auth";
+import { obtenerUsuarioActual, accesoAlumnoBloqueado } from "@/lib/auth";
 import { crearNotificacion } from "@/lib/notificaciones";
 
 // El chat interno había quedado dado de baja como canal de comunicación
@@ -20,7 +20,7 @@ export type EstadoNotificacion = { error?: string } | undefined;
 // otro.
 export async function obtenerOCrearConversacion(idOtroUsuario: string): Promise<string | null> {
   const usuario = await obtenerUsuarioActual();
-  if (!usuario) return null;
+  if (!usuario || (await accesoAlumnoBloqueado(usuario))) return null;
   if (usuario.id_usuario === idOtroUsuario) return null;
 
   const [id_usuario_1, id_usuario_2] = [usuario.id_usuario, idOtroUsuario].sort();
@@ -41,7 +41,7 @@ export async function enviarMensaje(
   formData: FormData
 ): Promise<EstadoMensaje> {
   const usuario = await obtenerUsuarioActual();
-  if (!usuario) return { error: "No autorizado." };
+  if (!usuario || (await accesoAlumnoBloqueado(usuario))) return { error: "No autorizado." };
 
   const id_conversacion = String(formData.get("id_conversacion") ?? "");
   const contenido = String(formData.get("contenido") ?? "").trim();

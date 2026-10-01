@@ -48,6 +48,7 @@ export function ConfirmForm({
   cancelLabel = "Cancelar",
   className,
   pending,
+  variante = "peligro",
   children,
 }: {
   action: (formData: FormData) => void | Promise<void>;
@@ -57,8 +58,12 @@ export function ConfirmForm({
   cancelLabel?: string;
   className?: string;
   pending?: boolean;
+  // "peligro" (default) para eliminar/desvincular; "positiva" para
+  // acciones que habilitan algo (ej. activar una membresía).
+  variante?: "peligro" | "positiva";
   children: React.ReactNode;
 }) {
+  const positiva = variante === "positiva";
   const triggerFormRef = useRef<HTMLFormElement>(null);
   const [campos, setCampos] = useState<[string, string][] | null>(null);
   const eraPending = useRef(false);
@@ -107,8 +112,14 @@ export function ConfirmForm({
             className="w-full max-w-sm bg-[#1A1A1A] border border-[#262626] rounded-xl p-5 flex flex-col gap-4 shadow-2xl"
           >
             <div className="flex items-center gap-3">
-              <span className="shrink-0 flex items-center justify-center w-9 h-9 rounded-full bg-[#ffb4ab]/10 text-[#ffb4ab]">
-                <span className="material-symbols-outlined text-[20px]">warning</span>
+              <span
+                className={`shrink-0 flex items-center justify-center w-9 h-9 rounded-full ${
+                  positiva ? "bg-primary-container/10 text-primary-container" : "bg-[#ffb4ab]/10 text-[#ffb4ab]"
+                }`}
+              >
+                <span className="material-symbols-outlined text-[20px]">
+                  {positiva ? "check_circle" : "warning"}
+                </span>
               </span>
               <h2
                 id="confirm-form-titulo"
@@ -131,7 +142,11 @@ export function ConfirmForm({
               >
                 {cancelLabel}
               </button>
-              <BotonConfirmar label={confirmLabel} onTerminar={() => setCampos(null)} />
+              <BotonConfirmar
+                label={confirmLabel}
+                positiva={positiva}
+                onTerminar={() => setCampos(null)}
+              />
             </form>
           </div>
         </div>
@@ -140,7 +155,15 @@ export function ConfirmForm({
   );
 }
 
-function BotonConfirmar({ label, onTerminar }: { label: string; onTerminar: () => void }) {
+function BotonConfirmar({
+  label,
+  positiva,
+  onTerminar,
+}: {
+  label: string;
+  positiva: boolean;
+  onTerminar: () => void;
+}) {
   const { pending } = useFormStatus();
   const eraPending = useRef(false);
 
@@ -153,7 +176,9 @@ function BotonConfirmar({ label, onTerminar }: { label: string; onTerminar: () =
     <button
       type="submit"
       disabled={pending}
-      className="font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] uppercase px-4 py-2 rounded-full bg-[#ffb4ab] text-[#3a0a09] hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-wait"
+      className={`font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] uppercase px-4 py-2 rounded-full hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-wait ${
+        positiva ? "bg-primary-container text-black" : "bg-[#ffb4ab] text-[#3a0a09]"
+      }`}
     >
       {pending ? "Procesando..." : label}
     </button>

@@ -7,6 +7,7 @@ import {
   tieneAccesoAdmin,
   soloBeneficiario,
   cuentaActiva,
+  accesoAlumnoBloqueado,
 } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { OfflineSyncBanner } from "@/components/offline-sync-banner";
@@ -32,6 +33,12 @@ export default async function PanelLayout({
 
   if (!cuentaActiva(usuario)) {
     redirect("/cuenta-inactiva");
+  }
+
+  // Membresía vencida: la cuenta y todo su historial siguen intactos, solo
+  // se corta el acceso hasta que el coach toque "Activar 30 días".
+  if (await accesoAlumnoBloqueado(usuario)) {
+    redirect("/membresia-vencida");
   }
 
   // Beneficiario puro (Kuntur, sin nada de Black Fit): su única casa es

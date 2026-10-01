@@ -40,6 +40,8 @@ export default async function CoachPerfilPage() {
           <FormPerfilEntrenador
             especialidad={usuario.entrenador?.especialidad ?? null}
             biografia={usuario.entrenador?.biografia ?? null}
+            aliasPago={usuario.entrenador?.alias_pago ?? null}
+            mensajeMembresia={usuario.entrenador?.mensaje_membresia ?? null}
           />
         </div>
       </div>

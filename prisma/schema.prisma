@@ -230,6 +230,11 @@ model Entrenador {
 
   especialidad    String?
   biografia       String?
+  // Datos opcionales que ve el alumno en /membresia-vencida debajo del
+  // botón de WhatsApp (que usa Usuario.telefono del coach). Si no están
+  // cargados, no se muestran.
+  alias_pago        String?
+  mensaje_membresia String?
   fecha_alta      DateTime @default(now())
 
   relaciones      RelacionEntrenadorAlumno[]

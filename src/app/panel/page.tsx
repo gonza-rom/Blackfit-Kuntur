@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoActual, tieneRol } from "@/lib/auth";
 import { obtenerProgramaActivo, calcularBloqueActual, obtenerUltimoPR } from "@/lib/alumno";
 import { resumenDia } from "@/lib/plan-dia";
+import { obtenerDiasMembresia, claseColorMembresia } from "@/lib/membresia";
 
 const FORMATEADOR_FECHA_PR = new Intl.DateTimeFormat("es-AR", { day: "2-digit", month: "short" });
 
@@ -33,7 +34,10 @@ export default async function PanelPage() {
   inicioSemana.setHours(0, 0, 0, 0);
   inicioSemana.setDate(inicioSemana.getDate() - 6);
 
-  const programa = await obtenerProgramaActivo(id_alumno);
+  const [programa, diasMembresia] = await Promise.all([
+    obtenerProgramaActivo(id_alumno),
+    obtenerDiasMembresia(usuario.id_usuario),
+  ]);
 
   const [
     ultimosProgresos,
@@ -113,6 +117,17 @@ export default async function PanelPage() {
           Hola, {usuario.nombre}
         </h1>
         <p className="text-sm text-on-surface-variant">Tu entrenamiento, en tus manos.</p>
+        {/* Indicador de membresía: mismo dato que Perfil y Coach → Alumnos. */}
+        {diasMembresia !== null && (
+          <span
+            className={`mt-3 inline-flex items-center gap-2 rounded-full border border-[#262626] bg-[#1A1A1A] px-3 py-1 font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] uppercase tabular-nums ${claseColorMembresia(diasMembresia)}`}
+          >
+            <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-current" />
+            {diasMembresia <= 0
+              ? "Membresía vencida"
+              : `${diasMembresia} día${diasMembresia === 1 ? " activo" : "s activos"}`}
+          </span>
+        )}
       </div>
 
       {/* Protocolo de hoy */}

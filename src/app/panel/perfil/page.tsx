@@ -8,6 +8,7 @@ import {
   obtenerProgramaActivo,
   calcularSemanaYDiasActivos,
 } from "@/lib/alumno";
+import { obtenerDiasMembresia, claseColorMembresia } from "@/lib/membresia";
 
 const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
   day: "2-digit",
@@ -69,10 +70,12 @@ export default async function PerfilPage() {
           imc: true,
           porcentaje_graso: true,
           grasa_visceral: true,
-          masa_muscular: true,
+          porcentaje_musculo: true,
         },
       })
     : null;
+
+  const diasMembresia = usuario ? await obtenerDiasMembresia(usuario.id_usuario) : null;
 
   const programaActivo = usuario?.alumno ? await obtenerProgramaActivo(usuario.alumno.id_alumno) : null;
   const { semanaActual, diasActivos } = programaActivo
@@ -119,25 +122,35 @@ export default async function PerfilPage() {
       </section>
 
       {/* Composición corporal (última medición) — solo lectura, la carga el coach */}
-      {ultimaComposicion &&
-        (ultimaComposicion.peso_corporal ||
-          ultimaComposicion.imc ||
-          ultimaComposicion.porcentaje_graso ||
-          ultimaComposicion.grasa_visceral ||
-          ultimaComposicion.masa_muscular) && (
-          <section className="grid grid-cols-3 sm:grid-cols-5 gap-3 mb-6">
+      {/* + membresía como 6ta tarjeta (mismo dato que Inicio). % músculo es
+          el porcentaje que extrae la IA de la bioimpedancia (porcentaje_musculo),
+          no la masa muscular en kg. */}
+      {usuario?.alumno && (
+          <section className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-6">
             {[
-              { valor: ultimaComposicion.peso_corporal, label: "Peso (kg)" },
-              { valor: ultimaComposicion.imc, label: "IMC" },
-              { valor: ultimaComposicion.porcentaje_graso, label: "% Grasa" },
-              { valor: ultimaComposicion.grasa_visceral, label: "Grasa visc." },
-              { valor: ultimaComposicion.masa_muscular, label: "Masa musc." },
+              { valor: ultimaComposicion?.peso_corporal, label: "Peso (kg)", clase: "text-on-surface" },
+              { valor: ultimaComposicion?.imc, label: "IMC", clase: "text-on-surface" },
+              { valor: ultimaComposicion?.porcentaje_graso, label: "% Grasa", clase: "text-on-surface" },
+              { valor: ultimaComposicion?.grasa_visceral, label: "Grasa visc.", clase: "text-on-surface" },
+              { valor: ultimaComposicion?.porcentaje_musculo, label: "% Músculo", clase: "text-on-surface" },
+              {
+                valor: diasMembresia === null ? null : diasMembresia <= 0 ? "Vencida" : diasMembresia,
+                label:
+                  diasMembresia === null
+                    ? "Membresía"
+                    : diasMembresia <= 0
+                      ? "Membresía"
+                      : diasMembresia === 1
+                        ? "Día activo"
+                        : "Días activos",
+                clase: diasMembresia === null ? "text-on-surface" : claseColorMembresia(diasMembresia),
+              },
             ].map((item) => (
               <div
                 key={item.label}
                 className="bg-[#1f1f1f] border border-[#262626] rounded-xl p-3 flex flex-col items-center justify-center"
               >
-                <span className="font-[family-name:var(--font-sora)] text-lg font-bold text-on-surface tabular-nums">
+                <span className={`font-[family-name:var(--font-sora)] text-lg font-bold tabular-nums ${item.clase}`}>
                   {item.valor != null ? `${item.valor}` : "—"}
                 </span>
                 <span className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] text-on-surface-variant uppercase text-center">

@@ -3,6 +3,9 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
 import { detectarAlertas, type Alerta } from "@/lib/alertas";
+import { diasMembresiaDe, claseColorMembresia } from "@/lib/membresia";
+import { activarMembresia30Dias } from "@/app/actions/coach";
+import { ConfirmForm } from "@/components/confirm-form";
 
 const DIA_MS = 1000 * 60 * 60 * 24;
 
@@ -33,10 +36,6 @@ function fechaHaceDias(dias: number): Date {
   return new Date(Date.now() - dias * DIA_MS);
 }
 
-function diasHasta(fecha: Date): number {
-  return Math.ceil((fecha.getTime() - Date.now()) / DIA_MS);
-}
-
 function chipAdherencia(total: number, completados: number) {
   if (total === 0) return { texto: "—", clase: "text-on-surface-variant" };
   const pct = Math.round((completados / total) * 100);
@@ -44,13 +43,13 @@ function chipAdherencia(total: number, completados: number) {
   return { texto: `${pct}%`, clase };
 }
 
-// null = nunca tuvo membresía. Negativo = ya venció hace esos días.
-function chipMembresia(dias: number | null): { texto: string; clase: string } {
-  if (dias === null) return { texto: "Sin membresía", clase: "text-on-surface-variant" };
-  if (dias < 0) return { texto: `Vencida (${Math.abs(dias)}d)`, clase: "text-error" };
-  if (dias === 0) return { texto: "Vence hoy", clase: "text-error" };
-  if (dias <= 7) return { texto: `${dias}d`, clase: "text-[#eda100]" };
-  return { texto: `${dias}d`, clase: "text-primary-container" };
+// null = nunca tuvo membresía. 0 = vencida. Si no, días de acceso que le
+// quedan contando hoy (30 el día de activación, 1 el último día).
+function chipMembresia(dias: number | null): { texto: string; clase: string; activable: boolean } {
+  const clase = claseColorMembresia(dias);
+  if (dias === null) return { texto: "Sin membresía", clase, activable: true };
+  if (dias <= 0) return { texto: "Vencida", clase, activable: true };
+  return { texto: `${dias} día${dias === 1 ? "" : "s"}`, clase, activable: false };
 }
 
 export default async function CoachAlumnosPage() {
@@ -112,14 +111,12 @@ export default async function CoachAlumnosPage() {
           Promise.all(
             idsAlumnos.map(async (id_alumno) => [id_alumno, await detectarAlertas(id_alumno)] as const)
           ),
-          // Última membresía por usuario (la de fecha_vencimiento más lejana
-          // en el tiempo, sin importar el estado) — así el coach ve tanto
-          // la que está por vencer como la que ya venció.
+          // Todas las membresías de cada usuario: alcanza con que una esté
+          // vigente para mostrar sus días; si tuvo alguna pero ninguna lo
+          // está, figura como vencida.
           prisma.membresia.findMany({
             where: { id_usuario: { in: idsUsuarios } },
-            orderBy: { fecha_vencimiento_membresia: "desc" },
-            distinct: ["id_usuario"],
-            select: { id_usuario: true, fecha_vencimiento_membresia: true },
+            select: { id_usuario: true, estado_membresia: true, fecha_vencimiento_membresia: true },
           }),
         ]);
 
@@ -130,9 +127,10 @@ export default async function CoachAlumnosPage() {
   const mapaUltimoEntrenamiento = new Map(ultimosEntrenamientos.map((e) => [e.id_alumno, e.fecha]));
   const mapaPeso = new Map(ultimosProgresos.map((p) => [p.id_alumno, p.peso_corporal]));
   const mapaFeedback = new Map(ultimosFeedbacks.map((f) => [f.id_alumno, f.respuesta_coach]));
-  const mapaMembresia = new Map(
-    ultimasMembresias.map((m) => [m.id_usuario, m.fecha_vencimiento_membresia])
-  );
+  const membresiasPorUsuario = new Map<string, typeof ultimasMembresias>();
+  for (const m of ultimasMembresias) {
+    membresiasPorUsuario.set(m.id_usuario, [...(membresiasPorUsuario.get(m.id_usuario) ?? []), m]);
+  }
 
   const conteoPorAlumno = new Map<string, { total: number; completados: number }>();
   for (const e of entrenamientos30d) {
@@ -147,8 +145,9 @@ export default async function CoachAlumnosPage() {
       const id_alumno = relacion.alumno.id_alumno;
       const conteo = conteoPorAlumno.get(id_alumno) ?? { total: 0, completados: 0 };
       const feedbackRespuesta = mapaFeedback.has(id_alumno) ? mapaFeedback.get(id_alumno) : undefined;
-      const vencimiento = mapaMembresia.get(relacion.alumno.usuario.id_usuario) ?? null;
-      const diasMembresia = vencimiento ? diasHasta(vencimiento) : null;
+      const diasMembresia = diasMembresiaDe(
+        membresiasPorUsuario.get(relacion.alumno.usuario.id_usuario) ?? []
+      );
 
       return {
         id_alumno,
@@ -247,11 +246,31 @@ export default async function CoachAlumnosPage() {
                     )}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap tabular-nums">
-                    <span
-                      className={`font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.06em] uppercase ${fila.membresia.clase}`}
-                    >
-                      {fila.membresia.texto}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`inline-flex items-center gap-1.5 font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.06em] uppercase ${fila.membresia.clase}`}
+                      >
+                        <span aria-hidden className="w-2 h-2 rounded-full bg-current" />
+                        {fila.membresia.texto}
+                      </span>
+                      {fila.membresia.activable && (
+                        <ConfirmForm
+                          action={activarMembresia30Dias}
+                          titulo="Activar membresía"
+                          mensaje={`¿Activar 30 días para ${fila.nombre}?`}
+                          confirmLabel="Activar"
+                          variante="positiva"
+                        >
+                          <input type="hidden" name="id_alumno" value={fila.id_alumno} />
+                          <button
+                            type="submit"
+                            className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.06em] uppercase px-2.5 py-1 rounded-full bg-primary-container text-black font-bold hover:opacity-90 active:scale-95 transition-all"
+                          >
+                            Activar 30 días
+                          </button>
+                        </ConfirmForm>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span

@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { estadoAccesoMembresia } from "@/lib/membresia";
 import type {
   RolUsuario,
   Usuario,
@@ -97,12 +98,26 @@ export const obtenerEntrenadorActual = cache(
   }
 );
 
+// Alumno con la membresía vencida: conserva su cuenta y todos sus datos,
+// pero pierde el acceso funcional — /panel lo manda a /membresia-vencida
+// y obtenerAlumnoActual() le devuelve null, así toda server action / API
+// de alumno lo rechaza aunque la llame directo. Coaches y admins que
+// además sean alumnos no se bloquean (necesitan la app para trabajar).
+export const accesoAlumnoBloqueado = cache(
+  async (usuario: UsuarioActual): Promise<boolean> => {
+    if (!tieneRol(usuario, "alumno") || !usuario.alumno) return false;
+    if (tieneRol(usuario, "entrenador") || tieneAccesoAdmin(usuario)) return false;
+    return (await estadoAccesoMembresia(usuario.id_usuario)) === "vencida";
+  }
+);
+
 export const obtenerAlumnoActual = cache(
   async (): Promise<{ usuario: UsuarioActual; id_alumno: string } | null> => {
     const usuario = await obtenerUsuarioActual();
     if (!usuario || !tieneRol(usuario, "alumno") || !usuario.alumno) {
       return null;
     }
+    if (await accesoAlumnoBloqueado(usuario)) return null;
     return { usuario, id_alumno: usuario.alumno.id_alumno };
   }
 );

@@ -25,6 +25,11 @@ import { subirFotoProgreso } from "@/lib/storage";
 import { extraerComposicionDeTexto, extraerFechaDeTexto } from "@/lib/parseo-composicion-corporal";
 import { registrarAuditoria } from "@/lib/auditoria";
 import {
+  calcularVencimiento30Dias,
+  membresiaVigente,
+  DIAS_MEMBRESIA_COACH,
+} from "@/lib/membresia";
+import {
   obtenerOCrearDia,
   guardarContenidoDia,
   clonarEjerciciosEnDia,
@@ -61,10 +66,12 @@ export async function actualizarPerfilEntrenador(
 
   const especialidad = String(formData.get("especialidad") ?? "").trim() || null;
   const biografia = String(formData.get("biografia") ?? "").trim() || null;
+  const alias_pago = String(formData.get("alias_pago") ?? "").trim() || null;
+  const mensaje_membresia = String(formData.get("mensaje_membresia") ?? "").trim() || null;
 
   await prisma.entrenador.update({
     where: { id_entrenador: contexto.id_entrenador },
-    data: { especialidad, biografia },
+    data: { especialidad, biografia, alias_pago, mensaje_membresia },
   });
 
   await avisar("Perfil actualizado.");
@@ -244,6 +251,95 @@ export async function desvincularAlumno(formData: FormData): Promise<void> {
   await avisar("Alumno desvinculado.", "eliminado");
   revalidatePath("/coach/alumnos");
   redirect("/coach/alumnos");
+}
+
+// "Me pagó → activo 30 días → listo." El pago es por fuera de la
+// plataforma; el coach solo confirma y el sistema calcula todo: inicio =
+// ahora, vencimiento = 30 días corridos (ver calcularVencimiento30Dias).
+// Crea una membresía NUEVA en vez de pisar la anterior, así queda el
+// historial completo de renovaciones.
+export async function activarMembresia30Dias(formData: FormData): Promise<void> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return;
+
+  const id_alumno = String(formData.get("id_alumno") ?? "");
+  if (!id_alumno) return;
+
+  const relacion = await prisma.relacionEntrenadorAlumno.findUnique({
+    where: {
+      id_entrenador_id_alumno: { id_entrenador: contexto.id_entrenador, id_alumno },
+    },
+    include: { alumno: { include: { usuario: true } } },
+  });
+  if (!relacion || relacion.estado_relacion !== "activa") return;
+
+  const id_usuario = relacion.alumno.id_usuario;
+  const membresias = await prisma.membresia.findMany({
+    where: { id_usuario },
+    orderBy: { fecha_vencimiento_membresia: "desc" },
+  });
+
+  // Doble toque / pestaña vieja: si ya está activa no se suman días.
+  if (membresias.some(membresiaVigente)) {
+    await avisar("Este alumno ya tiene la membresía activa.", "info");
+    revalidatePath("/coach/alumnos");
+    return;
+  }
+
+  // Membresia exige un plan. Se reusa el último del alumno (así no pierde
+  // los beneficios Kuntur asociados a su plan); si nunca tuvo uno, el plan
+  // de 30 días existente, y si tampoco hay, se crea una sola vez.
+  const id_plan_membresia =
+    membresias[0]?.id_plan_membresia ??
+    (
+      (await prisma.planMembresia.findFirst({
+        where: { duracion_dias: DIAS_MEMBRESIA_COACH },
+        orderBy: { fecha_creacion: "asc" },
+      })) ??
+      (await prisma.planMembresia.create({
+        data: { nombre: "Membresía 30 días", precio: 0, duracion_dias: DIAS_MEMBRESIA_COACH },
+      }))
+    ).id_plan_membresia;
+
+  const ahora = new Date();
+  const [, membresia] = await prisma.$transaction([
+    // Las que quedaron "activa" con la fecha ya pasada pasan a "vencida",
+    // así el historial refleja lo que realmente ocurrió.
+    prisma.membresia.updateMany({
+      where: { id_usuario, estado_membresia: "activa", fecha_vencimiento_membresia: { lte: ahora } },
+      data: { estado_membresia: "vencida" },
+    }),
+    prisma.membresia.create({
+      data: {
+        id_usuario,
+        id_plan_membresia,
+        estado_membresia: "activa",
+        fecha_inicio_membresia: ahora,
+        fecha_vencimiento_membresia: calcularVencimiento30Dias(ahora),
+      },
+    }),
+  ]);
+
+  await registrarAuditoria({
+    id_usuario_actor: contexto.usuario.id_usuario,
+    accion: "cambio_membresia",
+    recurso: "membresia",
+    id_recurso: membresia.id_membresia,
+    resultado: "activada_30_dias_por_coach",
+  });
+
+  await crearNotificacion({
+    id_usuario,
+    titulo: "Membresía activada",
+    contenido: `Tu coach activó ${DIAS_MEMBRESIA_COACH} días de acceso. ¡A entrenar!`,
+    tipo: "membresia_activada",
+    url: "/panel",
+  }).catch(() => {});
+
+  await avisar(
+    `Membresía activada: ${DIAS_MEMBRESIA_COACH} días para ${relacion.alumno.usuario.nombre}.`
+  );
+  revalidatePath("/coach/alumnos");
 }
 
 export async function crearEjercicio(
