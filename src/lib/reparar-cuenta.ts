@@ -1,8 +1,10 @@
 import { prisma } from "@/lib/prisma";
-import { createAdminClient } from "@/lib/supabase/admin";
 
 // Arreglos de cuentas que quedaron "a medio crear" entre Supabase Auth y
-// la tabla usuarios. Solo server-side (usa la service_role key).
+// la tabla usuarios. Solo server-side. Escribe auth.users por SQL con la
+// misma conexión de Prisma en vez de usar la service_role key: así no
+// depende de que SUPABASE_SERVICE_ROLE_KEY esté configurada en el hosting
+// (si faltaba, el login de comercio explotaba con "This page couldn't load").
 
 async function idAuthPorEmail(email: string): Promise<string | null> {
   const filas = await prisma.$queryRaw<{ id: string }[]>`
@@ -37,10 +39,20 @@ export async function confirmarEmailComercio(email: string): Promise<boolean> {
   const idAuth = await idAuthPorEmail(email);
   if (!idAuth) return false;
 
-  const { error } = await createAdminClient().auth.admin.updateUserById(idAuth, {
-    email_confirm: true,
-  });
-  return !error;
+  await confirmarEmailAuth(idAuth);
+  return true;
+}
+
+/** Marca el email de un usuario de Auth como confirmado. */
+export async function confirmarEmailAuth(idAuth: string): Promise<void> {
+  await prisma.$executeRaw`
+    update auth.users set email_confirmed_at = coalesce(email_confirmed_at, now())
+    where id::text = ${idAuth}`;
+}
+
+/** Borra un usuario de Auth (rollback de un registro que falló a medias). */
+export async function borrarUsuarioAuth(idAuth: string): Promise<void> {
+  await prisma.$executeRaw`delete from auth.users where id::text = ${idAuth}`;
 }
 
 /**

@@ -11,8 +11,23 @@ import {
 } from "@/lib/gamificacion";
 import { crearNotificacion } from "@/lib/notificaciones";
 import { avisar } from "@/lib/aviso";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { confirmarEmailComercio, vincularPerfilHuerfano } from "@/lib/reparar-cuenta";
+import {
+  confirmarEmailComercio,
+  confirmarEmailAuth,
+  borrarUsuarioAuth,
+  vincularPerfilHuerfano,
+} from "@/lib/reparar-cuenta";
+
+// Las reparaciones de cuenta nunca deben tumbar el login/registro: si
+// algo falla se registra y se sigue con el mensaje de error normal.
+async function intentar<T>(fn: () => Promise<T>, siFalla: T): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    console.error("[auth] reparación de cuenta falló:", e);
+    return siFalla;
+  }
+}
 
 export type EstadoAuth = { error?: string; message?: string } | undefined;
 
@@ -50,7 +65,10 @@ export async function iniciarSesion(
 
   // Comercio con el mail de confirmación sin abrir (o que nunca llegó):
   // ver confirmarEmailComercio. Se confirma y se reintenta una vez.
-  if (error?.code === "email_not_confirmed" && (await confirmarEmailComercio(email))) {
+  if (
+    error?.code === "email_not_confirmed" &&
+    (await intentar(() => confirmarEmailComercio(email), false))
+  ) {
     ({ data, error } = await supabase.auth.signInWithPassword({ email, password }));
   }
 
@@ -71,7 +89,9 @@ export async function iniciarSesion(
     // Sin fila en `usuarios` /panel lo manda a /iniciar-sesion y el proxy
     // (que ve la sesión) lo devuelve a /panel: loop infinito. Se intenta
     // reparar y, si no se puede, se cierra la sesión con un mensaje claro.
-    if (!(await vincularPerfilHuerfano(data.user.id, data.user.email ?? email))) {
+    const idAuthLogin = data.user.id;
+    const emailLogin = data.user.email ?? email;
+    if (!(await intentar(() => vincularPerfilHuerfano(idAuthLogin, emailLogin), false))) {
       await supabase.auth.signOut();
       return {
         error: "Tu cuenta no terminó de crearse. Registrate de nuevo o contactá al equipo de Black Hub.",
@@ -158,50 +178,32 @@ export async function registrarse(
     return { error: "Ya existe una cuenta con ese email. Iniciá sesión." };
   }
 
+  // Todas las altas (incluida la de comercio) pasan por signUp. Al
+  // comercio se le confirma el email en el acto: el mail de confirmación
+  // no llegaba y la cuenta quedaba inutilizable; igual lo revisa un admin
+  // (arranca "pendiente").
   const supabase = await createClient();
-  const supabaseAdmin = createAdminClient();
-  let idAuth: string;
-  let tieneSesion: boolean;
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: { nombre, apellido },
+      emailRedirectTo: `${origin}/auth/confirm`,
+    },
+  });
 
-  if (esComercio) {
-    // Comercio: sin mail de confirmación (no llegaba y la cuenta quedaba
-    // inutilizable). La revisión la hace un admin: arranca "pendiente".
-    const { data, error } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: { nombre, apellido },
-    });
-    if (error || !data.user) {
-      return {
-        error:
-          error?.code === "email_exists"
-            ? "Ya existe una cuenta con ese email. Iniciá sesión."
-            : error?.message ?? "No se pudo crear la cuenta. Intentá de nuevo.",
-      };
+  if (error) {
+    if (error.code === "over_email_send_rate_limit") {
+      return { error: "Hay muchos registros en este momento. Probá de nuevo en unos minutos." };
     }
-    idAuth = data.user.id;
-    tieneSesion = false;
-  } else {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { nombre, apellido },
-        emailRedirectTo: `${origin}/auth/confirm`,
-      },
-    });
-
-    if (error) {
-      return { error: error.message };
-    }
-    // identities vacío = el email ya existía en Auth (usuario falso).
-    if (!data.user || data.user.identities?.length === 0) {
-      return { error: "Ya existe una cuenta con ese email. Iniciá sesión." };
-    }
-    idAuth = data.user.id;
-    tieneSesion = Boolean(data.session);
+    return { error: error.message };
   }
+  // identities vacío = el email ya existía en Auth (usuario falso).
+  if (!data.user || data.user.identities?.length === 0) {
+    return { error: "Ya existe una cuenta con ese email. Iniciá sesión." };
+  }
+  const idAuth = data.user.id;
+  const tieneSesion = Boolean(data.session);
 
   let nuevoUsuario;
   try {
@@ -242,7 +244,7 @@ export async function registrarse(
   } catch {
     // Que no quede un usuario de Auth sin perfil (no podría entrar nunca
     // ni volver a registrarse con ese email).
-    await supabaseAdmin.auth.admin.deleteUser(idAuth).catch(() => {});
+    await intentar(() => borrarUsuarioAuth(idAuth), undefined);
     return { error: "No se pudo crear la cuenta. Intentá de nuevo." };
   }
 
@@ -277,9 +279,10 @@ export async function registrarse(
     }
   }
 
-  if (esComercio) {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
+  if (esComercio && !tieneSesion) {
+    await intentar(() => confirmarEmailAuth(idAuth), undefined);
+    const { error: errorLogin } = await supabase.auth.signInWithPassword({ email, password });
+    if (errorLogin) {
       return { message: "Cuenta creada. Ya podés iniciar sesión." };
     }
   } else if (!tieneSesion) {

@@ -18,7 +18,10 @@ export async function GET(request: Request) {
     if (!error && data.user) {
       // Sin perfil en `usuarios` la sesión quedaría rebotando entre
       // /panel y /iniciar-sesion (ver iniciarSesion en actions/auth.ts).
-      if (!(await vincularPerfilHuerfano(data.user.id, data.user.email ?? ""))) {
+      const vinculado = await vincularPerfilHuerfano(data.user.id, data.user.email ?? "").catch(
+        () => false
+      );
+      if (!vinculado) {
         await supabase.auth.signOut();
         return NextResponse.redirect(`${origin}/iniciar-sesion`);
       }
