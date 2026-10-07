@@ -11,6 +11,8 @@ import {
 } from "@/lib/gamificacion";
 import { crearNotificacion } from "@/lib/notificaciones";
 import { avisar } from "@/lib/aviso";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { confirmarEmailComercio, vincularPerfilHuerfano } from "@/lib/reparar-cuenta";
 
 export type EstadoAuth = { error?: string; message?: string } | undefined;
 
@@ -44,9 +46,21 @@ export async function iniciarSesion(
   }
 
   const supabase = await createClient();
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  let { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+  // Comercio con el mail de confirmación sin abrir (o que nunca llegó):
+  // ver confirmarEmailComercio. Se confirma y se reintenta una vez.
+  if (error?.code === "email_not_confirmed" && (await confirmarEmailComercio(email))) {
+    ({ data, error } = await supabase.auth.signInWithPassword({ email, password }));
+  }
 
   if (error) {
+    if (error.code === "email_not_confirmed") {
+      return {
+        error:
+          "Tu email todavía no está confirmado. Abrí el link que te enviamos por mail (revisá también spam).",
+      };
+    }
     return { error: "Email o contraseña incorrectos." };
   }
 
@@ -54,6 +68,16 @@ export async function iniciarSesion(
   // válidas pero no puede entrar: se cierra la sesión que se acaba de
   // abrir y se devuelve el motivo.
   if (data.user) {
+    // Sin fila en `usuarios` /panel lo manda a /iniciar-sesion y el proxy
+    // (que ve la sesión) lo devuelve a /panel: loop infinito. Se intenta
+    // reparar y, si no se puede, se cierra la sesión con un mensaje claro.
+    if (!(await vincularPerfilHuerfano(data.user.id, data.user.email ?? email))) {
+      await supabase.auth.signOut();
+      return {
+        error: "Tu cuenta no terminó de crearse. Registrate de nuevo o contactá al equipo de Black Hub.",
+      };
+    }
+
     const perfil = await prisma.usuario.findUnique({
       where: { id_usuario: data.user.id },
       select: { estado_usuario: true, alumno: { select: { id_alumno: true } } },
@@ -123,57 +147,104 @@ export async function registrarse(
   const encabezados = await headers();
   const origin = `${encabezados.get("x-forwarded-proto") ?? "http"}://${encabezados.get("host")}`;
 
-  const supabase = await createClient();
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: { nombre, apellido },
-      emailRedirectTo: `${origin}/auth/confirm`,
-    },
+  // Si el email ya tiene perfil, signUp de Supabase igual "funciona" (por
+  // privacidad devuelve un usuario falso) y el create de abajo explotaba
+  // por email duplicado, dejando un usuario de Auth suelto.
+  const yaRegistrado = await prisma.usuario.findFirst({
+    where: { email: { equals: email, mode: "insensitive" } },
+    select: { id_usuario: true },
   });
-
-  if (error) {
-    return { error: error.message };
+  if (yaRegistrado) {
+    return { error: "Ya existe una cuenta con ese email. Iniciá sesión." };
   }
-  if (!data.user) {
+
+  const supabase = await createClient();
+  const supabaseAdmin = createAdminClient();
+  let idAuth: string;
+  let tieneSesion: boolean;
+
+  if (esComercio) {
+    // Comercio: sin mail de confirmación (no llegaba y la cuenta quedaba
+    // inutilizable). La revisión la hace un admin: arranca "pendiente".
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { nombre, apellido },
+    });
+    if (error || !data.user) {
+      return {
+        error:
+          error?.code === "email_exists"
+            ? "Ya existe una cuenta con ese email. Iniciá sesión."
+            : error?.message ?? "No se pudo crear la cuenta. Intentá de nuevo.",
+      };
+    }
+    idAuth = data.user.id;
+    tieneSesion = false;
+  } else {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { nombre, apellido },
+        emailRedirectTo: `${origin}/auth/confirm`,
+      },
+    });
+
+    if (error) {
+      return { error: error.message };
+    }
+    // identities vacío = el email ya existía en Auth (usuario falso).
+    if (!data.user || data.user.identities?.length === 0) {
+      return { error: "Ya existe una cuenta con ese email. Iniciá sesión." };
+    }
+    idAuth = data.user.id;
+    tieneSesion = Boolean(data.session);
+  }
+
+  let nuevoUsuario;
+  try {
+    nuevoUsuario = await prisma.usuario.create({
+      data: {
+        id_usuario: idAuth,
+        email,
+        nombre,
+        apellido,
+        // El beneficiario no recibe perfil de Alumno ni ningún rol de Black
+        // Fit: solo el rol "beneficiario". El comercio se crea junto con su
+        // perfil de Comercio en el mismo paso — nunca queda el rol suelto
+        // sin fila Comercio (mismo cuidado que crearComercio en admin.ts).
+        // Arranca en "pendiente": un admin lo revisa antes de que sus
+        // beneficios puedan quedar visibles para los socios.
+        roles: {
+          create: { rol: esComercio ? "comercio" : esBeneficiario ? "beneficiario" : "alumno" },
+        },
+        ...(esComercio
+          ? {
+              comercio: {
+                create: {
+                  nombre: nombreComercio,
+                  categoria: categoriaComercio,
+                  telefono: telefonoComercio,
+                  direccion: direccionComercio,
+                  descripcion: descripcionComercio,
+                  estado: "pendiente",
+                },
+              },
+            }
+          : esBeneficiario
+            ? {}
+            : { alumno: { create: {} } }),
+      },
+      include: { alumno: true, comercio: true },
+    });
+  } catch {
+    // Que no quede un usuario de Auth sin perfil (no podría entrar nunca
+    // ni volver a registrarse con ese email).
+    await supabaseAdmin.auth.admin.deleteUser(idAuth).catch(() => {});
     return { error: "No se pudo crear la cuenta. Intentá de nuevo." };
   }
-
-  const nuevoUsuario = await prisma.usuario.create({
-    data: {
-      id_usuario: data.user.id,
-      email,
-      nombre,
-      apellido,
-      // El beneficiario no recibe perfil de Alumno ni ningún rol de Black
-      // Fit: solo el rol "beneficiario". El comercio se crea junto con su
-      // perfil de Comercio en el mismo paso — nunca queda el rol suelto
-      // sin fila Comercio (mismo cuidado que crearComercio en admin.ts).
-      // Arranca en "pendiente": un admin lo revisa antes de que sus
-      // beneficios puedan quedar visibles para los socios.
-      roles: {
-        create: { rol: esComercio ? "comercio" : esBeneficiario ? "beneficiario" : "alumno" },
-      },
-      ...(esComercio
-        ? {
-            comercio: {
-              create: {
-                nombre: nombreComercio,
-                categoria: categoriaComercio,
-                telefono: telefonoComercio,
-                direccion: direccionComercio,
-                descripcion: descripcionComercio,
-                estado: "pendiente",
-              },
-            },
-          }
-        : esBeneficiario
-          ? {}
-          : { alumno: { create: {} } }),
-    },
-    include: { alumno: true, comercio: true },
-  });
 
   // Arranca con todos los logros manuales de la biblioteca (ver
   // otorgarLogrosManualesIniciales) — así nadie queda con menos insignias
@@ -206,7 +277,12 @@ export async function registrarse(
     }
   }
 
-  if (!data.session) {
+  if (esComercio) {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      return { message: "Cuenta creada. Ya podés iniciar sesión." };
+    }
+  } else if (!tieneSesion) {
     return { message: "Cuenta creada. Revisá tu email para confirmarla." };
   }
 
