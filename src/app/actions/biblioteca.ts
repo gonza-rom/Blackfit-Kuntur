@@ -7,6 +7,7 @@ import { obtenerEntrenadorActual, obtenerAdministradorActual } from "@/lib/auth"
 import { registrarAuditoria } from "@/lib/auditoria";
 import { avisar } from "@/lib/aviso";
 import { TAG_CATALOGO_BIBLIOTECA } from "@/lib/catalogos";
+import { urlSegura } from "@/lib/video";
 
 export type EstadoBiblioteca = { error?: string; message?: string } | undefined;
 
@@ -40,7 +41,8 @@ export async function crearRecursoBiblioteca(
   const descripcion = String(formData.get("descripcion") ?? "").trim() || null;
   const categoria = String(formData.get("categoria") ?? "") as CategoriaBiblioteca;
   const tipo_contenido = String(formData.get("tipo_contenido") ?? "").trim() || null;
-  const url_contenido = String(formData.get("url_contenido") ?? "").trim() || null;
+  const url_contenido = urlSegura(String(formData.get("url_contenido") ?? "").trim());
+  if (url_contenido === undefined) return { error: "El link no es válido (debe empezar con https://)." };
 
   if (!titulo || !CATEGORIAS.includes(categoria)) {
     return { error: "Completá título y categoría." };
@@ -77,7 +79,8 @@ export async function editarRecursoBiblioteca(
   const descripcion = String(formData.get("descripcion") ?? "").trim() || null;
   const categoria = String(formData.get("categoria") ?? "") as CategoriaBiblioteca;
   const tipo_contenido = String(formData.get("tipo_contenido") ?? "").trim() || null;
-  const url_contenido = String(formData.get("url_contenido") ?? "").trim() || null;
+  const url_contenido = urlSegura(String(formData.get("url_contenido") ?? "").trim());
+  if (url_contenido === undefined) return { error: "El link no es válido (debe empezar con https://)." };
 
   if (!id_recurso || !titulo || !CATEGORIAS.includes(categoria)) {
     return { error: "Completá título y categoría." };

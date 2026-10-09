@@ -24,6 +24,7 @@ import type { CampoComposicionCorporal } from "@/lib/composicion-corporal";
 import { subirFotoProgreso } from "@/lib/storage";
 import { extraerComposicionDeTexto, extraerFechaDeTexto } from "@/lib/parseo-composicion-corporal";
 import { registrarAuditoria } from "@/lib/auditoria";
+import { urlSegura } from "@/lib/video";
 import {
   calcularVencimiento30Dias,
   membresiaVigente,
@@ -354,7 +355,8 @@ export async function crearEjercicio(
 
   const descripcion = String(formData.get("descripcion") ?? "").trim() || null;
   const grupo_muscular = String(formData.get("grupo_muscular") ?? "").trim() || null;
-  const video_url = String(formData.get("video_url") ?? "").trim() || null;
+  const video_url = urlSegura(String(formData.get("video_url") ?? "").trim());
+  if (video_url === undefined) return { error: "El link del video no es válido (debe empezar con https://)." };
   const instrucciones = String(formData.get("instrucciones") ?? "").trim() || null;
 
   const series_defaultRaw = String(formData.get("series_default") ?? "").trim();
@@ -401,7 +403,8 @@ export async function editarEjercicio(
 
   const descripcion = String(formData.get("descripcion") ?? "").trim() || null;
   const grupo_muscular = String(formData.get("grupo_muscular") ?? "").trim() || null;
-  const video_url = String(formData.get("video_url") ?? "").trim() || null;
+  const video_url = urlSegura(String(formData.get("video_url") ?? "").trim());
+  if (video_url === undefined) return { error: "El link del video no es válido (debe empezar con https://)." };
   const instrucciones = String(formData.get("instrucciones") ?? "").trim() || null;
 
   const series_defaultRaw = String(formData.get("series_default") ?? "").trim();
@@ -926,7 +929,20 @@ const ETIQUETA_DIA: Record<DiaSemana, string> = {
 };
 
 /** El programa activo (no plantilla) del alumno con este coach, creándolo si hace falta. */
+// Al estar exportada desde un archivo "use server" también es invocable
+// como server action desde afuera: se valida que quien llama sea ese
+// mismo coach y que el alumno sea suyo.
 export async function obtenerOCrearProgramaActivo(id_alumno: string, id_entrenador: string) {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto || contexto.id_entrenador !== id_entrenador) {
+    throw new Error("No autorizado.");
+  }
+  const relacion = await prisma.relacionEntrenadorAlumno.findUnique({
+    where: { id_entrenador_id_alumno: { id_entrenador, id_alumno } },
+    select: { estado_relacion: true },
+  });
+  if (relacion?.estado_relacion !== "activa") throw new Error("No autorizado.");
+
   const existente = await prisma.programaEntrenamiento.findFirst({
     where: { id_alumno, id_entrenador, estado_programa: "activo", es_plantilla: false },
     orderBy: { fecha_inicio: "desc" },

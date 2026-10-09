@@ -17,6 +17,12 @@ import {
   borrarUsuarioAuth,
   vincularPerfilHuerfano,
 } from "@/lib/reparar-cuenta";
+import {
+  loginBloqueado,
+  registrarLoginFallido,
+  registroBloqueado,
+  registrarIntentoRegistro,
+} from "@/lib/limite-intentos";
 
 // Las reparaciones de cuenta nunca deben tumbar el login/registro: si
 // algo falla se registra y se sigue con el mensaje de error normal.
@@ -42,6 +48,12 @@ export async function iniciarSesion(
     return { error: "Completá email/DNI y contraseña." };
   }
 
+  const MENSAJE_BLOQUEO =
+    "Demasiados intentos fallidos. Esperá 15 minutos antes de volver a intentar.";
+  if (await intentar(() => loginBloqueado(identificador), false)) {
+    return { error: MENSAJE_BLOQUEO };
+  }
+
   // Cuentas dadas de alta sin email propio (beneficiarios importados de
   // Kuntur, o alumnos que carga el coach desde /coach/alumnos/nuevo) se
   // loguean con su DNI. En vez de reconstruir el email sintético con el
@@ -55,6 +67,7 @@ export async function iniciarSesion(
       select: { email: true },
     });
     if (!usuario) {
+      await intentar(() => registrarLoginFallido(identificador), undefined);
       return { error: "Email o contraseña incorrectos." };
     }
     email = usuario.email;
@@ -79,6 +92,7 @@ export async function iniciarSesion(
           "Tu email todavía no está confirmado. Abrí el link que te enviamos por mail (revisá también spam).",
       };
     }
+    await intentar(() => registrarLoginFallido(identificador), undefined);
     return { error: "Email o contraseña incorrectos." };
   }
 
@@ -142,8 +156,17 @@ export async function registrarse(
   if (!nombre || !apellido || !email || !password) {
     return { error: "Completá todos los campos." };
   }
-  if (password.length < 8) {
-    return { error: "La contraseña debe tener al menos 8 caracteres." };
+  if (password.length < 8 || password.length > 72) {
+    return { error: "La contraseña debe tener entre 8 y 72 caracteres." };
+  }
+  if (!/[a-zA-Z]/.test(password) || !/\d/.test(password)) {
+    return { error: "La contraseña debe tener al menos una letra y un número." };
+  }
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { error: "Ingresá un email válido." };
+  }
+  if (await intentar(() => registroBloqueado(), false)) {
+    return { error: "Demasiados registros desde esta conexión. Probá de nuevo más tarde." };
   }
   if (password !== confirmPassword) {
     return { error: "Las contraseñas no coinciden." };
@@ -170,6 +193,8 @@ export async function registrarse(
   // Si el email ya tiene perfil, signUp de Supabase igual "funciona" (por
   // privacidad devuelve un usuario falso) y el create de abajo explotaba
   // por email duplicado, dejando un usuario de Auth suelto.
+  await intentar(() => registrarIntentoRegistro(), undefined);
+
   const yaRegistrado = await prisma.usuario.findFirst({
     where: { email: { equals: email, mode: "insensitive" } },
     select: { id_usuario: true },

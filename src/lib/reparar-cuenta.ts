@@ -36,8 +36,12 @@ export async function confirmarEmailComercio(email: string): Promise<boolean> {
   });
   if (!usuario) return false;
 
+  // Solo si el perfil ya pertenece a ESE usuario de Auth. Si el perfil
+  // quedó huérfano (otro id), confirmar sin mail permitiría que alguien
+  // registre ese email por la API de Supabase y se quede con el comercio:
+  // en ese caso tiene que confirmar el email de verdad.
   const idAuth = await idAuthPorEmail(email);
-  if (!idAuth) return false;
+  if (!idAuth || idAuth !== usuario.id_usuario) return false;
 
   await confirmarEmailAuth(idAuth);
   return true;
@@ -74,6 +78,12 @@ export async function vincularPerfilHuerfano(idAuth: string, email: string): Pro
     select: { id_usuario: true },
   });
   if (!anterior || (await existeEnAuth(anterior.id_usuario))) return false;
+
+  // Re-vincular solo con el email confirmado de verdad (prueba de que la
+  // persona controla ese correo), nunca con uno auto-confirmado.
+  const [auth] = await prisma.$queryRaw<{ confirmado: boolean }[]>`
+    select email_confirmed_at is not null as confirmado from auth.users where id::text = ${idAuth}`;
+  if (!auth?.confirmado) return false;
 
   await prisma.usuario.update({
     where: { id_usuario: anterior.id_usuario },

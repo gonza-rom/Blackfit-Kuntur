@@ -23,6 +23,21 @@ export async function obtenerOCrearConversacion(idOtroUsuario: string): Promise<
   if (!usuario || (await accesoAlumnoBloqueado(usuario))) return null;
   if (usuario.id_usuario === idOtroUsuario) return null;
 
+  // Solo se puede abrir chat entre un coach y un alumno con relación
+  // activa (en cualquier dirección). Sin esto cualquier usuario logueado
+  // podía crear una conversación con cualquier otro y escribirle.
+  const relacion = await prisma.relacionEntrenadorAlumno.findFirst({
+    where: {
+      estado_relacion: "activa",
+      OR: [
+        { entrenador: { id_usuario: usuario.id_usuario }, alumno: { id_usuario: idOtroUsuario } },
+        { entrenador: { id_usuario: idOtroUsuario }, alumno: { id_usuario: usuario.id_usuario } },
+      ],
+    },
+    select: { id_relacion: true },
+  });
+  if (!relacion) return null;
+
   const [id_usuario_1, id_usuario_2] = [usuario.id_usuario, idOtroUsuario].sort();
 
   const conversacion = await prisma.conversacion.upsert({
@@ -46,6 +61,7 @@ export async function enviarMensaje(
   const id_conversacion = String(formData.get("id_conversacion") ?? "");
   const contenido = String(formData.get("contenido") ?? "").trim();
   if (!id_conversacion || !contenido) return { error: "Escribí un mensaje." };
+  if (contenido.length > 4000) return { error: "El mensaje es demasiado largo." };
 
   const conversacion = await prisma.conversacion.findUnique({ where: { id_conversacion } });
   if (

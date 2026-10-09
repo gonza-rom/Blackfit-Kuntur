@@ -1,3 +1,20 @@
+/**
+ * Valida un link cargado por un usuario (video de ejercicio, recurso de
+ * biblioteca): solo http/https. Bloquea javascript:, data:, etc., que en
+ * un href ejecutarían código en el navegador de quien lo abra (XSS).
+ * "" → null (campo vacío); inválido → undefined.
+ */
+export function urlSegura(crudo: string): string | null | undefined {
+  if (!crudo) return null;
+  if (crudo.length > 2048) return undefined;
+  try {
+    const u = new URL(crudo);
+    return u.protocol === "https:" || u.protocol === "http:" ? u.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 // Convierte un link de YouTube, Vimeo o Google Drive (los que carga el
 // coach en video_url del ejercicio) a su URL de embed. Si no reconoce el
 // formato, devuelve null y quien llama cae a un link "Abrir video" en vez
