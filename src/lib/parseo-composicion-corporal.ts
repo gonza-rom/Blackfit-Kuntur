@@ -1,225 +1,327 @@
-import type { CampoComposicionCorporal } from "./composicion-corporal";
+import type { CampoPerfilComposicion } from "./composicion-corporal";
 
 // ------------------------------------------------------------
-// Lee el texto plano de un reporte de balanza/InBody (ya extraído de un
-// PDF o Word por quien llama a esta función) y adivina, por etiqueta, qué
-// número corresponde a cada campo de ProgresoFisico. Es un parser por
-// heurística de texto — nunca una lectura garantizada — porque cada marca
-// y modelo de balanza imprime el reporte con su propio layout y sus
-// propias etiquetas. Por eso el resultado siempre se vuelca a un
-// formulario editable: el coach revisa y corrige antes de guardar, nunca
-// se guarda directo lo que devuelve este parser.
+// Lee el texto plano de un reporte de bioimpedancia (ya extraído de un
+// PDF o Word por quien llama — pdf-parse / mammoth, sin IA) y reconoce
+// SOLO los 5 indicadores que muestra el perfil del alumno: peso, IMC,
+// % grasa, grasa visceral y % músculo.
+//
+// Formatos contemplados (sin que el coach tenga que elegir):
+// - Lista simple: "Peso 58,6 kg", "Músculos 43,1 %", "Grasa visceral 5"...
+// - Informe de evolución: tabla con valor actual, anterior y diferencia,
+//   con encabezado "Actual / Anterior / Diferencia" o con fechas por
+//   columna. Se toma SIEMPRE el valor actual, nunca la variación (los
+//   números con signo + / − se tratan como diferencias) ni el anterior.
+//
+// Reglas de unidades (críticas):
+// - % grasa y % músculo solo aceptan un número marcado como porcentaje
+//   ("43,1 %" o una etiqueta "(%)"). Un valor en kg (ej. "Masa muscular
+//   26,7 kg") NUNCA se guarda como porcentaje, ni se convierte.
+// - Peso, IMC y grasa visceral rechazan valores con "%".
+//
+// Es una lectura por heurística: el resultado se vuelca a un formulario
+// editable y el coach confirma antes de guardar. Lo dudoso se marca para
+// revisión y lo que no se encuentra queda vacío — nunca se inventa.
 // ------------------------------------------------------------
 
-type DefinicionCampo = {
-  campo: CampoComposicionCorporal;
-  // Etiquetas ya normalizadas (minúsculas, sin tildes), de la más
-  // específica a la más genérica — se prueban en ese orden.
+type Unidad = "%" | "kg" | "otra" | null;
+
+type Definicion = {
+  campo: CampoPerfilComposicion;
+  // Normalizadas (minúsculas, sin tildes), de la más específica a la más
+  // genérica: se prueban en ese orden.
   etiquetas: string[];
-  // Rango plausible para descartar capturas absurdas (ej. un número de
-  // página o un año pegado a la etiqueta por casualidad del layout).
   rango: [number, number];
-  requierePorcentaje?: boolean;
-  // Palabras que, si aparecen en la misma línea, invalidan la coincidencia
-  // (ej. "peso ideal" no es el peso medido real).
-  excluir?: string[];
+  unidad: "porcentaje" | "kg" | "sin_unidad";
+  // Si el texto que sigue a la etiqueta empieza así, no es este campo
+  // (ej. "grasa visceral" no es "% grasa"; "peso ideal" no es el peso).
+  noSeguidoDe?: RegExp;
 };
 
-const DEFINICIONES: DefinicionCampo[] = [
+const DEFINICIONES: Definicion[] = [
   {
     campo: "peso_corporal",
-    etiquetas: ["peso corporal", "body weight", "weight", "peso"],
+    etiquetas: ["peso corporal", "peso actual", "peso", "body weight", "weight"],
     rango: [20, 300],
-    excluir: ["ideal", "objetivo", "meta", "recomendado", "deseado", "target", "control"],
+    unidad: "kg",
+    noSeguidoDe:
+      /^\s*(ideal|objetivo|meta|recomendado|deseado|magro|graso|de grasa|muscular|oseo|del agua|de agua|sin grasa|libre|control|target)/,
   },
   {
     campo: "imc",
     etiquetas: ["indice de masa corporal", "imc", "bmi"],
-    rango: [10, 60],
-  },
-  {
-    campo: "pulso",
-    etiquetas: ["frecuencia cardiaca", "pulso", "heart rate", "pulse", "bpm"],
-    rango: [30, 220],
+    rango: [10, 70],
+    unidad: "sin_unidad",
   },
   {
     campo: "porcentaje_graso",
     etiquetas: [
       "porcentaje de grasa corporal",
       "porcentaje de grasa",
-      "grasa corporal (%)",
-      "pgc",
-      "percent body fat",
-      "body fat percentage",
-      "body fat %",
+      "% de grasa corporal",
+      "% de grasa",
       "% grasa",
       "grasa corporal",
+      "masa grasa",
+      "body fat",
+      "pgc",
+      "grasa",
     ],
-    rango: [1, 70],
-    requierePorcentaje: true,
+    rango: [2, 75],
+    unidad: "porcentaje",
+    noSeguidoDe: /^\s*(visceral|subcutanea)/,
   },
   {
-    campo: "porcentaje_agua",
-    etiquetas: [
-      "porcentaje de agua corporal",
-      "agua corporal total",
-      "total body water",
-      "tbw",
-      "porcentaje de agua",
-      "% agua",
-      "agua corporal",
-      "body water",
-    ],
-    rango: [1, 90],
-    requierePorcentaje: true,
+    campo: "grasa_visceral",
+    etiquetas: ["nivel de grasa visceral", "grasa visceral", "visceral fat level", "visceral fat"],
+    rango: [1, 60],
+    unidad: "sin_unidad",
   },
   {
     campo: "porcentaje_musculo",
     etiquetas: [
       "porcentaje de musculo",
       "porcentaje muscular",
+      "% de musculo",
       "% musculo",
-      "muscle percentage",
-    ],
-    rango: [1, 90],
-    requierePorcentaje: true,
-  },
-  {
-    campo: "masa_osea",
-    etiquetas: ["masa osea", "mineral oseo", "bone mineral", "bone mass", "huesos"],
-    rango: [0.5, 10],
-  },
-  {
-    campo: "metabolismo_basal",
-    etiquetas: [
-      "tasa metabolica basal",
-      "metabolismo basal",
-      "basal metabolic rate",
-      "tmb",
-      "bmr",
-    ],
-    rango: [500, 5000],
-  },
-  {
-    campo: "metabolismo_activo",
-    etiquetas: ["metabolismo activo", "gasto energetico total", "total energy expenditure", "tdee"],
-    rango: [500, 6000],
-  },
-  {
-    campo: "grasa_visceral",
-    etiquetas: ["nivel de grasa visceral", "grasa visceral", "visceral fat level", "visceral fat"],
-    rango: [1, 30],
-  },
-  {
-    campo: "edad_metabolica",
-    etiquetas: ["edad metabolica", "edad corporal", "metabolic age", "body age"],
-    rango: [5, 100],
-  },
-  {
-    campo: "soft_lean_mass",
-    etiquetas: ["soft lean mass"],
-    rango: [1, 150],
-  },
-  {
-    campo: "lean_body_mass",
-    etiquetas: ["lean body mass", "lbm"],
-    rango: [1, 150],
-  },
-  {
-    campo: "proteina",
-    etiquetas: ["proteinas", "proteina", "protein"],
-    rango: [1, 30],
-  },
-  {
-    campo: "masa_muscular",
-    etiquetas: [
-      "masa muscular esqueletica",
-      "smm",
-      "skeletal muscle mass",
+      "musculo esqueletico",
       "masa muscular",
+      "musculos",
+      "musculo",
+      "muscle",
     ],
-    rango: [1, 150],
+    rango: [10, 80],
+    unidad: "porcentaje",
   },
 ];
 
-const RANGO_DIACRITICOS = /[\u0300-\u036f]/g;
+type Token = { valor: number; crudo: string; signo: boolean; unidad: Unidad };
 
-function quitarTildes(texto: string): string {
-  return texto.normalize("NFD").replace(RANGO_DIACRITICOS, "");
+const RE_FECHA = /\b\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}\b/g;
+const RE_TOKEN = /([+\-])?\s?(\d{1,4}(?:[.,]\d{1,3})?)\s*(%|kg|kcal|cm|lpm|anos)?/g;
+
+function normalizar(texto: string): string {
+  return texto
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[−–—]/g, "-")
+    .replace(/ /g, " ")
+    .replace(/\r/g, "");
 }
 
-function escaparRegExp(texto: string): string {
+function escapar(texto: string): string {
   return texto.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function lineaDelIndice(texto: string, indice: number): string {
-  const inicio = texto.lastIndexOf("\n", indice) + 1;
-  const finRelativo = texto.indexOf("\n", indice);
-  const fin = finRelativo === -1 ? texto.length : finRelativo;
-  return texto.slice(inicio, fin);
+function tokens(segmento: string): Token[] {
+  const limpio = segmento
+    .replace(RE_FECHA, " ")
+    // Rangos de referencia entre paréntesis: "(18,5 - 24,9)".
+    .replace(/\(\s*\d[^)]*\)/g, " ");
+  const salida: Token[] = [];
+  for (const m of limpio.matchAll(RE_TOKEN)) {
+    const crudo = m[2].replace(",", ".");
+    const valor = Number(crudo);
+    if (!Number.isFinite(valor)) continue;
+    const u = m[3];
+    salida.push({
+      valor,
+      crudo,
+      signo: Boolean(m[1]),
+      unidad: u === "%" ? "%" : u === "kg" ? "kg" : u ? "otra" : null,
+    });
+  }
+  return salida;
 }
 
-/** Extrae, campo por campo, los valores que aparezcan en el texto de un reporte de composición corporal. */
-export function extraerComposicionDeTexto(
-  textoOriginal: string
-): Partial<Record<CampoComposicionCorporal, string>> {
-  const texto = quitarTildes(textoOriginal.toLowerCase());
-  const resultado: Partial<Record<CampoComposicionCorporal, string>> = {};
+/** ¿El renglón es solo números/unidades (fila de una tabla partida)? */
+function esFilaNumerica(linea: string): boolean {
+  return /\d/.test(linea) && !/[a-z]{3,}/.test(linea.replace(/\b(kg|kcal|cm|lpm|anos)\b/g, ""));
+}
+
+type Columnas = { tipos: ("actual" | "anterior" | "diferencia")[] } | null;
+
+/**
+ * Detecta el encabezado de un informe comparativo para saber en qué
+ * posición viene el valor ACTUAL. Dos variantes: palabras ("actual",
+ * "anterior", "diferencia") o fechas por columna (la más reciente es la
+ * actual).
+ */
+function detectarColumnas(lineas: string[]): Columnas {
+  // Word (mammoth) convierte cada celda de una tabla en su propio renglón:
+  // el encabezado llega como "anterior" / "actual" / "diferencia" en
+  // renglones seguidos. Se lo reconstruye como una sola línea.
+  const RE_SOLO_COLUMNA = /^(actual|hoy|ultima|anterior|previa|previo|inicial|diferencia|variacion|cambio|dif)$/;
+  const noVacias = lineas.filter(Boolean);
+  for (let i = 0; i < noVacias.length; i++) {
+    if (!RE_SOLO_COLUMNA.test(noVacias[i])) continue;
+    let j = i;
+    while (j < noVacias.length && RE_SOLO_COLUMNA.test(noVacias[j])) j++;
+    if (j - i >= 2) {
+      lineas = [noVacias.slice(i, j).join(" "), ...lineas];
+      break;
+    }
+  }
+
+  for (const linea of lineas) {
+    const palabras = [
+      ...linea.matchAll(/\b(actual|hoy|ultima|anterior|previa|previo|inicial|diferencia|variacion|cambio|dif)\b/g),
+    ].map((m) => m[1]);
+    const tieneActual = palabras.some((p) => ["actual", "hoy", "ultima"].includes(p));
+    const tieneOtra = palabras.some((p) => !["actual", "hoy", "ultima"].includes(p));
+    if (tieneActual && tieneOtra) {
+      return {
+        tipos: palabras.map((p) =>
+          ["actual", "hoy", "ultima"].includes(p)
+            ? "actual"
+            : ["diferencia", "variacion", "cambio", "dif"].includes(p)
+              ? "diferencia"
+              : "anterior"
+        ),
+      };
+    }
+
+    const fechas = [...linea.matchAll(RE_FECHA)].map((m) => fechaISO(m[0]));
+    if (fechas.length >= 2 && fechas.every(Boolean) && !/nacim/.test(linea)) {
+      const masReciente = [...fechas].sort().at(-1);
+      const tipos: ("actual" | "anterior" | "diferencia")[] = fechas.map((f) =>
+        f === masReciente ? "actual" : "anterior"
+      );
+      if (/\b(diferencia|variacion|cambio|dif)\b/.test(linea)) tipos.push("diferencia");
+      return { tipos };
+    }
+  }
+  return null;
+}
+
+function unidadValida(def: Definicion, t: Token, contexto: string): boolean {
+  if (def.unidad === "porcentaje") {
+    if (t.unidad === "kg" || t.unidad === "otra") return false;
+    // El número tiene que estar marcado como porcentaje, o la etiqueta
+    // tiene que decirlo ("Grasa corporal (%)"). Nunca se asume.
+    return t.unidad === "%" || contexto.includes("%");
+  }
+  if (t.unidad === "%") return false;
+  if (def.unidad === "sin_unidad" && t.unidad === "kg") return false;
+  if (def.unidad === "kg" && t.unidad === "otra") return false;
+  return true;
+}
+
+type Lectura = { valor: string; revisar: boolean };
+
+function elegirValor(def: Definicion, cand: Token[], contexto: string, columnas: Columnas): Lectura | null {
+  const validos = cand.filter(
+    (t) => unidadValida(def, t, contexto) && t.valor >= def.rango[0] && t.valor <= def.rango[1]
+  );
+  const sinSigno = validos.filter((t) => !t.signo);
+  if (sinSigno.length === 0) return null;
+
+  // Informe comparativo con columnas reconocidas: el valor en la posición
+  // de "actual". Si la fila trae todas las columnas, por posición exacta;
+  // si no, entre los valores sin signo (las diferencias suelen ir con +/-).
+  if (columnas && columnas.tipos.length >= 2) {
+    const idxActual = columnas.tipos.indexOf("actual");
+    if (cand.length === columnas.tipos.length) {
+      const t = cand[idxActual];
+      if (t && validos.includes(t) && !t.signo) return { valor: t.crudo, revisar: false };
+    }
+    const sinDiferencia = columnas.tipos.filter((x) => x !== "diferencia");
+    const idx = sinDiferencia.indexOf("actual");
+    if (sinSigno.length === sinDiferencia.length && sinSigno[idx]) {
+      return { valor: sinSigno[idx].crudo, revisar: false };
+    }
+    // No se pudo ubicar con certeza la columna actual.
+    return { valor: sinSigno[0].crudo, revisar: sinSigno.length > 1 };
+  }
+
+  // Lista simple. Si hay dos valores con la misma unidad (ej. "58,6 kg
+  // 59,5 kg") sin encabezado que diga cuál es el actual, se pide revisión.
+  const [primero, segundo] = sinSigno;
+  const dudoso = Boolean(segundo && primero.unidad && segundo.unidad === primero.unidad);
+  return { valor: primero.crudo, revisar: dudoso };
+}
+
+export type LecturaComposicion = {
+  valores: Partial<Record<CampoPerfilComposicion, string>>;
+  // Campos completados que el coach tiene que mirar con atención: no se
+  // pudo determinar con certeza cuál era el valor actual.
+  revisar: CampoPerfilComposicion[];
+};
+
+/** Reconoce los 5 indicadores del perfil en el texto de un reporte de bioimpedancia. */
+export function extraerComposicionDeTexto(textoOriginal: string): LecturaComposicion {
+  const lineas = normalizar(textoOriginal)
+    .split("\n")
+    .map((l) => l.replace(/[\t ]+/g, " ").trim());
+  const columnas = detectarColumnas(lineas);
+  const valores: LecturaComposicion["valores"] = {};
+  const revisar: CampoPerfilComposicion[] = [];
 
   for (const def of DEFINICIONES) {
-    let encontrado: string | null = null;
+    let lectura: Lectura | null = null;
 
     for (const etiqueta of def.etiquetas) {
-      if (encontrado) break;
+      if (lectura) break;
+      const patron = new RegExp(`(?:^|[^a-z%])(${escapar(etiqueta)})(?![a-z])`, "g");
 
-      // Entre la etiqueta y el número puede haber ":" ", " o un salto de
-      // línea (las tablas de un PDF suelen perder la alineación real) —
-      // por eso la ventana tolera hasta ~25 caracteres que no sean dígitos.
-      const patron = new RegExp(
-        `${escaparRegExp(etiqueta)}[^0-9]{0,25}([0-9]+(?:[.,][0-9]+)?)\\s*(%)?`,
-        "gi"
-      );
+      for (let i = 0; i < lineas.length && !lectura; i++) {
+        for (const m of lineas[i].matchAll(patron)) {
+          const resto = lineas[i].slice((m.index ?? 0) + m[0].length);
+          if (def.noSeguidoDe?.test(resto)) continue;
 
-      let coincidencia: RegExpExecArray | null;
-      while ((coincidencia = patron.exec(texto)) !== null) {
-        const [, numeroCrudo, porcentajeInmediato] = coincidencia;
-        const linea = lineaDelIndice(texto, coincidencia.index);
+          // Lo que hay entre la etiqueta y el primer número: ahí puede
+          // venir la unidad del encabezado de la fila, ej. "(%)" o "(kg)".
+          const contexto = (etiqueta.includes("%") ? "%" : "") + (resto.match(/^[^0-9+\-]*/)?.[0] ?? "");
+          let cand = tokens(resto);
 
-        if (def.excluir?.some((palabra) => linea.includes(palabra))) continue;
+          // Tabla partida: la etiqueta en un renglón y los valores en los
+          // siguientes renglones (solo números).
+          if (cand.length === 0) {
+            for (let j = i + 1; j < lineas.length && j <= i + 4; j++) {
+              if (!lineas[j]) continue;
+              if (!esFilaNumerica(lineas[j])) break;
+              cand = cand.concat(tokens(lineas[j]));
+            }
+          }
 
-        const tienePorcentaje = Boolean(porcentajeInmediato) || linea.includes("%");
-        if (def.requierePorcentaje && !tienePorcentaje) continue;
-
-        const numero = Number(numeroCrudo.replace(",", "."));
-        if (!Number.isFinite(numero) || numero < def.rango[0] || numero > def.rango[1]) continue;
-
-        encontrado = numeroCrudo.replace(",", ".");
-        break;
+          lectura = elegirValor(def, cand, contexto, columnas);
+          if (lectura) break;
+        }
       }
     }
 
-    if (encontrado) resultado[def.campo] = encontrado;
+    if (lectura) {
+      valores[def.campo] = lectura.valor;
+      if (lectura.revisar) revisar.push(def.campo);
+    }
   }
 
-  return resultado;
+  return { valores, revisar };
 }
 
-/** Busca una fecha "dd/mm/aaaa" (o con "-"/".") cerca de la palabra "fecha"/"date". Devuelve YYYY-MM-DD o null. */
+function fechaISO(crudo: string): string | null {
+  const m = crudo.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})$/);
+  if (!m) return null;
+  const dia = Number(m[1]);
+  const mes = Number(m[2]);
+  const anio = Number(m[3].length === 2 ? `20${m[3]}` : m[3]);
+  if (mes < 1 || mes > 12 || dia < 1 || dia > 31 || anio < 2000 || anio > 2100) return null;
+  return `${anio}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+}
+
+/**
+ * Fecha de la medición (YYYY-MM-DD) o null. En un informe de evolución
+ * aparecen varias fechas (la anterior y la actual): se toma la más
+ * reciente, ignorando la fecha de nacimiento y fechas futuras.
+ */
 export function extraerFechaDeTexto(textoOriginal: string): string | null {
-  const texto = quitarTildes(textoOriginal.toLowerCase());
-  const patron = /(?:fecha|date)[^0-9]{0,20}([0-9]{1,2})[/\-.]([0-9]{1,2})[/\-.]([0-9]{2,4})/i;
-  const coincidencia = texto.match(patron);
-  if (!coincidencia) return null;
-
-  const dia = Number(coincidencia[1]);
-  const mes = Number(coincidencia[2]);
-  let anio = coincidencia[3];
-  if (anio.length === 2) anio = `20${anio}`;
-  const anioNum = Number(anio);
-
-  if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null;
-  const fecha = new Date(anioNum, mes - 1, dia);
-  if (Number.isNaN(fecha.getTime())) return null;
-
-  return `${anioNum}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+  const hoy = new Date().toISOString().slice(0, 10);
+  const candidatas = normalizar(textoOriginal)
+    .split("\n")
+    .filter((l) => !/nacim|\bnac\b|birth/.test(l))
+    .flatMap((l) => [...l.matchAll(RE_FECHA)].map((m) => fechaISO(m[0])))
+    .filter((f): f is string => Boolean(f) && (f as string) <= hoy);
+  return candidatas.sort().at(-1) ?? null;
 }
+

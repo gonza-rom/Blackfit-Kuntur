@@ -61,10 +61,15 @@ export default async function PerfilPage() {
   const estadisticas =
     usuario?.alumno && (await calcularEstadisticasAlumno(usuario.alumno.id_alumno));
 
-  const ultimaComposicion = usuario?.alumno
-    ? await prisma.progresoFisico.findFirst({
+  // Cada tarjeta muestra el valor más reciente DE ESE indicador: si la
+  // última medición no trae, por ejemplo, % músculo, se sigue viendo el
+  // último % músculo cargado en vez de "—" (un dato faltante nunca pisa
+  // uno válido). Las evaluaciones anteriores quedan todas guardadas.
+  const mediciones = usuario?.alumno
+    ? await prisma.progresoFisico.findMany({
         where: { id_alumno: usuario.alumno.id_alumno },
         orderBy: { fecha: "desc" },
+        take: 50,
         select: {
           peso_corporal: true,
           imc: true,
@@ -73,7 +78,16 @@ export default async function PerfilPage() {
           porcentaje_musculo: true,
         },
       })
-    : null;
+    : [];
+  const ultimo = <K extends keyof (typeof mediciones)[number]>(campo: K) =>
+    mediciones.find((m) => m[campo] != null)?.[campo] ?? null;
+  const ultimaComposicion = {
+    peso_corporal: ultimo("peso_corporal"),
+    imc: ultimo("imc"),
+    porcentaje_graso: ultimo("porcentaje_graso"),
+    grasa_visceral: ultimo("grasa_visceral"),
+    porcentaje_musculo: ultimo("porcentaje_musculo"),
+  };
 
   const diasMembresia = usuario ? await obtenerDiasMembresia(usuario.id_usuario) : null;
 
@@ -128,11 +142,19 @@ export default async function PerfilPage() {
       {usuario?.alumno && (
           <section className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-6">
             {[
-              { valor: ultimaComposicion?.peso_corporal, label: "Peso (kg)", clase: "text-on-surface" },
-              { valor: ultimaComposicion?.imc, label: "IMC", clase: "text-on-surface" },
-              { valor: ultimaComposicion?.porcentaje_graso, label: "% Grasa", clase: "text-on-surface" },
-              { valor: ultimaComposicion?.grasa_visceral, label: "Grasa visc.", clase: "text-on-surface" },
-              { valor: ultimaComposicion?.porcentaje_musculo, label: "% Músculo", clase: "text-on-surface" },
+              { valor: ultimaComposicion.peso_corporal, label: "Peso (kg)", clase: "text-on-surface" },
+              { valor: ultimaComposicion.imc, label: "IMC", clase: "text-on-surface" },
+              { valor: ultimaComposicion.porcentaje_graso, label: "% Grasa", clase: "text-on-surface" },
+              { valor: ultimaComposicion.grasa_visceral, label: "Grasa visc.", clase: "text-on-surface" },
+              {
+                // Siempre porcentaje (porcentaje_musculo, nunca masa en kg), con "%".
+                valor:
+                  ultimaComposicion.porcentaje_musculo != null
+                    ? `${ultimaComposicion.porcentaje_musculo} %`
+                    : null,
+                label: "% Músculo",
+                clase: "text-on-surface",
+              },
               {
                 valor: diasMembresia === null ? null : diasMembresia <= 0 ? "Vencida" : diasMembresia,
                 label:

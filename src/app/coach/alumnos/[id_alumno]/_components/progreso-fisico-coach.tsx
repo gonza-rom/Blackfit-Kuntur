@@ -10,18 +10,20 @@ import {
 import { useEditorEnLinea } from "@/lib/use-editor-en-linea";
 import { ConfirmForm } from "@/components/confirm-form";
 
-// Orden y unidades como los muestra la balanza/InBody.
+// Primero los 5 indicadores del perfil del alumno (los que completa el
+// lector de PDF/Word); después el resto de los datos de la balanza, que
+// se siguen pudiendo cargar a mano.
 const CAMPOS = [
-  { name: "peso_corporal", label: "Peso", unit: "kg", step: "0.01" },
-  { name: "imc", label: "IMC", unit: "", step: "0.1" },
+  { name: "peso_corporal", label: "Peso", unit: "kg", step: "0.01", perfil: true },
+  { name: "imc", label: "IMC", unit: "", step: "0.1", perfil: true },
+  { name: "porcentaje_graso", label: "% Grasa", unit: "%", step: "0.1", perfil: true },
+  { name: "grasa_visceral", label: "Grasa visceral", unit: "", step: "1", perfil: true },
+  { name: "porcentaje_musculo", label: "% Músculo", unit: "%", step: "0.1", perfil: true },
   { name: "pulso", label: "Pulso", unit: "lpm", step: "1" },
-  { name: "porcentaje_graso", label: "Grasa corporal", unit: "%", step: "0.1" },
   { name: "porcentaje_agua", label: "Agua", unit: "%", step: "0.1" },
-  { name: "porcentaje_musculo", label: "Músculos", unit: "%", step: "0.1" },
   { name: "masa_osea", label: "Huesos", unit: "kg", step: "0.1" },
   { name: "metabolismo_basal", label: "Metabolismo basal", unit: "kcal", step: "1" },
   { name: "metabolismo_activo", label: "Metabolismo activo", unit: "kcal", step: "1" },
-  { name: "grasa_visceral", label: "Grasa visceral", unit: "", step: "1" },
   { name: "edad_metabolica", label: "Edad metabólica", unit: "años", step: "1" },
   { name: "soft_lean_mass", label: "Soft Lean Mass", unit: "kg", step: "0.1" },
   { name: "lean_body_mass", label: "Lean Body Mass", unit: "kg", step: "0.1" },
@@ -30,6 +32,15 @@ const CAMPOS = [
 ] as const;
 
 type Campo = (typeof CAMPOS)[number]["name"];
+type EstadoLectura = "revisar" | "faltante";
+
+const CAMPOS_PERFIL = CAMPOS.filter((c) => "perfil" in c);
+const CAMPOS_OTROS = CAMPOS.filter((c) => !("perfil" in c));
+
+function conUnidad(valor: string, unit: string): string {
+  // "%" con espacio y una sola vez ("43.1 %"), nunca "43.1%%".
+  return unit ? `${valor.replace(/\s*%$/, "")} ${unit}` : valor;
+}
 
 export type ProgresoSerializado = {
   id_progreso: string;
@@ -59,13 +70,47 @@ function CamposComposicion({
   controlado = false,
   onCampoChange,
   onFechaChange,
+  lectura,
 }: {
   valores?: Record<Campo, string | null>;
   fecha?: string;
   controlado?: boolean;
   onCampoChange?: (campo: Campo, valor: string) => void;
   onFechaChange?: (valor: string) => void;
+  lectura?: Partial<Record<Campo, EstadoLectura>>;
 }) {
+  const input = (c: (typeof CAMPOS)[number]) => {
+    const estado = lectura?.[c.name];
+    return (
+      <div key={c.name} className="flex flex-col gap-1">
+        <label className={LABEL} htmlFor={`${c.name}-in`}>
+          {c.label}
+          {c.unit && c.unit !== "%" ? ` (${c.unit})` : ""}
+          {estado === "revisar" && <span className="text-[#eda100]"> · revisar</span>}
+          {estado === "faltante" && (
+            <span className="text-on-surface-variant"> · no está en el archivo</span>
+          )}
+        </label>
+        <input
+          id={`${c.name}-in`}
+          name={c.name}
+          type="number"
+          step={c.step}
+          min="0"
+          max={c.unit === "%" ? "100" : undefined}
+          inputMode="decimal"
+          {...(controlado
+            ? {
+                value: valores?.[c.name] ?? "",
+                onChange: (e: ChangeEvent<HTMLInputElement>) => onCampoChange?.(c.name, e.target.value),
+              }
+            : { defaultValue: valores?.[c.name] ?? "" })}
+          className={`${INPUT} ${estado === "revisar" ? "!border-[#eda100]" : ""}`}
+        />
+      </div>
+    );
+  };
+
   return (
     <>
       <div className="flex flex-col gap-1">
@@ -79,32 +124,14 @@ function CamposComposicion({
           className={INPUT}
         />
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-        {CAMPOS.map((c) => (
-          <div key={c.name} className="flex flex-col gap-1">
-            <label className={LABEL} htmlFor={`${c.name}-in`}>
-              {c.label}
-              {c.unit ? ` (${c.unit})` : ""}
-            </label>
-            <input
-              id={`${c.name}-in`}
-              name={c.name}
-              type="number"
-              step={c.step}
-              min="0"
-              inputMode="decimal"
-              {...(controlado
-                ? {
-                    value: valores?.[c.name] ?? "",
-                    onChange: (e: ChangeEvent<HTMLInputElement>) =>
-                      onCampoChange?.(c.name, e.target.value),
-                  }
-                : { defaultValue: valores?.[c.name] ?? "" })}
-              className={INPUT}
-            />
-          </div>
-        ))}
-      </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">{CAMPOS_PERFIL.map(input)}</div>
+      {/* Montado aunque esté plegado: los inputs viajan igual en el form. */}
+      <details>
+        <summary className={`${LABEL} cursor-pointer select-none`}>
+          Otros datos de la balanza (opcional)
+        </summary>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2">{CAMPOS_OTROS.map(input)}</div>
+      </details>
     </>
   );
 }
@@ -116,7 +143,12 @@ function CamposComposicion({
 function ImportarDesdeDocumento({
   onExtraido,
 }: {
-  onExtraido: (resultado: { fecha: string | null; valores: Partial<Record<Campo, string>> }) => void;
+  onExtraido: (resultado: {
+    fecha: string | null;
+    valores: Partial<Record<Campo, string>>;
+    revisar: Campo[];
+    faltantes: Campo[];
+  }) => void;
 }) {
   const [state, action, pending] = useActionState(extraerComposicionDeDocumento, undefined);
   const [nombreArchivo, setNombreArchivo] = useState<string | null>(null);
@@ -134,7 +166,7 @@ function ImportarDesdeDocumento({
       action={action}
       className="border border-dashed border-outline-variant rounded-lg p-3 flex flex-col gap-2"
     >
-      <p className={LABEL}>Completar desde un PDF/Word o una foto de la balanza (opcional)</p>
+      <p className={LABEL}>Completar desde el PDF o Word de la balanza (opcional)</p>
       <div className="flex flex-wrap items-center gap-2">
         <input
           name="archivo"
@@ -153,14 +185,31 @@ function ImportarDesdeDocumento({
       </div>
       {state && "error" in state && <p className="text-xs text-[#ffb4ab]">{state.error}</p>}
       {state && "valores" in state && (
-        <p className="text-xs text-primary-container">
-          Se completaron {Object.keys(state.valores).length} campo
-          {Object.keys(state.valores).length === 1 ? "" : "s"} automáticamente — revisá los
-          valores antes de guardar, esta lectura no siempre es exacta.
-        </p>
+        <div className="text-xs flex flex-col gap-0.5">
+          <p className="text-primary-container">
+            Se completaron {Object.keys(state.valores).length} de 5 indicadores. Revisalos antes de
+            guardar.
+          </p>
+          {state.revisar.length > 0 && (
+            <p className="text-[#eda100]">
+              Revisar (no quedó claro cuál es el valor actual):{" "}
+              {state.revisar.map(etiquetaCampo).join(", ")}.
+            </p>
+          )}
+          {state.faltantes.length > 0 && (
+            <p className="text-on-surface-variant">
+              No están en el archivo, completalos a mano si los tenés:{" "}
+              {state.faltantes.map(etiquetaCampo).join(", ")}.
+            </p>
+          )}
+        </div>
       )}
     </form>
   );
+}
+
+function etiquetaCampo(campo: Campo): string {
+  return CAMPOS.find((c) => c.name === campo)?.label ?? campo;
 }
 
 export function ProgresoFisicoCoach({
@@ -174,6 +223,19 @@ export function ProgresoFisicoCoach({
   const [state, action, pending] = useActionState(crearProgresoFisicoAlumno, undefined);
   const [valoresNuevos, setValoresNuevos] = useState<Record<Campo, string>>(valoresVacios);
   const [fechaNueva, setFechaNueva] = useState(() => new Date().toISOString().slice(0, 10));
+  const [lectura, setLectura] = useState<Partial<Record<Campo, EstadoLectura>>>({});
+
+  // Guardado OK: se limpia el formulario para la próxima medición. Solo con
+  // éxito real del servidor; si falla, quedan los datos para reintentar.
+  const [estadoVisto, setEstadoVisto] = useState(state);
+  if (state !== estadoVisto) {
+    setEstadoVisto(state);
+    if (state?.message) {
+      setValoresNuevos(valoresVacios());
+      setLectura({});
+      setAbrirNueva(false);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-2">
@@ -198,7 +260,13 @@ export function ProgresoFisicoCoach({
           <ImportarDesdeDocumento
             onExtraido={(resultado) => {
               if (resultado.fecha) setFechaNueva(resultado.fecha);
+              // Solo pisa lo que el archivo trae: un campo no reconocido
+              // nunca borra lo que el coach ya había escrito.
               setValoresNuevos((prev) => ({ ...prev, ...resultado.valores }));
+              setLectura({
+                ...Object.fromEntries(resultado.faltantes.map((c) => [c, "faltante"])),
+                ...Object.fromEntries(resultado.revisar.map((c) => [c, "revisar"])),
+              });
             }}
           />
           <form action={action} className="flex flex-col gap-3">
@@ -211,6 +279,7 @@ export function ProgresoFisicoCoach({
                 setValoresNuevos((prev) => ({ ...prev, [campo]: valor }))
               }
               onFechaChange={setFechaNueva}
+              lectura={lectura}
             />
             {state?.error && <p className="text-sm text-[#ffb4ab]">{state.error}</p>}
             {state?.message && (
@@ -248,13 +317,8 @@ function EntradaItem({ entrada }: { entrada: ProgresoSerializado }) {
   const [editar, setEditar] = useEditorEnLinea(state, pending);
 
   const conValor = CAMPOS.filter((c) => entrada.valores[c.name] != null);
-  const resumen = CAMPOS.filter(
-    (c) =>
-      ["peso_corporal", "porcentaje_graso", "porcentaje_musculo", "imc"].includes(
-        c.name
-      ) && entrada.valores[c.name] != null
-  )
-    .map((c) => `${entrada.valores[c.name]}${c.unit}`)
+  const resumen = CAMPOS_PERFIL.filter((c) => entrada.valores[c.name] != null)
+    .map((c) => conUnidad(entrada.valores[c.name]!, c.unit))
     .join(" · ");
 
   return (
@@ -312,8 +376,7 @@ function EntradaItem({ entrada }: { entrada: ProgresoSerializado }) {
             <div key={c.name} className="flex justify-between gap-2 border-b border-[#262626] py-1">
               <dt className="text-on-surface-variant">{c.label}</dt>
               <dd className="text-on-surface tabular-nums">
-                {entrada.valores[c.name]}
-                {c.unit ? ` ${c.unit}` : ""}
+                {conUnidad(entrada.valores[c.name]!, c.unit)}
               </dd>
             </div>
           ))}

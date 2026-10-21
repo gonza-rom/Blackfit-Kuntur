@@ -19,3 +19,16 @@ export type CampoComposicionCorporal =
   | "lean_body_mass"
   | "proteina"
   | "masa_muscular";
+
+// Los 5 indicadores que muestra el perfil del alumno y que el lector de
+// PDF/Word completa. El resto de los campos de arriba se siguen pudiendo
+// cargar a mano, pero el lector no los toca.
+export const CAMPOS_PERFIL_COMPOSICION = [
+  "peso_corporal",
+  "imc",
+  "porcentaje_graso",
+  "grasa_visceral",
+  "porcentaje_musculo",
+] as const satisfies readonly CampoComposicionCorporal[];
+
+export type CampoPerfilComposicion = (typeof CAMPOS_PERFIL_COMPOSICION)[number];

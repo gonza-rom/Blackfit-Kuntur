@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoActual } from "@/lib/auth";
-import { FormRegistrarEntrenamiento } from "./_components/form-registrar-entrenamiento";
+import { FormRegistrarEntrenamientoCliente } from "./_components/form-registrar-entrenamiento-cliente";
 
 export default async function RegistrarEntrenamientoPage(
   props: PageProps<"/panel/entrenamientos/[id_bloque]">
@@ -69,16 +69,24 @@ export default async function RegistrarEntrenamientoPage(
     domingo: "Domingo",
   };
 
+  const titulo = bloque.dia_semana ? `Hoy — ${ETIQUETA_DIA[bloque.dia_semana]}` : bloque.nombre;
+
   return (
     <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-6">
       <div>
         <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
-          {bloque.dia_semana ? `Hoy — ${ETIQUETA_DIA[bloque.dia_semana]}` : bloque.nombre}
+          {titulo}
         </h1>
         <p className="text-sm text-on-surface-variant">{bloque.programa.nombre}</p>
       </div>
 
-      <FormRegistrarEntrenamiento idBloque={id_bloque} ejercicios={ejercicios} grupos={grupos} />
+      <FormRegistrarEntrenamientoCliente
+        idAlumno={contexto.id_alumno}
+        idBloque={id_bloque}
+        titulo={titulo}
+        ejercicios={ejercicios}
+        grupos={grupos}
+      />
     </main>
   );
 }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AvisoSesionEnCurso } from "@/components/aviso-sesion-en-curso";
 import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoActual, tieneRol } from "@/lib/auth";
 import { obtenerProgramaActivo, calcularBloqueActual, obtenerUltimoPR } from "@/lib/alumno";
@@ -129,6 +130,8 @@ export default async function PanelPage() {
           </span>
         )}
       </div>
+
+      <AvisoSesionEnCurso idAlumno={id_alumno} />
 
       {/* Protocolo de hoy */}
       <section className="flex flex-col gap-2">

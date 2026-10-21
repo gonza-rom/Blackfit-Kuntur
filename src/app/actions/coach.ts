@@ -20,7 +20,11 @@ import {
   otorgarLogrosManualesIniciales,
 } from "@/lib/gamificacion";
 import { TAG_CATALOGO_EJERCICIOS } from "@/lib/catalogos";
-import type { CampoComposicionCorporal } from "@/lib/composicion-corporal";
+import {
+  CAMPOS_PERFIL_COMPOSICION,
+  type CampoComposicionCorporal,
+  type CampoPerfilComposicion,
+} from "@/lib/composicion-corporal";
 import { subirFotoProgreso } from "@/lib/storage";
 import { extraerComposicionDeTexto, extraerFechaDeTexto } from "@/lib/parseo-composicion-corporal";
 import { registrarAuditoria } from "@/lib/auditoria";
@@ -1863,16 +1867,33 @@ function parsearComposicion(
       (datos as Record<string, unknown>)[campo] = null;
       continue;
     }
-    const n = Number(bruto.replace(",", "."));
+    const n = Number(bruto.replace(",", ".").replace("%", "").trim());
     if (!Number.isFinite(n) || n < 0) {
       return { error: `Revisá el valor de "${campo}": tiene que ser un número válido.` };
     }
+    // Un porcentaje nunca puede pasar de 100 (ej. un valor en kg cargado
+    // por error en % músculo).
+    if (campo.startsWith("porcentaje_") && n > 100) {
+      return { error: `Revisá el valor de "${campo}": es un porcentaje (0 a 100).` };
+    }
     algunDato = true;
     (datos as Record<string, unknown>)[campo] =
-      tipo === "entero" ? Math.round(n) : bruto.replace(",", ".");
+      tipo === "entero" ? Math.round(n) : String(n);
   }
 
   return { datos, algunDato };
+}
+
+// "YYYY-MM-DD" del input de fecha → mediodía en hora de Argentina. Con
+// new Date("2026-10-15") quedaba a las 00:00 UTC, que en Argentina es el
+// día anterior a las 21hs: la medición aparecía con un día menos.
+// "" → null (sin fecha: se usa la de hoy). Inválida → undefined.
+function fechaMedicion(crudo: string): Date | null | undefined {
+  const valor = crudo.trim();
+  if (!valor) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(valor)) return undefined;
+  const fecha = new Date(`${valor}T12:00:00-03:00`);
+  return Number.isNaN(fecha.getTime()) ? undefined : fecha;
 }
 
 /** id_alumno del ProgresoFisico si pertenece a un alumno de la cartera activa del coach. */
@@ -1894,8 +1915,31 @@ async function progresoDelEntrenador(id_progreso: string, id_entrenador: string)
 
 export type ResultadoExtraccionComposicion =
   | { error: string }
-  | { fecha: string | null; valores: Partial<Record<CampoComposicionCorporal, string>> }
+  | {
+      fecha: string | null;
+      // Solo los 5 indicadores del perfil (ver CAMPOS_PERFIL_COMPOSICION).
+      valores: Partial<Record<CampoPerfilComposicion, string>>;
+      // Completados, pero sin certeza de que sean el valor actual.
+      revisar: CampoPerfilComposicion[];
+      // No aparecen en el archivo (o no con la unidad correcta): quedan
+      // vacíos para que el coach los complete a mano.
+      faltantes: CampoPerfilComposicion[];
+    }
   | undefined;
+
+function soloCamposPerfil(
+  valores: Partial<Record<CampoComposicionCorporal, string>>
+): Partial<Record<CampoPerfilComposicion, string>> {
+  const salida: Partial<Record<CampoPerfilComposicion, string>> = {};
+  for (const campo of CAMPOS_PERFIL_COMPOSICION) {
+    if (valores[campo]) salida[campo] = valores[campo];
+  }
+  return salida;
+}
+
+function faltantesDe(valores: Partial<Record<CampoPerfilComposicion, string>>): CampoPerfilComposicion[] {
+  return CAMPOS_PERFIL_COMPOSICION.filter((c) => !valores[c]);
+}
 
 const EXTENSIONES_SOPORTADAS = [".pdf", ".docx", ".jpg", ".jpeg", ".png", ".webp"];
 const TAMANO_MAXIMO_DOCUMENTO = 10 * 1024 * 1024; // 10 MB
@@ -2027,7 +2071,8 @@ export async function extraerComposicionDeDocumento(
     const buffer = Buffer.from(await archivo.arrayBuffer());
     const resultado = await leerComposicionDeImagen(buffer, mediaTypeImagen);
     if ("error" in resultado) return resultado;
-    return { fecha: resultado.fecha, valores: resultado.valores };
+    const valores = soloCamposPerfil(resultado.valores);
+    return { fecha: resultado.fecha, valores, revisar: [], faltantes: faltantesDe(valores) };
   }
 
   if (!esPdf && !esDocx) {
@@ -2065,16 +2110,17 @@ export async function extraerComposicionDeDocumento(
     };
   }
 
-  const valores = extraerComposicionDeTexto(texto);
+  const { valores, revisar } = extraerComposicionDeTexto(texto);
   const fecha = extraerFechaDeTexto(texto);
 
   if (Object.keys(valores).length === 0) {
     return {
-      error: "No se reconoció ningún campo conocido en el archivo. Completá los datos a mano.",
+      error:
+        "No se reconoció ninguno de los 5 indicadores (peso, IMC, % grasa, grasa visceral, % músculo) en el archivo. Completá los datos a mano o probá con otro archivo.",
     };
   }
 
-  return { fecha, valores };
+  return { fecha, valores, revisar, faltantes: faltantesDe(valores) };
 }
 
 // ------------------------------------------------------------
@@ -2150,16 +2196,42 @@ export async function crearProgresoFisicoAlumno(
   if ("error" in parsed) return { error: parsed.error };
   if (!parsed.algunDato) return { error: "Cargá al menos un dato." };
 
-  const fechaRaw = String(formData.get("fecha") ?? "").trim();
+  const fecha = fechaMedicion(String(formData.get("fecha") ?? ""));
+  if (fecha === undefined) return { error: "Revisá la fecha de la medición." };
 
-  await prisma.progresoFisico.create({
-    data: {
-      id_alumno,
-      origen: "coach",
-      ...(fechaRaw ? { fecha: new Date(fechaRaw) } : {}),
-      ...parsed.datos,
-    },
-  });
+  try {
+    // Doble toque o reintento tras un error de red: si esta misma medición
+    // (mismo alumno, mismo día, mismos valores) ya se guardó hace un rato,
+    // no se crea otra.
+    const desde = new Date(Date.now() - 15 * 60 * 1000);
+    const recientes = await prisma.progresoFisico.findMany({
+      where: { id_alumno, origen: "coach", fecha: fecha ?? undefined },
+      orderBy: { fecha: "desc" },
+      take: 5,
+    });
+    const yaGuardada = recientes.some(
+      (r) =>
+        (fecha || r.fecha >= desde) &&
+        Object.entries(parsed.datos).every(([campo, valor]) => {
+          const actual = (r as Record<string, unknown>)[campo];
+          return valor === null ? actual === null : actual !== null && Number(actual) === Number(valor);
+        })
+    );
+
+    if (!yaGuardada) {
+      await prisma.progresoFisico.create({
+        data: {
+          id_alumno,
+          origen: "coach",
+          ...(fecha ? { fecha } : {}),
+          ...parsed.datos,
+        },
+      });
+    }
+  } catch (e) {
+    console.error("[coach] crearProgresoFisicoAlumno:", e);
+    return { error: "No se pudo guardar la medición. Probá de nuevo." };
+  }
 
   await avisar("Medición cargada.");
   revalidatePath(`/coach/alumnos/${id_alumno}`);
@@ -2181,15 +2253,21 @@ export async function editarProgresoFisicoAlumno(
   if ("error" in parsed) return { error: parsed.error };
   if (!parsed.algunDato) return { error: "Cargá al menos un dato." };
 
-  const fechaRaw = String(formData.get("fecha") ?? "").trim();
+  const fecha = fechaMedicion(String(formData.get("fecha") ?? ""));
+  if (fecha === undefined) return { error: "Revisá la fecha de la medición." };
 
-  await prisma.progresoFisico.update({
-    where: { id_progreso },
-    data: {
-      ...(fechaRaw ? { fecha: new Date(fechaRaw) } : {}),
-      ...parsed.datos,
-    },
-  });
+  try {
+    await prisma.progresoFisico.update({
+      where: { id_progreso },
+      data: {
+        ...(fecha ? { fecha } : {}),
+        ...parsed.datos,
+      },
+    });
+  } catch (e) {
+    console.error("[coach] editarProgresoFisicoAlumno:", e);
+    return { error: "No se pudieron guardar los cambios. Probá de nuevo." };
+  }
 
   await avisar("Medición actualizada.");
   revalidatePath(`/coach/alumnos/${progreso.id_alumno}`);

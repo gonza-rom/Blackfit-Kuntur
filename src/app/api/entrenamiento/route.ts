@@ -21,6 +21,7 @@ export async function POST(request: Request) {
     duracion_minutos?: number | null;
     calorias_estimadas?: number | null;
     sensacion_general?: number | null;
+    id_sesion?: string | null;
   };
   try {
     body = await request.json();
@@ -41,6 +42,12 @@ export async function POST(request: Request) {
       duracionMinutos: body.duracion_minutos ?? null,
       caloriasEstimadas: body.calorias_estimadas ?? null,
       sensacionGeneral: body.sensacion_general ?? null,
+      // Solo un UUID: cualquier otra cosa se ignora (se guarda sin idempotencia).
+      idSesion:
+        typeof body.id_sesion === "string" &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.id_sesion)
+          ? body.id_sesion
+          : null,
     }
   );
 

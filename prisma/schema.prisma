@@ -448,6 +448,10 @@ model Entrenamiento {
   // de todas las series de la sesión. Se calcula en el servidor al guardar,
   // nunca se confía en el valor que manda el cliente.
   volumen_total       Decimal? @db.Decimal(10, 2)
+  // Id que genera el teléfono al empezar la sesión. Si la misma sesión
+  // llega dos veces (reintento tras un corte, cola offline), la segunda se
+  // ignora: nunca se duplica un entrenamiento.
+  id_sesion_cliente   String?  @unique
 
   alumno   Alumno                 @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
   programa ProgramaEntrenamiento? @relation(fields: [id_programa], references: [id_programa])

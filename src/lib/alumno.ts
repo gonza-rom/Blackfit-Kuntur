@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { registrarActividad, PUNTOS, levantamientoCompatiblePR, notificarNuevosPR } from "@/lib/gamificacion";
 
 const PROGRAMA_ACTIVO_INCLUDE = {
@@ -230,6 +230,9 @@ export type ResumenSesion = {
   duracionMinutos?: number | null;
   caloriasEstimadas?: number | null;
   sensacionGeneral?: number | null;
+  // Id único que genera el teléfono al empezar la sesión (ver
+  // lib/sesion-en-curso.ts). Con él, un reintento nunca duplica.
+  idSesion?: string | null;
 };
 
 export async function guardarSesionEntrenamiento(
@@ -250,6 +253,19 @@ export async function guardarSesionEntrenamiento(
 
   const idsValidos = new Set(bloque.ejercicios_programa.map((ep) => ep.id_ejercicio_programa));
 
+  // Esta sesión ya se guardó (reintento tras un corte, o la cola offline
+  // reenviando algo que sí había llegado): éxito sin duplicar.
+  const idSesion = resumen?.idSesion ?? null;
+  if (idSesion) {
+    const existente = await prisma.entrenamiento.findUnique({
+      where: { id_sesion_cliente: idSesion },
+      select: { id_alumno: true },
+    });
+    if (existente) {
+      return existente.id_alumno === id_alumno ? {} : { error: "Sesión inválida." };
+    }
+  }
+
   // Volumen total: se calcula acá, nunca se confía en un valor que mande
   // el cliente, para que no se pueda falsear desde el navegador.
   const volumenTotal = series.reduce(
@@ -257,54 +273,63 @@ export async function guardarSesionEntrenamiento(
     0
   );
 
-  const id_entrenamiento = await prisma.$transaction(async (tx) => {
-    const entrenamiento = await tx.entrenamiento.create({
-      data: {
-        id_alumno,
-        id_programa: bloque.id_programa,
-        nombre: bloque.nombre,
-        estado: "completado",
-        comentarios: comentarioGeneral,
-        duracion_minutos: resumen?.duracionMinutos ?? null,
-        calorias_estimadas: resumen?.caloriasEstimadas ?? null,
-        sensacion_general: resumen?.sensacionGeneral ?? null,
-        volumen_total: volumenTotal,
-      },
-    });
-
-    for (const s of series) {
-      if (!idsValidos.has(s.id_ejercicio_programa)) continue;
-
-      const huboCarga =
-        s.peso_utilizado !== null ||
-        s.repeticiones_realizadas !== null ||
-        s.series_completadas !== null ||
-        s.rpe !== null ||
-        s.descanso_real !== null ||
-        s.tiempo_bajo_tension !== null ||
-        s.comentarios !== null;
-
-      if (!huboCarga) continue;
-
-      await tx.serieEntrenamiento.create({
+  let id_entrenamiento: string;
+  try {
+    id_entrenamiento = await prisma.$transaction(async (tx) => {
+      const entrenamiento = await tx.entrenamiento.create({
         data: {
-          id_entrenamiento: entrenamiento.id_entrenamiento,
-          id_ejercicio_programa: s.id_ejercicio_programa,
-          numero_serie: s.numero_serie,
-          numero_ronda: s.numero_ronda ?? null,
-          peso_utilizado: s.peso_utilizado,
-          repeticiones_realizadas: s.repeticiones_realizadas,
-          series_completadas: s.series_completadas,
-          rpe: s.rpe,
-          descanso_real: s.descanso_real,
-          tiempo_bajo_tension: s.tiempo_bajo_tension,
-          comentarios: s.comentarios,
+          id_sesion_cliente: idSesion,
+          id_alumno,
+          id_programa: bloque.id_programa,
+          nombre: bloque.nombre,
+          estado: "completado",
+          comentarios: comentarioGeneral,
+          duracion_minutos: resumen?.duracionMinutos ?? null,
+          calorias_estimadas: resumen?.caloriasEstimadas ?? null,
+          sensacion_general: resumen?.sensacionGeneral ?? null,
+          volumen_total: volumenTotal,
         },
       });
-    }
 
-    return entrenamiento.id_entrenamiento;
-  });
+      for (const s of series) {
+        if (!idsValidos.has(s.id_ejercicio_programa)) continue;
+
+        const huboCarga =
+          s.peso_utilizado !== null ||
+          s.repeticiones_realizadas !== null ||
+          s.series_completadas !== null ||
+          s.rpe !== null ||
+          s.descanso_real !== null ||
+          s.tiempo_bajo_tension !== null ||
+          s.comentarios !== null;
+
+        if (!huboCarga) continue;
+
+        await tx.serieEntrenamiento.create({
+          data: {
+            id_entrenamiento: entrenamiento.id_entrenamiento,
+            id_ejercicio_programa: s.id_ejercicio_programa,
+            numero_serie: s.numero_serie,
+            numero_ronda: s.numero_ronda ?? null,
+            peso_utilizado: s.peso_utilizado,
+            repeticiones_realizadas: s.repeticiones_realizadas,
+            series_completadas: s.series_completadas,
+            rpe: s.rpe,
+            descanso_real: s.descanso_real,
+            tiempo_bajo_tension: s.tiempo_bajo_tension,
+            comentarios: s.comentarios,
+          },
+        });
+      }
+
+      return entrenamiento.id_entrenamiento;
+    });
+  } catch (e) {
+    // Dos envíos simultáneos de la misma sesión: el segundo choca con el
+    // índice único de id_sesion_cliente. El primero ya la guardó.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") return {};
+    throw e;
+  }
 
   // Logro automático por PR (levantamientos base) — best-effort, nunca
   // bloquea ni rompe el guardado si algo falla.

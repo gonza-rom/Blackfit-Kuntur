@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AvisoSesionEnCurso } from "@/components/aviso-sesion-en-curso";
 import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoActual } from "@/lib/auth";
 import { obtenerProgramaActivo, calcularBloqueActual } from "@/lib/alumno";
@@ -68,6 +69,8 @@ export default async function EntrenamientosPage() {
           Ver historial
         </Link>
       </div>
+
+      {contexto && <AvisoSesionEnCurso idAlumno={contexto.id_alumno} />}
 
       {/* Filtros (solo visuales por ahora, no hay campo de categoría en el schema) */}
       <section>

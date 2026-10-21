@@ -4,6 +4,10 @@ const CLAVE = "bh_pendientes_entrenamiento";
 
 export type SesionPendiente = {
   id_local: string;
+  // Id de la sesión en curso (ver lib/sesion-en-curso.ts): el servidor lo
+  // usa para no duplicar si la sesión ya había llegado. Opcional: puede
+  // haber sesiones encoladas antes de que existiera.
+  id_sesion?: string | null;
   id_bloque: string;
   comentario_general: string | null;
   duracion_minutos: number | null;
@@ -39,7 +43,7 @@ function guardarCola(cola: SesionPendiente[]): void {
 }
 
 export function encolarSesion(sesion: Omit<SesionPendiente, "id_local" | "guardado_en">): void {
-  const cola = leerCola();
+  const cola = leerCola().filter((s) => !sesion.id_sesion || s.id_sesion !== sesion.id_sesion);
   cola.push({
     ...sesion,
     id_local: crypto.randomUUID(),

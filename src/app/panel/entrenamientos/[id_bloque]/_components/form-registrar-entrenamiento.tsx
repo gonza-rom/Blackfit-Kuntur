@@ -6,6 +6,13 @@ import { encolarSesion, sincronizarPendientes } from "@/lib/offline-queue";
 import { ModalVideoEjercicio, type EjercicioDetalle } from "./modal-video-ejercicio";
 import { BloqueRondas, claveCheck, type GrupoPlan } from "./bloque-rondas";
 import { agruparItemsDia } from "@/lib/plan-dia";
+import {
+  leerBorrador,
+  guardarBorrador,
+  borrarBorrador,
+  formatearTranscurrido,
+  type BorradorSesion,
+} from "@/lib/sesion-en-curso";
 
 type EjercicioPrograma = {
   id_ejercicio_programa: string;
@@ -40,12 +47,40 @@ function textoOpcional(valor: FormDataEntryValue | string | null): string | null
   return s === "" ? null : s;
 }
 
+// Cronómetro de la sesión: siempre calculado desde la hora de inicio
+// guardada, así ni navegar, ni recargar, ni volver de segundo plano lo
+// reinician.
+function Cronometro({ inicio }: { inicio: number }) {
+  const [ahora, setAhora] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setAhora(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="flex items-center justify-between bg-[#1A1A1A] border border-[#262626] rounded-xl px-4 py-2.5">
+      <span className="flex items-center gap-2 font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] text-on-surface-variant uppercase">
+        <span aria-hidden className="w-2 h-2 rounded-full bg-primary-container animate-pulse" />
+        Sesión en curso
+      </span>
+      <span className="font-[family-name:var(--font-jetbrains-mono)] text-base text-on-surface tabular-nums">
+        {formatearTranscurrido(inicio, ahora)}
+      </span>
+    </div>
+  );
+}
+
+// Se renderiza solo en el cliente (ver form-registrar-entrenamiento-cliente):
+// el estado inicial sale del borrador guardado en el teléfono.
 export function FormRegistrarEntrenamiento({
+  idAlumno,
   idBloque,
+  titulo,
   ejercicios,
   grupos,
 }: {
+  idAlumno: string;
   idBloque: string;
+  titulo: string;
   ejercicios: EjercicioPrograma[];
   grupos: GrupoPlan[];
 }) {
@@ -53,18 +88,42 @@ export function FormRegistrarEntrenamiento({
   const items = agruparItemsDia(ejercicios, grupos);
   const grupoPorId = new Map(grupos.map((g) => [g.id_grupo, g]));
   const router = useRouter();
-  const inicioRef = useRef<number>(0);
   const formRef = useRef<HTMLFormElement>(null);
 
-  useEffect(() => {
-    inicioRef.current = Date.now();
-  }, []);
+  // Sesión en curso: la que estaba guardada para este día, o una nueva
+  // (id único + hora de inicio) si no había.
+  const [borrador] = useState<BorradorSesion>(
+    () =>
+      leerBorrador(idAlumno, idBloque) ?? {
+        version: 1,
+        id_sesion: crypto.randomUUID(),
+        id_alumno: idAlumno,
+        id_bloque: idBloque,
+        titulo,
+        inicio: Date.now(),
+        actualizado: Date.now(),
+        valores: {},
+        filas: {},
+        completados: [],
+        checks: [],
+        rondaActiva: {},
+        sensacion: null,
+        comentario: "",
+      }
+  );
+  const inicio = borrador.inicio;
+  // Una vez guardada en el servidor (o en la cola offline) no se vuelve a
+  // escribir el borrador aunque la pantalla siga renderizando.
+  const finalizadaRef = useRef(false);
 
   const [paso, setPaso] = useState<"registrar" | "resumen">("registrar");
-  const [completados, setCompletados] = useState<Set<string>>(new Set());
+  const [completados, setCompletados] = useState<Set<string>>(() => new Set(borrador.completados));
   const [filasPorEjercicio, setFilasPorEjercicio] = useState<Record<string, number>>(() => {
     const inicial: Record<string, number> = {};
-    for (const ep of ejercicios) inicial[ep.id_ejercicio_programa] = Math.max(1, ep.series);
+    for (const ep of ejercicios) {
+      inicial[ep.id_ejercicio_programa] =
+        borrador.filas[ep.id_ejercicio_programa] ?? Math.max(1, ep.series);
+    }
     return inicial;
   });
 
@@ -77,8 +136,8 @@ export function FormRegistrarEntrenamiento({
   }
   // Bloques: un check por ejercicio y ronda; una ronda queda registrada
   // cuando están todos sus ejercicios, y ahí se pasa sola a la siguiente.
-  const [checksRonda, setChecksRonda] = useState<Set<string>>(new Set());
-  const [rondaActiva, setRondaActiva] = useState<Record<string, number>>({});
+  const [checksRonda, setChecksRonda] = useState<Set<string>>(() => new Set(borrador.checks));
+  const [rondaActiva, setRondaActiva] = useState<Record<string, number>>(() => borrador.rondaActiva);
 
   function alternarCheckRonda(grupo: GrupoPlan, delBloque: EjercicioPrograma[], id: string, ronda: number) {
     const next = new Set(checksRonda);
@@ -117,11 +176,50 @@ export function FormRegistrarEntrenamiento({
   const [resumen, setResumen] = useState<{ volumen: number; duracion: number; calorias: number } | null>(
     null
   );
-  const [sensacion, setSensacion] = useState<number | null>(null);
-  const [comentarioGeneral, setComentarioGeneral] = useState("");
+  const [sensacion, setSensacion] = useState<number | null>(borrador.sensacion);
+  const [comentarioGeneral, setComentarioGeneral] = useState(borrador.comentario);
   const [error, setError] = useState<string | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [avisoOffline, setAvisoOffline] = useState(false);
+
+  // Restaura pesos, reps, RPE, comentarios... en los inputs (no controlados)
+  // al volver a la pantalla. Va ANTES del efecto que guarda, así el primer
+  // guardado ya incluye lo restaurado.
+  useEffect(() => {
+    const form = formRef.current;
+    if (!form) return;
+    for (const [nombre, valor] of Object.entries(borrador.valores)) {
+      const campo = form.elements.namedItem(nombre);
+      if (campo instanceof HTMLInputElement || campo instanceof HTMLTextAreaElement) {
+        campo.value = valor;
+      }
+    }
+  }, [borrador]);
+
+  function guardarProgreso() {
+    if (finalizadaRef.current || !formRef.current) return;
+    const valores: Record<string, string> = {};
+    for (const [nombre, valor] of new FormData(formRef.current).entries()) {
+      if (typeof valor === "string" && valor !== "") valores[nombre] = valor;
+    }
+    guardarBorrador({
+      ...borrador,
+      valores,
+      filas: filasPorEjercicio,
+      completados: [...completados],
+      checks: [...checksRonda],
+      rondaActiva,
+      sensacion,
+      comentario: comentarioGeneral,
+    });
+  }
+
+  // Guardado progresivo: tras cada cambio de estado (series agregadas,
+  // checks, rondas, sensación, comentario) y, con onInput del form, en cada
+  // tecla de un peso/rep/comentario.
+  useEffect(() => {
+    guardarProgreso();
+  });
 
   function alternarCompletado(id: string) {
     setCompletados((prev) => {
@@ -146,7 +244,7 @@ export function FormRegistrarEntrenamiento({
         volumen += peso * reps;
       }
     }
-    const duracion = Math.max(1, Math.round((Date.now() - inicioRef.current) / 60000));
+    const duracion = Math.max(1, Math.round((Date.now() - inicio) / 60000));
     // Estimación gruesa (~6 kcal/min de trabajo con pesas) — se muestra
     // siempre como "estimadas", nunca como un dato médico exacto.
     const calorias = Math.round(duracion * 6);
@@ -162,6 +260,7 @@ export function FormRegistrarEntrenamiento({
 
     const formData = new FormData(formRef.current);
     const sesion = {
+      id_sesion: borrador.id_sesion,
       id_bloque: idBloque,
       comentario_general: textoOpcional(comentarioGeneral),
       duracion_minutos: resumen.duracion,
@@ -193,8 +292,15 @@ export function FormRegistrarEntrenamiento({
       }),
     };
 
+    // Ya está a salvo (servidor o cola offline): la sesión en curso termina.
+    function cerrarSesionEnCurso() {
+      finalizadaRef.current = true;
+      borrarBorrador(idAlumno, idBloque);
+    }
+
     if (typeof navigator !== "undefined" && !navigator.onLine) {
       encolarSesion(sesion);
+      cerrarSesionEnCurso();
       setAvisoOffline(true);
       setEnviando(false);
       setTimeout(() => router.push("/panel"), 1200);
@@ -213,10 +319,12 @@ export function FormRegistrarEntrenamiento({
         setEnviando(false);
         return;
       }
+      cerrarSesionEnCurso();
       sincronizarPendientes();
       router.push("/panel");
     } catch {
       encolarSesion(sesion);
+      cerrarSesionEnCurso();
       setAvisoOffline(true);
       setEnviando(false);
       setTimeout(() => router.push("/panel"), 1200);
@@ -334,10 +442,12 @@ export function FormRegistrarEntrenamiento({
 
   return (
     <>
+      <Cronometro inicio={inicio} />
       {vistaResumen}
       <form
         ref={formRef}
         onSubmit={irAResumen}
+        onInput={guardarProgreso}
         className={`${vistaResumen ? "hidden" : "flex"} flex-col gap-4`}
       >
         {items.map((item) => {
