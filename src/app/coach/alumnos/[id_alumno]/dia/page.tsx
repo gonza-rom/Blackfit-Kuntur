@@ -4,7 +4,14 @@ import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
 import { obtenerEjerciciosCatalogoConDefaults } from "@/lib/catalogos";
 import { agruparItemsDia } from "@/lib/plan-dia";
-import { FormDiaPlan, type ItemInicial, type OpcionSemanas } from "./_components/form-dia-plan";
+import {
+  FormDiaPlan,
+  type ItemInicial,
+  type OpcionSemanas,
+  type RmPorLevantamiento,
+} from "./_components/form-dia-plan";
+import { normalizarAproximaciones } from "@/lib/progresion-fuerza";
+import { obtenerRmVigentes } from "@/lib/rm-referencia";
 
 const DIAS_VALIDOS = [
   "lunes",
@@ -87,6 +94,11 @@ export default async function DiaPlanPage(
   });
   if (!alumno) notFound();
 
+  const vigentes = await obtenerRmVigentes(id_alumno);
+  const rmVigentes: RmPorLevantamiento = Object.fromEntries(
+    Object.entries(vigentes).flatMap(([l, rm]) => (rm ? [[l, rm.valor]] : []))
+  );
+
   // Semanas a las que se puede copiar un bloque, según el tipo de
   // planificación del programa (mismo criterio que la pestaña Planificación).
   let opcionesSemanas: OpcionSemanas[];
@@ -122,6 +134,14 @@ export default async function DiaPlanPage(
     metodo_entrenamiento: ep.metodo_entrenamiento ?? "",
     tiempo_bajo_tension_sugerido: ep.tiempo_bajo_tension_sugerido?.toString() ?? "",
     nota: ep.nota ?? "",
+    progresion_fuerza: ep.progresion_fuerza,
+    aproximaciones: Object.fromEntries(
+      Object.entries(normalizarAproximaciones(ep.aproximaciones)).map(([semana, lista]) => [
+        semana,
+        (lista ?? []).map((a) => ({ reps: a.reps, porcentaje: a.porcentaje?.toString() ?? "" })),
+      ])
+    ),
+    alumno_edita_aproximaciones: ep.alumno_edita_aproximaciones,
   });
 
   const itemsIniciales: ItemInicial[] = diaExistente
@@ -163,6 +183,7 @@ export default async function DiaPlanPage(
         catalogo={catalogo}
         itemsIniciales={itemsIniciales}
         opcionesSemanas={opcionesSemanas}
+        rmVigentes={rmVigentes}
       />
     </main>
   );

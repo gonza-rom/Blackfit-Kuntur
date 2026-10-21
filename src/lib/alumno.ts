@@ -1,6 +1,15 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { registrarActividad, PUNTOS, levantamientoCompatiblePR, notificarNuevosPR } from "@/lib/gamificacion";
+import {
+  detectarLevantamiento,
+  NOMBRE_LEVANTAMIENTO,
+  aproximacionesDeSemana,
+  cargaDe1RM,
+  objetivoEfectiva,
+  semanaDelPrograma,
+} from "@/lib/progresion-fuerza";
+import { obtenerRmVigentes } from "@/lib/rm-referencia";
 
 const PROGRAMA_ACTIVO_INCLUDE = {
   bloques: {
@@ -124,9 +133,9 @@ export async function calcularEstadisticasAlumno(
     prisma.serieEntrenamiento.findMany({
       where: { entrenamiento: { id_alumno } },
       select: {
-        id_ejercicio_programa: true,
         peso_utilizado: true,
         entrenamiento: { select: { fecha: true } },
+        ejercicio_programa: { select: { ejercicio: { select: { nombre: true } } } },
       },
     }),
   ]);
@@ -149,17 +158,20 @@ export async function calcularEstadisticasAlumno(
     cursor.setDate(cursor.getDate() - 1);
   }
 
-  // Récords: por cada ejercicio (id_ejercicio_programa), el peso máximo
-  // histórico registrado por el alumno. Cuenta como "nuevo récord" si ese
-  // máximo se marcó en los últimos 30 días.
+  // Récords: solo los 3 levantamientos del sistema de PR (sentadilla con
+  // barra, press de banca plano, peso muerto convencional). Por cada uno,
+  // el peso máximo histórico; cuenta como "nuevo récord" si ese máximo se
+  // marcó en los últimos 30 días.
   const hace30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const maximos = new Map<string, { peso: number; fecha: Date }>();
   for (const s of series) {
     if (s.peso_utilizado === null) continue;
+    const levantamiento = detectarLevantamiento(s.ejercicio_programa.ejercicio.nombre);
+    if (!levantamiento) continue;
     const peso = Number(s.peso_utilizado);
-    const actual = maximos.get(s.id_ejercicio_programa);
+    const actual = maximos.get(levantamiento);
     if (!actual || peso > actual.peso) {
-      maximos.set(s.id_ejercicio_programa, { peso, fecha: s.entrenamiento.fecha });
+      maximos.set(levantamiento, { peso, fecha: s.entrenamiento.fecha });
     }
   }
   const nuevosRecords = [...maximos.values()].filter((m) => m.fecha >= hace30).length;
@@ -169,7 +181,7 @@ export async function calcularEstadisticasAlumno(
 
 export type UltimoPR = { nombreEjercicio: string; peso: number; fecha: Date } | null;
 
-/** El ejercicio en el que el alumno marcó su récord de peso más reciente (entre todos los que entrenó). */
+/** El récord de peso más reciente del alumno entre los 3 levantamientos del sistema de PR. */
 export async function obtenerUltimoPR(id_alumno: string): Promise<UltimoPR> {
   const series = await prisma.serieEntrenamiento.findMany({
     where: { entrenamiento: { id_alumno }, peso_utilizado: { not: null } },
@@ -185,14 +197,16 @@ export async function obtenerUltimoPR(id_alumno: string): Promise<UltimoPR> {
   const maximos = new Map<string, { peso: number; fecha: Date; nombre: string }>();
   for (const s of series) {
     if (s.peso_utilizado === null) continue;
+    const levantamiento = detectarLevantamiento(s.ejercicio_programa.ejercicio.nombre);
+    if (!levantamiento) continue;
     const peso = Number(s.peso_utilizado);
-    const id = s.ejercicio_programa.ejercicio.id_ejercicio;
+    const id = levantamiento;
     const actual = maximos.get(id);
     if (!actual || peso > actual.peso) {
       maximos.set(id, {
         peso,
         fecha: s.entrenamiento.fecha,
-        nombre: s.ejercicio_programa.ejercicio.nombre,
+        nombre: NOMBRE_LEVANTAMIENTO[levantamiento],
       });
     }
   }
@@ -219,6 +233,9 @@ export type SerieRegistrada = {
   descanso_real: number | null;
   tiempo_bajo_tension: number | null;
   comentarios: string | null;
+  // Solo en ejercicios con progresión de fuerza. En las aproximaciones,
+  // numero_serie es su posición (1, 2, 3...) para emparejarla con el plan.
+  tipo_serie?: "aproximacion" | "efectiva" | null;
 };
 
 /**
@@ -266,6 +283,52 @@ export async function guardarSesionEntrenamiento(
     }
   }
 
+  // Progresión de fuerza: el objetivo de cada serie (plan del coach para la
+  // semana, % fijo de la efectiva y carga con el 1RM vigente) se calcula
+  // ACÁ y se copia en la serie. Nunca se confía en lo que mande el
+  // teléfono, y así lo ya entrenado no cambia si después cambia el 1RM.
+  const semana = semanaDelPrograma(bloque.programa.fecha_inicio);
+  const epPorIdPlan = new Map(bloque.ejercicios_programa.map((ep) => [ep.id_ejercicio_programa, ep]));
+  const hayProgresion = bloque.ejercicios_programa.some((ep) => ep.progresion_fuerza);
+  const rmVigentes = hayProgresion ? await obtenerRmVigentes(id_alumno) : null;
+
+  function objetivoDe(s: SerieRegistrada) {
+    const ep = epPorIdPlan.get(s.id_ejercicio_programa);
+    if (!ep?.progresion_fuerza) return { omitir: false, datos: { tipo_serie: null } };
+    const levantamiento = detectarLevantamiento(ep.ejercicio.nombre);
+    const rm = levantamiento ? (rmVigentes?.[levantamiento]?.valor ?? null) : null;
+    const plan = aproximacionesDeSemana(ep.aproximaciones, semana);
+
+    if (s.tipo_serie === "efectiva") {
+      const objetivo = objetivoEfectiva(semana, rm);
+      return {
+        omitir: false,
+        datos: {
+          tipo_serie: "efectiva",
+          porcentaje_objetivo: objetivo.porcentaje,
+          peso_objetivo: objetivo.peso,
+          repeticiones_objetivo: ep.repeticiones,
+          aproximaciones_plan: plan.length,
+        },
+      };
+    }
+
+    const posicion = s.numero_serie ?? 0;
+    const delPlan = posicion >= 1 ? plan[posicion - 1] : undefined;
+    // Sin permiso, el alumno no puede sumar aproximaciones al plan.
+    if (!delPlan && !ep.alumno_edita_aproximaciones) return { omitir: true, datos: { tipo_serie: null } };
+    return {
+      omitir: false,
+      datos: {
+        tipo_serie: "aproximacion",
+        porcentaje_objetivo: delPlan?.porcentaje != null ? String(delPlan.porcentaje) : null,
+        peso_objetivo: delPlan?.porcentaje != null && rm ? String(cargaDe1RM(rm, delPlan.porcentaje)) : null,
+        repeticiones_objetivo: delPlan?.reps || null,
+        agregada_por_alumno: !delPlan,
+      },
+    };
+  }
+
   // Volumen total: se calcula acá, nunca se confía en un valor que mande
   // el cliente, para que no se pueda falsear desde el navegador.
   const volumenTotal = series.reduce(
@@ -288,6 +351,7 @@ export async function guardarSesionEntrenamiento(
           calorias_estimadas: resumen?.caloriasEstimadas ?? null,
           sensacion_general: resumen?.sensacionGeneral ?? null,
           volumen_total: volumenTotal,
+          semana_programa: semana,
         },
       });
 
@@ -305,8 +369,12 @@ export async function guardarSesionEntrenamiento(
 
         if (!huboCarga) continue;
 
+        const objetivo = objetivoDe(s);
+        if (objetivo.omitir) continue;
+
         await tx.serieEntrenamiento.create({
           data: {
+            ...objetivo.datos,
             id_entrenamiento: entrenamiento.id_entrenamiento,
             id_ejercicio_programa: s.id_ejercicio_programa,
             numero_serie: s.numero_serie,

@@ -28,6 +28,8 @@ import { subirFotoProgreso } from "@/lib/storage";
 import { extraerComposicionDeTexto, extraerFechaDeTexto } from "@/lib/parseo-composicion-corporal";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { urlSegura } from "@/lib/video";
+import { NOMBRE_LEVANTAMIENTO, type Levantamiento } from "@/lib/progresion-fuerza";
+import { obtenerRmVigentes } from "@/lib/rm-referencia";
 import {
   calcularVencimiento30Dias,
   membresiaVigente,
@@ -1587,6 +1589,85 @@ async function alumnoDelEntrenador(id_alumno: string, id_entrenador: string) {
     where: { id_entrenador_id_alumno: { id_entrenador, id_alumno } },
   });
   return relacion?.estado_relacion === "activa" ? relacion : null;
+}
+
+// ------------------------------------------------------------
+// 1RM DE REFERENCIA (progresión de fuerza) — actualización autorizada:
+// solo el coach del alumno. Agrega una fila nueva por levantamiento que
+// cambió (historial intacto); las cargas futuras se recalculan solas porque
+// se calculan al mostrar el plan, y lo ya entrenado no cambia.
+// ------------------------------------------------------------
+const CAMPOS_RM: { campo: string; levantamiento: Levantamiento }[] = [
+  { campo: "rm_sentadilla", levantamiento: "sentadilla" },
+  { campo: "rm_press_banca", levantamiento: "press_banca" },
+  { campo: "rm_peso_muerto", levantamiento: "peso_muerto" },
+];
+
+export async function actualizarRmReferencia(
+  _prev: EstadoCoach,
+  formData: FormData
+): Promise<EstadoCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_alumno = String(formData.get("id_alumno") ?? "");
+  if (!id_alumno || !(await alumnoDelEntrenador(id_alumno, contexto.id_entrenador))) {
+    return { error: "Ese alumno no está vinculado a tu cartera." };
+  }
+
+  const vigentes = await obtenerRmVigentes(id_alumno);
+  const cambios: { levantamiento: Levantamiento; valor: number }[] = [];
+  for (const { campo, levantamiento } of CAMPOS_RM) {
+    const crudo = String(formData.get(campo) ?? "").trim().replace(",", ".");
+    if (!crudo) continue;
+    const valor = Number(crudo);
+    if (!Number.isFinite(valor) || valor <= 0 || valor > 500) {
+      return { error: `Revisá el 1RM de ${NOMBRE_LEVANTAMIENTO[levantamiento]}: entre 1 y 500 kg.` };
+    }
+    const redondeado = Math.round(valor * 100) / 100;
+    if (vigentes[levantamiento]?.valor !== redondeado) cambios.push({ levantamiento, valor: redondeado });
+  }
+  if (cambios.length === 0) return { message: "No hubo cambios en el 1RM." };
+
+  try {
+    await prisma.rmReferencia.createMany({
+      data: cambios.map((c) => ({
+        id_alumno,
+        levantamiento: c.levantamiento,
+        valor_kg: String(c.valor),
+        id_usuario_autor: contexto.usuario.id_usuario,
+      })),
+    });
+  } catch (e) {
+    console.error("[coach] actualizarRmReferencia:", e);
+    return { error: "No se pudo guardar el 1RM. Probá de nuevo." };
+  }
+
+  await registrarAuditoria({
+    id_usuario_actor: contexto.usuario.id_usuario,
+    accion: "cambio_rm_referencia",
+    recurso: "alumno",
+    id_recurso: id_alumno,
+    resultado: cambios.map((c) => `${c.levantamiento}:${c.valor}`).join(","),
+  }).catch(() => {});
+
+  const alumno = await prisma.alumno.findUnique({ where: { id_alumno }, select: { id_usuario: true } });
+  if (alumno) {
+    await crearNotificacion({
+      id_usuario: alumno.id_usuario,
+      titulo: "Tu coach actualizó tu 1RM",
+      contenido: `${cambios
+        .map((c) => `${NOMBRE_LEVANTAMIENTO[c.levantamiento]}: ${c.valor} kg`)
+        .join(" · ")}. Tus próximas cargas ya están recalculadas.`,
+      tipo: "progresion",
+      url: "/panel/entrenamientos",
+    }).catch(() => {});
+  }
+
+  await avisar("1RM actualizado. Las cargas futuras se recalcularon.");
+  revalidatePath(`/coach/alumnos/${id_alumno}`);
+  revalidatePath("/panel/entrenamientos");
+  return { message: "1RM actualizado." };
 }
 
 // Datos básicos del alumno que hoy solo se mostraban en la ficha y nunca

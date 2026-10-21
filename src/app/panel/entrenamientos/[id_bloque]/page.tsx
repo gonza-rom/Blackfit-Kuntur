@@ -2,6 +2,14 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoActual } from "@/lib/auth";
 import { FormRegistrarEntrenamientoCliente } from "./_components/form-registrar-entrenamiento-cliente";
+import {
+  aproximacionesDeSemana,
+  cargaDe1RM,
+  detectarLevantamiento,
+  objetivoEfectiva,
+  semanaDelPrograma,
+} from "@/lib/progresion-fuerza";
+import { obtenerRmVigentes } from "@/lib/rm-referencia";
 
 export default async function RegistrarEntrenamientoPage(
   props: PageProps<"/panel/entrenamientos/[id_bloque]">
@@ -28,6 +36,32 @@ export default async function RegistrarEntrenamientoPage(
     notFound();
   }
 
+  // Progresión de fuerza: semana actual del bloque de 4 y 1RM vigente. El
+  // servidor vuelve a calcular todo esto al guardar (no confía en el cliente).
+  const semana = semanaDelPrograma(bloque.programa.fecha_inicio);
+  const rmVigentes = bloque.ejercicios_programa.some((ep) => ep.progresion_fuerza)
+    ? await obtenerRmVigentes(contexto.id_alumno)
+    : null;
+
+  function datosFuerza(ep: NonNullable<typeof bloque>["ejercicios_programa"][number]) {
+    if (!ep.progresion_fuerza || ep.id_grupo) return null;
+    const levantamiento = detectarLevantamiento(ep.ejercicio.nombre);
+    if (!levantamiento) return null;
+    const rm = rmVigentes?.[levantamiento]?.valor ?? null;
+    const efectiva = objetivoEfectiva(semana, rm);
+    return {
+      semana,
+      rm,
+      efectiva: { porcentaje: efectiva.porcentaje, peso: efectiva.peso, reps: ep.repeticiones },
+      aproximaciones: aproximacionesDeSemana(ep.aproximaciones, semana).map((a) => ({
+        reps: a.reps,
+        porcentaje: a.porcentaje,
+        peso: a.porcentaje != null && rm ? cargaDe1RM(rm, a.porcentaje) : null,
+      })),
+      alumnoEdita: ep.alumno_edita_aproximaciones,
+    };
+  }
+
   const ejercicios = bloque.ejercicios_programa.map((ep) => ({
     id_ejercicio_programa: ep.id_ejercicio_programa,
     id_grupo: ep.id_grupo,
@@ -39,6 +73,7 @@ export default async function RegistrarEntrenamientoPage(
     metodo_entrenamiento: ep.metodo_entrenamiento,
     tiempo_bajo_tension_sugerido: ep.tiempo_bajo_tension_sugerido,
     nota: ep.nota,
+    fuerza: datosFuerza(ep),
     ejercicio: {
       id_ejercicio: ep.ejercicio.id_ejercicio,
       nombre: ep.ejercicio.nombre,

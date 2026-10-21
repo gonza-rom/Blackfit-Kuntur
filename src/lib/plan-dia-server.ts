@@ -1,4 +1,10 @@
-import type { DiaSemana, Prisma } from "@prisma/client";
+import { Prisma, type DiaSemana } from "@prisma/client";
+import {
+  detectarLevantamiento,
+  normalizarAproximaciones,
+  SEMANAS,
+  type Semana,
+} from "@/lib/progresion-fuerza";
 
 // Helpers de servidor para el contenido de un día de la planificación
 // (ejercicios individuales + bloques). Todos reciben el cliente de la
@@ -44,6 +50,11 @@ export type EjercicioDiaEntrada = {
   metodo_entrenamiento: string;
   tiempo_bajo_tension_sugerido: string;
   nota: string;
+  // Progresión de fuerza (ver lib/progresion-fuerza.ts). Solo se respeta
+  // en ejercicios individuales de los 3 levantamientos del sistema de PR.
+  progresion_fuerza?: boolean;
+  aproximaciones?: unknown;
+  alumno_edita_aproximaciones?: boolean;
 };
 
 export type GrupoDiaEntrada = {
@@ -120,6 +131,27 @@ export async function obtenerOCrearDia(
  *   ahí se archiva (oculto del plan, intacto para historial y PR).
  */
 export async function guardarContenidoDia(tx: Tx, id_bloque: string, items: ItemDiaEntrada[]) {
+  // Para validar la progresión de fuerza: semanas que cubre este día y el
+  // nombre de cada ejercicio (solo los 3 levantamientos pueden usarla).
+  const bloque = await tx.bloqueEntrenamiento.findUnique({
+    where: { id_bloque },
+    select: { semana_inicio: true, semana_fin: true },
+  });
+  const semanasDelDia = SEMANAS.filter(
+    (s) => s >= (bloque?.semana_inicio ?? 1) && s <= (bloque?.semana_fin ?? 4)
+  ) as Semana[];
+  const idsEjercicio = items.flatMap((item) =>
+    item.tipo === "ejercicio" ? [item.ejercicio.id_ejercicio] : []
+  );
+  const nombres = new Map(
+    (
+      await tx.ejercicio.findMany({
+        where: { id_ejercicio: { in: idsEjercicio } },
+        select: { id_ejercicio: true, nombre: true },
+      })
+    ).map((e) => [e.id_ejercicio, e.nombre])
+  );
+
   const existentes = await tx.ejercicioPrograma.findMany({
     where: { id_bloque, archivado: false },
     include: { _count: { select: { series_registradas: true } } },
@@ -136,9 +168,19 @@ export async function guardarContenidoDia(tx: Tx, id_bloque: string, items: Item
     e: EjercicioDiaEntrada,
     comun: { series: number; descanso: string | null; tempo: string | null; nota: string | null; id_grupo: string | null }
   ) {
+    const progresion =
+      Boolean(e.progresion_fuerza) &&
+      comun.id_grupo === null &&
+      detectarLevantamiento(nombres.get(e.id_ejercicio) ?? "") !== null;
     const data = {
       id_ejercicio: e.id_ejercicio,
-      series: comun.series,
+      // En progresión hay UNA serie efectiva (las aproximaciones van aparte).
+      series: progresion ? 1 : comun.series,
+      progresion_fuerza: progresion,
+      aproximaciones: progresion
+        ? (normalizarAproximaciones(e.aproximaciones, semanasDelDia) as Prisma.InputJsonValue)
+        : Prisma.DbNull,
+      alumno_edita_aproximaciones: e.alumno_edita_aproximaciones !== false,
       repeticiones: e.repeticiones.trim(),
       peso_sugerido: decimal(e.peso_sugerido),
       descanso: comun.descanso,
@@ -262,6 +304,9 @@ type EjercicioClonable = {
   orden: number;
   id_grupo: string | null;
   archivado: boolean;
+  progresion_fuerza: boolean;
+  aproximaciones: Prisma.JsonValue;
+  alumno_edita_aproximaciones: boolean;
 };
 
 type GrupoClonable = {
@@ -285,6 +330,10 @@ function datosEjercicio(ep: EjercicioClonable) {
     metodo_entrenamiento: ep.metodo_entrenamiento,
     tiempo_bajo_tension_sugerido: ep.tiempo_bajo_tension_sugerido,
     nota: ep.nota,
+    progresion_fuerza: ep.progresion_fuerza,
+    aproximaciones:
+      ep.aproximaciones === null ? Prisma.DbNull : (ep.aproximaciones as Prisma.InputJsonValue),
+    alumno_edita_aproximaciones: ep.alumno_edita_aproximaciones,
   };
 }
 

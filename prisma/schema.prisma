@@ -25,14 +25,14 @@ datasource db {
 // UsuarioRol. Nunca se asigna ni se confía en un rol que venga del cliente:
 // siempre se lee esta tabla en el servidor.
 enum RolUsuario {
-  alumno          // Black Fit
-  entrenador      // Black Fit
-  miembro_kuntur  // Kuntur — módulo de Beneficios como ADD-ON de un usuario Black Fit
-  beneficiario    // Kuntur puro — SOLO beneficios + perfil, sin nada de Black Fit
-  comercio        // Operativo — asignado por el administrador
-  administrador   // Operativo — ve y gestiona TODO, incluido asignar los dos roles de abajo
+  alumno // Black Fit
+  entrenador // Black Fit
+  miembro_kuntur // Kuntur — módulo de Beneficios como ADD-ON de un usuario Black Fit
+  beneficiario // Kuntur puro — SOLO beneficios + perfil, sin nada de Black Fit
+  comercio // Operativo — asignado por el administrador
+  administrador // Operativo — ve y gestiona TODO, incluido asignar los dos roles de abajo
   admin_comercios // Operativo recortado — comercios, beneficios y usuarios beneficiario/comercio/miembro_kuntur (Kuntur)
-  admin_blackfit  // Operativo recortado — usuarios alumno/entrenador y sus membresías (Black Fit)
+  admin_blackfit // Operativo recortado — usuarios alumno/entrenador y sus membresías (Black Fit)
 }
 
 enum EstadoUsuario {
@@ -67,9 +67,9 @@ enum EstadoPrograma {
 // BloqueEntrenamiento.semana_inicio/semana_fin, así que cambiar el tipo
 // nunca corrompe bloques ya armados.
 enum TipoPlanificacion {
-  fija            // 1 semana se repite en las 4
-  semanal         // las 4 semanas son distintas
-  personalizada   // agrupamientos libres (2+2, 3+1, 1+1+2, etc.)
+  fija // 1 semana se repite en las 4
+  semanal // las 4 semanas son distintas
+  personalizada // agrupamientos libres (2+2, 3+1, 1+1+2, etc.)
 }
 
 enum DiaSemana {
@@ -120,11 +120,11 @@ enum CategoriaBiblioteca {
 
 // Gamificación (sistema aparte del motor de alertas de src/lib/alertas.ts).
 enum TipoObjetivo {
-  volumen         // volumen de entrenamiento acumulado (kg levantados)
-  frecuencia      // cantidad de entrenamientos / sesiones
-  habito          // días con hábitos registrados
-  peso_corporal   // peso corporal objetivo
-  custom          // meta libre, la carga el coach
+  volumen // volumen de entrenamiento acumulado (kg levantados)
+  frecuencia // cantidad de entrenamientos / sesiones
+  habito // días con hábitos registrados
+  peso_corporal // peso corporal objetivo
+  custom // meta libre, la carga el coach
 }
 
 enum EstadoObjetivo {
@@ -141,39 +141,39 @@ enum EstadoObjetivo {
 model Usuario {
   id_usuario          String        @id @default(uuid())
   // Debe coincidir con el auth.uid() de Supabase Auth
-  email                String        @unique
+  email               String        @unique
   // DNI del socio. Solo se completa para altas administrativas (ej.
   // beneficiarios importados de Kuntur, que no tienen email propio y se
   // identifican por DNI). Sirve además como login alternativo: ver
   // iniciarSesion() en src/app/actions/auth.ts.
-  dni                  String?       @unique
-  nombre               String
-  apellido             String
-  telefono             String?
-  foto_perfil          String?
-  estado_usuario       EstadoUsuario @default(activo)
+  dni                 String?       @unique
+  nombre              String
+  apellido            String
+  telefono            String?
+  foto_perfil         String?
+  estado_usuario      EstadoUsuario @default(activo)
   // Racha de días consecutivos logueándose (para el logro automático de
   // "actividad de uso" en vez de solo entrenamientos) y la fecha del
   // último login, para poder calcular esa racha — ver registrarLogin() en
   // lib/gamificacion.ts, llamado desde iniciarSesion().
-  ultimo_login         DateTime?
-  racha_login_dias     Int           @default(0)
-  fecha_creacion       DateTime      @default(now())
-  fecha_actualizacion  DateTime      @updatedAt
+  ultimo_login        DateTime?
+  racha_login_dias    Int           @default(0)
+  fecha_creacion      DateTime      @default(now())
+  fecha_actualizacion DateTime      @updatedAt
 
-  roles                UsuarioRol[]
-  alumno               Alumno?
-  entrenador           Entrenador?
-  comercio             Comercio?
-  membresias           Membresia[]
-  credencial           Credencial?
-  notificaciones       Notificacion[]
-  mensajes_enviados    Mensaje[]        @relation("MensajesEnviados")
-  conversaciones_1     Conversacion[]   @relation("ConversacionUsuario1")
-  conversaciones_2     Conversacion[]   @relation("ConversacionUsuario2")
-  validaciones         ValidacionBeneficio[]
-  registros_auditoria  RegistroAuditoria[]
-  suscripciones_push   SuscripcionPush[]
+  roles               UsuarioRol[]
+  alumno              Alumno?
+  entrenador          Entrenador?
+  comercio            Comercio?
+  membresias          Membresia[]
+  credencial          Credencial?
+  notificaciones      Notificacion[]
+  mensajes_enviados   Mensaje[]             @relation("MensajesEnviados")
+  conversaciones_1    Conversacion[]        @relation("ConversacionUsuario1")
+  conversaciones_2    Conversacion[]        @relation("ConversacionUsuario2")
+  validaciones        ValidacionBeneficio[]
+  registros_auditoria RegistroAuditoria[]
+  suscripciones_push  SuscripcionPush[]
 
   @@map("usuarios")
 }
@@ -188,57 +188,57 @@ model UsuarioRol {
   rol              RolUsuario
   fecha_asignacion DateTime   @default(now())
 
-  usuario  Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+  usuario Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
 
   @@unique([id_usuario, rol], name: "usuario_rol_unico")
-
   @@map("roles_usuario")
 }
 
 model Alumno {
-  id_alumno         String   @id @default(uuid())
-  id_usuario        String   @unique
-  usuario           Usuario  @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+  id_alumno  String  @id @default(uuid())
+  id_usuario String  @unique
+  usuario    Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
 
-  fecha_nacimiento  DateTime?
-  objetivo          String?
-  fecha_alta        DateTime @default(now())
+  fecha_nacimiento DateTime?
+  objetivo         String?
+  fecha_alta       DateTime  @default(now())
 
   // Gamificación: total denormalizado (la fuente de verdad es la suma de
   // movimientos_puntos; este campo se mantiene al día vía otorgarPuntos()).
-  puntos_totales    Int      @default(0)
+  puntos_totales Int @default(0)
 
-  relaciones            RelacionEntrenadorAlumno[]
-  programas             ProgramaEntrenamiento[]
-  entrenamientos        Entrenamiento[]
-  progreso_fisico       ProgresoFisico[]
-  medidas_corporales    MedidaCorporal[]
-  habitos               Habito[]
-  feedback_diario       FeedbackDiario[]
-  feedback_semanal      FeedbackSemanal[]
-  objetivos             Objetivo[]
-  logros                LogroAlumno[]
-  movimientos_puntos    MovimientoPuntos[]
+  relaciones         RelacionEntrenadorAlumno[]
+  programas          ProgramaEntrenamiento[]
+  entrenamientos     Entrenamiento[]
+  progreso_fisico    ProgresoFisico[]
+  medidas_corporales MedidaCorporal[]
+  habitos            Habito[]
+  feedback_diario    FeedbackDiario[]
+  feedback_semanal   FeedbackSemanal[]
+  objetivos          Objetivo[]
+  logros             LogroAlumno[]
+  movimientos_puntos MovimientoPuntos[]
+  rm_referencia      RmReferencia[]
 
   @@map("alumnos")
 }
 
 model Entrenador {
-  id_entrenador   String   @id @default(uuid())
-  id_usuario      String   @unique
-  usuario         Usuario  @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+  id_entrenador String  @id @default(uuid())
+  id_usuario    String  @unique
+  usuario       Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
 
-  especialidad    String?
-  biografia       String?
+  especialidad      String?
+  biografia         String?
   // Datos opcionales que ve el alumno en /membresia-vencida debajo del
   // botón de WhatsApp (que usa Usuario.telefono del coach). Si no están
   // cargados, no se muestran.
   alias_pago        String?
   mensaje_membresia String?
-  fecha_alta      DateTime @default(now())
+  fecha_alta        DateTime @default(now())
 
-  relaciones      RelacionEntrenadorAlumno[]
-  programas       ProgramaEntrenamiento[]
+  relaciones RelacionEntrenadorAlumno[]
+  programas  ProgramaEntrenamiento[]
 
   @@map("entrenadores")
 }
@@ -251,8 +251,8 @@ model RelacionEntrenadorAlumno {
   fecha_inicio    DateTime       @default(now())
   fecha_fin       DateTime?
 
-  entrenador      Entrenador @relation(fields: [id_entrenador], references: [id_entrenador], onDelete: Cascade)
-  alumno          Alumno     @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+  entrenador Entrenador @relation(fields: [id_entrenador], references: [id_entrenador], onDelete: Cascade)
+  alumno     Alumno     @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
 
   @@unique([id_entrenador, id_alumno])
   @@map("relaciones_entrenador_alumno")
@@ -263,15 +263,15 @@ model RelacionEntrenadorAlumno {
 // ------------------------------------------------------------
 
 model PlanMembresia {
-  id_plan_membresia  String   @id @default(uuid())
-  nombre             String
-  descripcion        String?
-  precio             Decimal  @db.Decimal(10, 2)
-  duracion_dias      Int
-  fecha_creacion     DateTime @default(now())
+  id_plan_membresia String   @id @default(uuid())
+  nombre            String
+  descripcion       String?
+  precio            Decimal  @db.Decimal(10, 2)
+  duracion_dias     Int
+  fecha_creacion    DateTime @default(now())
 
-  membresias         Membresia[]
-  beneficios_planes  BeneficioPlan[]
+  membresias        Membresia[]
+  beneficios_planes BeneficioPlan[]
 
   @@map("planes_membresia")
 }
@@ -283,11 +283,11 @@ model Membresia {
   estado_membresia            EstadoMembresia @default(pendiente)
   fecha_inicio_membresia      DateTime
   fecha_vencimiento_membresia DateTime
-  fecha_creacion               DateTime        @default(now())
-  fecha_actualizacion          DateTime        @updatedAt
+  fecha_creacion              DateTime        @default(now())
+  fecha_actualizacion         DateTime        @updatedAt
 
-  usuario         Usuario       @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
-  plan_membresia  PlanMembresia @relation(fields: [id_plan_membresia], references: [id_plan_membresia])
+  usuario        Usuario       @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+  plan_membresia PlanMembresia @relation(fields: [id_plan_membresia], references: [id_plan_membresia])
 
   @@index([id_usuario, estado_membresia])
   @@map("membresias")
@@ -298,46 +298,46 @@ model Membresia {
 // ------------------------------------------------------------
 
 model ProgramaEntrenamiento {
-  id_programa      String         @id @default(uuid())
+  id_programa        String            @id @default(uuid())
   // Nulo cuando es_plantilla = true: una plantilla es un programa sin
   // alumno todavía, reusable. "Aplicarla" clona programa+bloques+
   // ejercicios en un programa real con id_alumno seteado.
-  id_alumno        String?
-  id_entrenador    String
-  nombre           String
-  descripcion      String?
-  objetivo         String?
-  fecha_inicio     DateTime
-  fecha_fin        DateTime?
-  estado_programa  EstadoPrograma @default(activo)
-  es_plantilla     Boolean        @default(false)
+  id_alumno          String?
+  id_entrenador      String
+  nombre             String
+  descripcion        String?
+  objetivo           String?
+  fecha_inicio       DateTime
+  fecha_fin          DateTime?
+  estado_programa    EstadoPrograma    @default(activo)
+  es_plantilla       Boolean           @default(false)
   tipo_planificacion TipoPlanificacion @default(fija)
 
-  alumno           Alumno?             @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
-  entrenador       Entrenador          @relation(fields: [id_entrenador], references: [id_entrenador])
-  bloques          BloqueEntrenamiento[]
-  entrenamientos   Entrenamiento[]
+  alumno         Alumno?               @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+  entrenador     Entrenador            @relation(fields: [id_entrenador], references: [id_entrenador])
+  bloques        BloqueEntrenamiento[]
+  entrenamientos Entrenamiento[]
 
   @@index([id_entrenador, es_plantilla])
   @@map("programas_entrenamiento")
 }
 
 model BloqueEntrenamiento {
-  id_bloque        String   @id @default(uuid())
-  id_programa      String
-  nombre           String
-  orden            Int
-  semana_inicio    Int?
-  semana_fin       Int?
-  tipo             String?  // ej: acumulacion, intensificacion, deload
+  id_bloque     String     @id @default(uuid())
+  id_programa   String
+  nombre        String
+  orden         Int
+  semana_inicio Int?
+  semana_fin    Int?
+  tipo          String? // ej: acumulacion, intensificacion, deload
   // Día de la semana que cubre este bloque en la planificación nueva
   // (por día). Nulo en bloques viejos armados antes de este cambio — ahí
   // se sigue eligiendo el bloque solo por semana, como siempre.
-  dia_semana       DiaSemana?
+  dia_semana    DiaSemana?
 
-  programa         ProgramaEntrenamiento @relation(fields: [id_programa], references: [id_programa], onDelete: Cascade)
+  programa            ProgramaEntrenamiento @relation(fields: [id_programa], references: [id_programa], onDelete: Cascade)
   ejercicios_programa EjercicioPrograma[]
-  grupos           GrupoEjercicios[]
+  grupos              GrupoEjercicios[]
 
   @@map("bloques_entrenamiento")
 }
@@ -361,33 +361,33 @@ model GrupoEjercicios {
   tempo                     String?
   nota                      String?
 
-  bloque      BloqueEntrenamiento @relation(fields: [id_bloque], references: [id_bloque], onDelete: Cascade)
-  ejercicios  EjercicioPrograma[]
+  bloque     BloqueEntrenamiento @relation(fields: [id_bloque], references: [id_bloque], onDelete: Cascade)
+  ejercicios EjercicioPrograma[]
 
   @@index([id_bloque])
   @@map("grupos_ejercicios")
 }
 
 model Ejercicio {
-  id_ejercicio     String   @id @default(uuid())
-  nombre           String
-  descripcion      String?
-  grupo_muscular   String?
-  video_url        String?
-  instrucciones    String?
+  id_ejercicio   String  @id @default(uuid())
+  nombre         String
+  descripcion    String?
+  grupo_muscular String?
+  video_url      String?
+  instrucciones  String?
 
   // Valores por defecto, para no tipear series/reps/peso/etc. de nuevo
   // cada vez que se agrega este ejercicio a un bloque de un programa.
   // Son solo una plantilla: EjercicioPrograma sigue guardando el valor
   // real usado en cada programa, así que cambiar el default acá nunca
   // pisa una rutina ya armada.
-  series_default                Int?
-  repeticiones_default          String?
-  peso_sugerido_default         Decimal? @db.Decimal(6, 2)
-  tempo_default                 String?
-  descanso_default              String?
-  metodo_entrenamiento_default  String?
-  tiempo_bajo_tension_default   Int?
+  series_default               Int?
+  repeticiones_default         String?
+  peso_sugerido_default        Decimal? @db.Decimal(6, 2)
+  tempo_default                String?
+  descanso_default             String?
+  metodo_entrenamiento_default String?
+  tiempo_bajo_tension_default  Int?
 
   ejercicios_programa EjercicioPrograma[]
 
@@ -395,34 +395,45 @@ model Ejercicio {
 }
 
 model EjercicioPrograma {
-  id_ejercicio_programa String  @id @default(uuid())
-  id_bloque              String
-  id_ejercicio            String
+  id_ejercicio_programa String @id @default(uuid())
+  id_bloque             String
+  id_ejercicio          String
 
-  series                  Int
-  repeticiones             String   // admite rangos, ej: "8-10"
-  peso_sugerido            Decimal? @db.Decimal(6, 2) // nunca obligatorio
-  tempo                    String?
-  descanso                 String?
-  metodo_entrenamiento     String?
+  series                       Int
+  repeticiones                 String // admite rangos, ej: "8-10"
+  peso_sugerido                Decimal? @db.Decimal(6, 2) // nunca obligatorio
+  tempo                        String?
+  descanso                     String?
+  metodo_entrenamiento         String?
   tiempo_bajo_tension_sugerido Int? // segundos, nunca obligatorio
-  nota                     String?
-  orden                    Int
+  nota                         String?
+  orden                        Int
   // Bloque (superserie/circuito) al que pertenece dentro del día. Nulo =
   // ejercicio individual. Si pertenece a uno, `series` = rondas del grupo.
-  id_grupo                 String?
+  id_grupo                     String?
   // true = el coach lo sacó del plan pero el alumno ya había registrado
   // series con él: no se puede borrar sin perder historial/PR, así que se
   // oculta del plan y se conserva para el historial.
-  archivado                Boolean  @default(false)
+  archivado                    Boolean  @default(false)
 
-  bloque       BloqueEntrenamiento @relation(fields: [id_bloque], references: [id_bloque], onDelete: Cascade)
-  ejercicio    Ejercicio           @relation(fields: [id_ejercicio], references: [id_ejercicio])
-  grupo        GrupoEjercicios?    @relation(fields: [id_grupo], references: [id_grupo], onDelete: SetNull)
+  // Progresión de fuerza (bloque fijo de 4 semanas, ver
+  // src/lib/progresion-fuerza.ts). Solo para sentadilla con barra, press
+  // de banca plano con barra y peso muerto convencional, como ejercicio
+  // individual. La serie efectiva NO se configura: su % sale de la semana
+  // (fijo en el código) y su carga del 1RM de referencia vigente. Lo único
+  // editable son las aproximaciones, por semana:
+  //   { "1": [{ "reps": "5", "porcentaje": 50 }, ...], "2": [...], ... }
+  // `repeticiones` = repeticiones de la serie efectiva.
+  progresion_fuerza           Boolean @default(false)
+  aproximaciones              Json?
+  alumno_edita_aproximaciones Boolean @default(true)
+
+  bloque             BloqueEntrenamiento  @relation(fields: [id_bloque], references: [id_bloque], onDelete: Cascade)
+  ejercicio          Ejercicio            @relation(fields: [id_ejercicio], references: [id_ejercicio])
+  grupo              GrupoEjercicios?     @relation(fields: [id_grupo], references: [id_grupo], onDelete: SetNull)
   series_registradas SerieEntrenamiento[]
 
   @@index([id_grupo])
-
   @@map("ejercicios_programa")
 }
 
@@ -441,17 +452,20 @@ model Entrenamiento {
   // aproximación a partir de la duración — nunca un valor médico exacto,
   // por eso siempre se etiqueta como "estimado" en la UI. sensacion_general
   // es la carita que elige (1 = 😫 más costoso, 5 = 🤩 mejor sensación).
-  duracion_minutos    Int?
-  calorias_estimadas  Int?
-  sensacion_general   Int?
+  duracion_minutos   Int?
+  calorias_estimadas Int?
+  sensacion_general  Int?
   // Volumen total (kg) = suma de peso_utilizado × repeticiones_realizadas
   // de todas las series de la sesión. Se calcula en el servidor al guardar,
   // nunca se confía en el valor que manda el cliente.
-  volumen_total       Decimal? @db.Decimal(10, 2)
+  volumen_total      Decimal? @db.Decimal(10, 2)
   // Id que genera el teléfono al empezar la sesión. Si la misma sesión
   // llega dos veces (reintento tras un corte, cola offline), la segunda se
   // ignora: nunca se duplica un entrenamiento.
-  id_sesion_cliente   String?  @unique
+  id_sesion_cliente  String?  @unique
+  // Semana del bloque de 4 (1..4) en la que se hizo: define la intensidad
+  // de la serie efectiva en la progresión de fuerza.
+  semana_programa    Int?
 
   alumno   Alumno                 @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
   programa ProgramaEntrenamiento? @relation(fields: [id_programa], references: [id_programa])
@@ -462,9 +476,9 @@ model Entrenamiento {
 }
 
 model SerieEntrenamiento {
-  id_serie                String   @id @default(uuid())
-  id_entrenamiento        String
-  id_ejercicio_programa   String
+  id_serie              String @id @default(uuid())
+  id_entrenamiento      String
+  id_ejercicio_programa String
 
   // Número de serie dentro del ejercicio (1, 2, 3...) para poder mostrarle
   // al coach lo que hizo el alumno set por set. Nulo en filas viejas,
@@ -478,12 +492,26 @@ model SerieEntrenamiento {
   repeticiones_realizadas Int?
   series_completadas      Int?
   rpe                     Decimal? @db.Decimal(3, 1)
-  descanso_real            Int?     // segundos
-  tiempo_bajo_tension      Int?     // segundos
-  comentarios              String?
-  fecha_registro           DateTime @default(now())
+  descanso_real           Int? // segundos
+  tiempo_bajo_tension     Int? // segundos
+  comentarios             String?
+  fecha_registro          DateTime @default(now())
 
-  entrenamiento     Entrenamiento     @relation(fields: [id_entrenamiento], references: [id_entrenamiento], onDelete: Cascade)
+  // Progresión de fuerza: qué serie fue y cuál era el objetivo ESE día
+  // (copia calculada en el servidor al guardar). Así un entrenamiento ya
+  // hecho nunca cambia aunque después se actualice el 1RM o el plan.
+  // tipo_serie: "aproximacion" | "efectiva" (null = serie común).
+  tipo_serie            String?
+  porcentaje_objetivo   String? // ej. "80–85" (efectiva) o "50" (aproximación)
+  peso_objetivo         String? // ej. "120–127.5" kg, null sin 1RM cargado
+  repeticiones_objetivo String?
+  // true = aproximación que agregó el alumno (no estaba en el plan del coach).
+  agregada_por_alumno   Boolean @default(false)
+  // En la serie efectiva: cuántas aproximaciones tenía el plan esa semana,
+  // para que el coach vea si el alumno hizo más o menos.
+  aproximaciones_plan   Int?
+
+  entrenamiento      Entrenamiento     @relation(fields: [id_entrenamiento], references: [id_entrenamiento], onDelete: Cascade)
   ejercicio_programa EjercicioPrograma @relation(fields: [id_ejercicio_programa], references: [id_ejercicio_programa])
 
   @@map("series_entrenamiento")
@@ -494,63 +522,63 @@ model SerieEntrenamiento {
 // ------------------------------------------------------------
 
 model ProgresoFisico {
-  id_progreso          String   @id @default(uuid())
-  id_alumno            String
-  fecha                DateTime @default(now())
-  peso_corporal         Decimal? @db.Decimal(5, 2)
-  porcentaje_graso      Decimal? @db.Decimal(4, 2)
-  masa_muscular         Decimal? @db.Decimal(5, 2)
+  id_progreso      String   @id @default(uuid())
+  id_alumno        String
+  fecha            DateTime @default(now())
+  peso_corporal    Decimal? @db.Decimal(5, 2)
+  porcentaje_graso Decimal? @db.Decimal(4, 2)
+  masa_muscular    Decimal? @db.Decimal(5, 2)
 
   // Composición corporal completa que carga el coach desde su panel a
   // partir de la balanza/InBody del gimnasio. Todos opcionales — el
   // alumno sigue pudiendo cargar solo peso/graso/masa desde su panel.
-  imc                  Decimal? @db.Decimal(4, 2)
-  pulso                Int?     // lpm
-  porcentaje_agua      Decimal? @db.Decimal(4, 2)
-  porcentaje_musculo   Decimal? @db.Decimal(4, 2)
-  masa_osea            Decimal? @db.Decimal(4, 2) // kg (huesos)
-  metabolismo_basal    Int?     // kcal
-  metabolismo_activo   Int?     // kcal
-  grasa_visceral       Int?     // nivel
-  edad_metabolica      Int?     // años
-  soft_lean_mass       Decimal? @db.Decimal(5, 2) // kg
-  lean_body_mass       Decimal? @db.Decimal(5, 2) // kg
-  proteina             Decimal? @db.Decimal(5, 2) // kg
-  origen               String?  // "alumno" | "coach" — quién cargó la medición
+  imc                Decimal? @db.Decimal(4, 2)
+  pulso              Int? // lpm
+  porcentaje_agua    Decimal? @db.Decimal(4, 2)
+  porcentaje_musculo Decimal? @db.Decimal(4, 2)
+  masa_osea          Decimal? @db.Decimal(4, 2) // kg (huesos)
+  metabolismo_basal  Int? // kcal
+  metabolismo_activo Int? // kcal
+  grasa_visceral     Int? // nivel
+  edad_metabolica    Int? // años
+  soft_lean_mass     Decimal? @db.Decimal(5, 2) // kg
+  lean_body_mass     Decimal? @db.Decimal(5, 2) // kg
+  proteina           Decimal? @db.Decimal(5, 2) // kg
+  origen             String? // "alumno" | "coach" — quién cargó la medición
 
-  alumno   Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+  alumno Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
 
   @@index([id_alumno, fecha])
   @@map("progreso_fisico")
 }
 
 model MedidaCorporal {
-  id_medida     String   @id @default(uuid())
-  id_alumno     String
-  fecha         DateTime @default(now())
-  tipo_medida   String   // ej: cintura, cadera, brazo, pecho
-  valor_cm      Decimal  @db.Decimal(5, 2)
-  foto_url      String?  // referencia a objeto en Supabase Storage (bucket privado)
+  id_medida   String   @id @default(uuid())
+  id_alumno   String
+  fecha       DateTime @default(now())
+  tipo_medida String // ej: cintura, cadera, brazo, pecho
+  valor_cm    Decimal  @db.Decimal(5, 2)
+  foto_url    String? // referencia a objeto en Supabase Storage (bucket privado)
 
-  alumno   Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+  alumno Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
 
   @@index([id_alumno, fecha])
   @@map("medidas_corporales")
 }
 
 model Habito {
-  id_habito        String   @id @default(uuid())
-  id_alumno        String
-  fecha            DateTime @default(now())
-  sueno            Int?     // horas o escala 1-10
-  agua             Decimal? @db.Decimal(4, 2) // litros
-  nutricion        Int?     // escala 1-10
-  suplementacion   Boolean?
-  cardio           Boolean?
-  movilidad        Boolean?
-  recuperacion     Int?     // escala 1-10
+  id_habito      String   @id @default(uuid())
+  id_alumno      String
+  fecha          DateTime @default(now())
+  sueno          Int? // horas o escala 1-10
+  agua           Decimal? @db.Decimal(4, 2) // litros
+  nutricion      Int? // escala 1-10
+  suplementacion Boolean?
+  cardio         Boolean?
+  movilidad      Boolean?
+  recuperacion   Int? // escala 1-10
 
-  alumno   Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+  alumno Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
 
   @@unique([id_alumno, fecha])
   @@map("habitos")
@@ -562,22 +590,22 @@ model FeedbackDiario {
   fecha              DateTime @default(now())
   comentario_diario  String
 
-  alumno   Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+  alumno Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
 
   @@map("feedback_diario")
 }
 
 model FeedbackSemanal {
-  id_feedback_semanal String   @id @default(uuid())
+  id_feedback_semanal String    @id @default(uuid())
   id_alumno           String
-  semana_inicio        DateTime
-  comentario_semanal   String
+  semana_inicio       DateTime
+  comentario_semanal  String
   // Respuesta del coach dentro de la app — antes el feedback semanal era de
   // solo lectura para el coach y la devolución real pasaba por WhatsApp.
-  respuesta_coach      String?
-  fecha_respuesta      DateTime?
+  respuesta_coach     String?
+  fecha_respuesta     DateTime?
 
-  alumno   Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+  alumno Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
 
   @@map("feedback_semanal")
 }
@@ -587,13 +615,13 @@ model FeedbackSemanal {
 // ------------------------------------------------------------
 
 model Biblioteca {
-  id_recurso       String              @id @default(uuid())
-  titulo           String
-  descripcion      String?
-  categoria        CategoriaBiblioteca
-  url_contenido    String?
-  tipo_contenido   String?  // video, articulo, pdf
-  fecha_creacion   DateTime @default(now())
+  id_recurso     String              @id @default(uuid())
+  titulo         String
+  descripcion    String?
+  categoria      CategoriaBiblioteca
+  url_contenido  String?
+  tipo_contenido String? // video, articulo, pdf
+  fecha_creacion DateTime            @default(now())
 
   @@map("biblioteca")
 }
@@ -603,44 +631,44 @@ model Biblioteca {
 // ------------------------------------------------------------
 
 model Conversacion {
-  id_conversacion  String   @id @default(uuid())
-  id_usuario_1     String
-  id_usuario_2     String
-  fecha_creacion   DateTime @default(now())
+  id_conversacion String   @id @default(uuid())
+  id_usuario_1    String
+  id_usuario_2    String
+  fecha_creacion  DateTime @default(now())
 
-  usuario_1  Usuario   @relation("ConversacionUsuario1", fields: [id_usuario_1], references: [id_usuario], onDelete: Cascade)
-  usuario_2  Usuario   @relation("ConversacionUsuario2", fields: [id_usuario_2], references: [id_usuario], onDelete: Cascade)
-  mensajes   Mensaje[]
+  usuario_1 Usuario   @relation("ConversacionUsuario1", fields: [id_usuario_1], references: [id_usuario], onDelete: Cascade)
+  usuario_2 Usuario   @relation("ConversacionUsuario2", fields: [id_usuario_2], references: [id_usuario], onDelete: Cascade)
+  mensajes  Mensaje[]
 
   @@unique([id_usuario_1, id_usuario_2])
   @@map("conversaciones")
 }
 
 model Mensaje {
-  id_mensaje         String   @id @default(uuid())
-  id_conversacion    String
-  id_usuario_emisor  String
-  contenido          String
-  fecha_envio        DateTime @default(now())
-  leido              Boolean  @default(false)
+  id_mensaje        String   @id @default(uuid())
+  id_conversacion   String
+  id_usuario_emisor String
+  contenido         String
+  fecha_envio       DateTime @default(now())
+  leido             Boolean  @default(false)
 
-  conversacion  Conversacion @relation(fields: [id_conversacion], references: [id_conversacion], onDelete: Cascade)
-  emisor        Usuario      @relation("MensajesEnviados", fields: [id_usuario_emisor], references: [id_usuario])
+  conversacion Conversacion @relation(fields: [id_conversacion], references: [id_conversacion], onDelete: Cascade)
+  emisor       Usuario      @relation("MensajesEnviados", fields: [id_usuario_emisor], references: [id_usuario])
 
   @@index([id_conversacion, fecha_envio])
   @@map("mensajes")
 }
 
 model Notificacion {
-  id_notificacion  String   @id @default(uuid())
-  id_usuario       String
-  titulo           String
-  contenido        String
-  tipo             String?
-  leido            Boolean  @default(false)
-  fecha_creacion   DateTime @default(now())
+  id_notificacion String   @id @default(uuid())
+  id_usuario      String
+  titulo          String
+  contenido       String
+  tipo            String?
+  leido           Boolean  @default(false)
+  fecha_creacion  DateTime @default(now())
 
-  usuario  Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+  usuario Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
 
   @@index([id_usuario, leido])
   @@map("notificaciones")
@@ -649,14 +677,14 @@ model Notificacion {
 // Suscripción push del navegador (Web Push API). Un usuario puede tener
 // más de una (varios dispositivos/navegadores instalados como PWA).
 model SuscripcionPush {
-  id_suscripcion   String   @id @default(uuid())
-  id_usuario       String
-  endpoint         String   @unique
-  clave_p256dh     String
-  clave_auth       String
-  fecha_creacion   DateTime @default(now())
+  id_suscripcion String   @id @default(uuid())
+  id_usuario     String
+  endpoint       String   @unique
+  clave_p256dh   String
+  clave_auth     String
+  fecha_creacion DateTime @default(now())
 
-  usuario  Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+  usuario Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
 
   @@index([id_usuario])
   @@map("suscripciones_push")
@@ -667,39 +695,39 @@ model SuscripcionPush {
 // ------------------------------------------------------------
 
 model Comercio {
-  id_comercio      String         @id @default(uuid())
-  id_usuario       String         @unique
-  nombre           String
-  descripcion      String?
-  direccion        String?
-  telefono         String?
-  email            String?
-  logo             String?
-  categoria        String?
-  estado           EstadoComercio @default(activo)
-  fecha_creacion   DateTime       @default(now())
+  id_comercio    String         @id @default(uuid())
+  id_usuario     String         @unique
+  nombre         String
+  descripcion    String?
+  direccion      String?
+  telefono       String?
+  email          String?
+  logo           String?
+  categoria      String?
+  estado         EstadoComercio @default(activo)
+  fecha_creacion DateTime       @default(now())
 
-  usuario        Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
-  beneficios     Beneficio[]
-  validaciones   ValidacionBeneficio[]
+  usuario      Usuario               @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+  beneficios   Beneficio[]
+  validaciones ValidacionBeneficio[]
 
   @@map("comercios")
 }
 
 model Beneficio {
-  id_beneficio         String          @id @default(uuid())
-  id_comercio          String
-  titulo               String
-  descripcion          String?
-  descuento            String?
-  condiciones          String?
-  fecha_inicio         DateTime
-  fecha_vencimiento    DateTime
-  estado               EstadoBeneficio @default(activo)
+  id_beneficio      String          @id @default(uuid())
+  id_comercio       String
+  titulo            String
+  descripcion       String?
+  descuento         String?
+  condiciones       String?
+  fecha_inicio      DateTime
+  fecha_vencimiento DateTime
+  estado            EstadoBeneficio @default(activo)
 
-  comercio             Comercio               @relation(fields: [id_comercio], references: [id_comercio], onDelete: Cascade)
-  beneficios_planes    BeneficioPlan[]
-  validaciones         ValidacionBeneficio[]
+  comercio          Comercio              @relation(fields: [id_comercio], references: [id_comercio], onDelete: Cascade)
+  beneficios_planes BeneficioPlan[]
+  validaciones      ValidacionBeneficio[]
 
   @@index([id_comercio, estado])
   @@map("beneficios")
@@ -707,25 +735,25 @@ model Beneficio {
 
 // Tabla puente: qué beneficios están disponibles para qué planes de membresía
 model BeneficioPlan {
-  id_beneficio        String
-  id_plan_membresia   String
+  id_beneficio      String
+  id_plan_membresia String
 
-  beneficio       Beneficio     @relation(fields: [id_beneficio], references: [id_beneficio], onDelete: Cascade)
-  plan_membresia  PlanMembresia @relation(fields: [id_plan_membresia], references: [id_plan_membresia], onDelete: Cascade)
+  beneficio      Beneficio     @relation(fields: [id_beneficio], references: [id_beneficio], onDelete: Cascade)
+  plan_membresia PlanMembresia @relation(fields: [id_plan_membresia], references: [id_plan_membresia], onDelete: Cascade)
 
   @@id([id_beneficio, id_plan_membresia])
   @@map("beneficios_planes")
 }
 
 model Credencial {
-  id_credencial          String   @id @default(uuid())
-  id_usuario             String   @unique
-  numero_socio           String   @unique
+  id_credencial   String   @id @default(uuid())
+  id_usuario      String   @unique
+  numero_socio    String   @unique
   // Identificador opaco embebido en el QR — NUNCA datos sensibles del socio
-  codigo_qr_token        String   @unique @default(uuid())
-  fecha_creacion         DateTime @default(now())
+  codigo_qr_token String   @unique @default(uuid())
+  fecha_creacion  DateTime @default(now())
 
-  usuario  Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+  usuario Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
 
   @@map("credenciales")
 }
@@ -738,9 +766,9 @@ model ValidacionBeneficio {
   fecha_validacion DateTime            @default(now())
   resultado        ResultadoValidacion
 
-  comercio   Comercio  @relation(fields: [id_comercio], references: [id_comercio])
-  usuario    Usuario   @relation(fields: [id_usuario], references: [id_usuario])
-  beneficio  Beneficio @relation(fields: [id_beneficio], references: [id_beneficio])
+  comercio  Comercio  @relation(fields: [id_comercio], references: [id_comercio])
+  usuario   Usuario   @relation(fields: [id_usuario], references: [id_usuario])
+  beneficio Beneficio @relation(fields: [id_beneficio], references: [id_beneficio])
 
   @@index([id_comercio, fecha_validacion])
   @@map("validaciones_beneficios")
@@ -754,22 +782,22 @@ model ValidacionBeneficio {
 // por actividad diaria y logros desbloqueables.
 
 model Objetivo {
-  id_objetivo          String         @id @default(uuid())
-  id_alumno            String
-  titulo               String
-  descripcion          String?
-  tipo                 TipoObjetivo   @default(custom)
+  id_objetivo         String         @id @default(uuid())
+  id_alumno           String
+  titulo              String
+  descripcion         String?
+  tipo                TipoObjetivo   @default(custom)
   // meta y progreso_actual son Decimal para cubrir todos los tipos con un
   // solo campo (frecuencia usa enteros, peso_corporal usa 1 decimal, etc.).
-  meta                 Decimal        @db.Decimal(10, 2)
-  progreso_actual      Decimal        @default(0) @db.Decimal(10, 2)
-  fecha_inicio         DateTime       @default(now())
-  fecha_objetivo       DateTime?
-  estado               EstadoObjetivo @default(activo)
-  fecha_creacion       DateTime       @default(now())
-  fecha_actualizacion  DateTime       @updatedAt
+  meta                Decimal        @db.Decimal(10, 2)
+  progreso_actual     Decimal        @default(0) @db.Decimal(10, 2)
+  fecha_inicio        DateTime       @default(now())
+  fecha_objetivo      DateTime?
+  estado              EstadoObjetivo @default(activo)
+  fecha_creacion      DateTime       @default(now())
+  fecha_actualizacion DateTime       @updatedAt
 
-  alumno  Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+  alumno Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
 
   @@index([id_alumno, estado])
   @@map("objetivos")
@@ -778,22 +806,22 @@ model Objetivo {
 // Catálogo maestro de logros disponibles. `criterio` es JSON con la regla
 // evaluable por evaluarLogros(), ej: {"tipo":"racha_dias","valor":7}.
 model Logro {
-  id_logro        String   @id @default(uuid())
+  id_logro       String   @id @default(uuid())
   // Clave estable para referirse al logro desde código/seed sin depender
   // del uuid generado.
-  codigo          String   @unique
-  titulo          String
-  descripcion     String
-  icono           String?  // emoji o nombre de Material Symbol
-  color           String?  // hex, ej "#61edda" — para la tarjeta del logro
-  categoria       String?
+  codigo         String   @unique
+  titulo         String
+  descripcion    String
+  icono          String? // emoji o nombre de Material Symbol
+  color          String? // hex, ej "#61edda" — para la tarjeta del logro
+  categoria      String?
   // Nulo = logro 100% manual: el coach lo otorga a mano desde "+ Otorgar
   // logro" en el perfil del alumno, nunca lo asigna evaluarLogros().
-  criterio        Json?
-  activo          Boolean  @default(true)
-  fecha_creacion  DateTime @default(now())
+  criterio       Json?
+  activo         Boolean  @default(true)
+  fecha_creacion DateTime @default(now())
 
-  alumnos  LogroAlumno[]
+  alumnos LogroAlumno[]
 
   @@map("logros")
 }
@@ -804,8 +832,8 @@ model LogroAlumno {
   id_logro        String
   fecha_obtenido  DateTime @default(now())
 
-  alumno  Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
-  logro   Logro  @relation(fields: [id_logro], references: [id_logro], onDelete: Cascade)
+  alumno Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+  logro  Logro  @relation(fields: [id_logro], references: [id_logro], onDelete: Cascade)
 
   @@unique([id_alumno, id_logro], name: "logro_alumno_unico")
   @@map("logros_alumno")
@@ -823,7 +851,7 @@ model MovimientoPuntos {
   descripcion   String?
   fecha         DateTime @default(now())
 
-  alumno  Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+  alumno Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
 
   @@unique([id_alumno, motivo], name: "movimiento_puntos_unico")
   @@index([id_alumno, fecha])
@@ -834,16 +862,40 @@ model MovimientoPuntos {
 // AUDITORÍA
 // ------------------------------------------------------------
 
-model RegistroAuditoria {
-  id_registro   String   @id @default(uuid())
-  id_usuario    String?
-  accion        String   // ej: login, cambio_rol, cambio_membresia, validacion_qr
-  recurso       String?  // ej: "membresia", "programa"
-  id_recurso    String?
-  fecha         DateTime @default(now())
-  resultado     String?  // ej: "exito", "denegado"
+// 1RM de referencia para la progresión de fuerza, con historial: cada
+// actualización autorizada (la hace el coach) agrega una fila, nunca pisa
+// la anterior. El vigente es el más reciente por levantamiento.
+enum Levantamiento {
+  sentadilla
+  press_banca
+  peso_muerto
+}
 
-  usuario  Usuario? @relation(fields: [id_usuario], references: [id_usuario], onDelete: SetNull)
+model RmReferencia {
+  id_rm            String        @id @default(uuid())
+  id_alumno        String
+  levantamiento    Levantamiento
+  valor_kg         Decimal       @db.Decimal(6, 2)
+  fecha            DateTime      @default(now())
+  id_usuario_autor String?
+  nota             String?
+
+  alumno Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+
+  @@index([id_alumno, levantamiento, fecha])
+  @@map("rm_referencia")
+}
+
+model RegistroAuditoria {
+  id_registro String   @id @default(uuid())
+  id_usuario  String?
+  accion      String // ej: login, cambio_rol, cambio_membresia, validacion_qr
+  recurso     String? // ej: "membresia", "programa"
+  id_recurso  String?
+  fecha       DateTime @default(now())
+  resultado   String? // ej: "exito", "denegado"
+
+  usuario Usuario? @relation(fields: [id_usuario], references: [id_usuario], onDelete: SetNull)
 
   @@index([id_usuario, fecha])
   @@index([accion, fecha])

@@ -22,6 +22,9 @@ import {
 import { TabsAlumno } from "./_components/tabs-alumno";
 import { PlanificacionTab } from "./_components/planificacion-tab";
 import { FotosTab, type FotoSerializada } from "./_components/fotos-tab";
+import { RmReferenciaCoach, type RmSerializado } from "./_components/rm-referencia-coach";
+import { obtenerHistorialRm, obtenerRmVigentes } from "@/lib/rm-referencia";
+import type { Levantamiento } from "@/lib/progresion-fuerza";
 
 const CAMPOS_PROGRESO = [
   "peso_corporal",
@@ -140,6 +143,23 @@ export default async function AlumnoDetallePage(
 
   const programaActivo = await obtenerOCrearProgramaActivo(id_alumno, contexto.id_entrenador);
 
+  const [rmVigentes, historialRm] = await Promise.all([
+    obtenerRmVigentes(id_alumno),
+    obtenerHistorialRm(id_alumno),
+  ]);
+  const rmsSerializados: RmSerializado[] = (["sentadilla", "press_banca", "peso_muerto"] as Levantamiento[]).map(
+    (levantamiento) => {
+      const vigente = rmVigentes[levantamiento];
+      return {
+        levantamiento,
+        vigente: vigente ? { valor: vigente.valor, fechaLabel: FORMATEADOR_FECHA.format(vigente.fecha) } : null,
+        historial: historialRm
+          .filter((h) => h.levantamiento === levantamiento)
+          .map((h) => ({ id_rm: h.id_rm, valor: h.valor_kg, fechaLabel: FORMATEADOR_FECHA.format(h.fecha) })),
+      };
+    }
+  );
+
   const [
     ultimaSesion,
     totalSesiones,
@@ -244,6 +264,7 @@ export default async function AlumnoDetallePage(
         nombre: true,
         comentarios: true,
         sensacion_general: true,
+        semana_programa: true,
         series: {
           orderBy: [{ id_ejercicio_programa: "asc" }, { numero_serie: "asc" }],
           select: {
@@ -254,6 +275,12 @@ export default async function AlumnoDetallePage(
             repeticiones_realizadas: true,
             comentarios: true,
             id_ejercicio_programa: true,
+            tipo_serie: true,
+            porcentaje_objetivo: true,
+            peso_objetivo: true,
+            repeticiones_objetivo: true,
+            agregada_por_alumno: true,
+            aproximaciones_plan: true,
             ejercicio_programa: {
               select: {
                 series: true,
@@ -365,7 +392,17 @@ export default async function AlumnoDetallePage(
         nombre: string;
         prescrito: { series: number; repeticiones: string; peso_sugerido: number | null };
         comentario: string | null;
-        sets: { numero_serie: number | null; numero_ronda: number | null; peso: number | null; reps: number | null }[];
+        sets: {
+          numero_serie: number | null;
+          numero_ronda: number | null;
+          peso: number | null;
+          reps: number | null;
+          tipo: string | null;
+          objetivo: string | null;
+          agregada: boolean;
+        }[];
+        // Progresión de fuerza: aproximaciones hechas vs. planificadas.
+        aproximacionesPlan: number | null;
       }
     >();
     for (const serie of s.series) {
@@ -379,13 +416,29 @@ export default async function AlumnoDetallePage(
         },
         comentario: serie.comentarios,
         sets: [],
+        aproximacionesPlan: null,
       };
+      // Objetivo copiado al guardar (plan del coach + 1RM de ese día).
+      const objetivo =
+        serie.tipo_serie == null
+          ? null
+          : [
+              serie.porcentaje_objetivo ? `${serie.porcentaje_objetivo}%` : null,
+              serie.peso_objetivo ? `${serie.peso_objetivo} kg` : null,
+              serie.repeticiones_objetivo ? `${serie.repeticiones_objetivo} reps` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ") || null;
       grupo.sets.push({
         numero_serie: serie.numero_serie,
         numero_ronda: serie.numero_ronda,
         peso: serie.peso_utilizado ? Number(serie.peso_utilizado) : null,
         reps: serie.repeticiones_realizadas,
+        tipo: serie.tipo_serie,
+        objetivo,
+        agregada: serie.agregada_por_alumno,
       });
+      if (serie.tipo_serie === "efectiva") grupo.aproximacionesPlan = serie.aproximaciones_plan;
       porEjercicio.set(serie.id_ejercicio_programa, grupo);
     }
     return {
@@ -394,6 +447,7 @@ export default async function AlumnoDetallePage(
       nombre: s.nombre,
       comentarios: s.comentarios,
       sensacion_general: s.sensacion_general,
+      semana_programa: s.semana_programa,
       ejercicios: Array.from(porEjercicio.values()),
     };
   });
@@ -611,6 +665,7 @@ export default async function AlumnoDetallePage(
                 </h3>
                 <p className="text-xs text-on-surface-variant">
                   {FORMATEADOR_FECHA.format(sesion.fecha)}
+                  {sesion.semana_programa ? ` · semana ${sesion.semana_programa}` : ""}
                 </p>
               </div>
               {sesion.sensacion_general != null && (
@@ -621,7 +676,76 @@ export default async function AlumnoDetallePage(
             </div>
 
             <div className="flex flex-col gap-2.5">
-              {sesion.ejercicios.map((ej, i) => (
+              {sesion.ejercicios.map((ej, i) => {
+                const esFuerza = ej.sets.some((set) => set.tipo != null);
+                if (esFuerza) {
+                  const aproximaciones = ej.sets.filter((set) => set.tipo === "aproximacion");
+                  const efectivas = ej.sets.filter((set) => set.tipo === "efectiva");
+                  const agregadas = aproximaciones.filter((set) => set.agregada).length;
+                  const modificado =
+                    agregadas > 0 ||
+                    (ej.aproximacionesPlan != null && aproximaciones.length !== ej.aproximacionesPlan);
+                  return (
+                    <div key={i} className="bg-[#131313] border border-[#262626] rounded-lg p-3 flex flex-col gap-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-[family-name:var(--font-sora)] text-sm font-semibold text-on-surface">
+                          {ej.nombre}
+                        </span>
+                        <span className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.06em] text-primary-container uppercase">
+                          Progresión de fuerza
+                        </span>
+                      </div>
+                      {modificado && (
+                        <p className="text-xs text-[#eda100]">
+                          Modificado por el alumno: hizo {aproximaciones.length} aproximaciones
+                          {ej.aproximacionesPlan != null ? ` (plan: ${ej.aproximacionesPlan})` : ""}
+                          {agregadas > 0 ? ` · ${agregadas} agregada${agregadas === 1 ? "" : "s"} por él` : ""}.
+                        </p>
+                      )}
+                      {aproximaciones.length > 0 && (
+                        <div className="flex flex-col gap-1">
+                          <span className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.06em] text-on-surface-variant uppercase">
+                            Aproximaciones
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {aproximaciones.map((set, j) => (
+                              <span
+                                key={j}
+                                title={set.objetivo ? `Plan: ${set.objetivo}` : "Sin plan (agregada por el alumno)"}
+                                className={`font-[family-name:var(--font-jetbrains-mono)] text-xs rounded px-2 py-1 tabular-nums ${
+                                  set.agregada ? "bg-[#eda100]/10 text-[#eda100]" : "bg-[#262626] text-on-surface"
+                                }`}
+                              >
+                                A{set.numero_serie ?? j + 1} → {set.peso ?? "—"}
+                                {set.peso != null ? "kg" : ""} × {set.reps ?? "—"}
+                                {set.agregada ? " · agregada" : ""}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {efectivas.map((set, j) => (
+                        <div
+                          key={j}
+                          className="flex flex-wrap items-center justify-between gap-2 bg-primary-container/10 border border-primary-container/40 rounded px-2.5 py-1.5"
+                        >
+                          <span className="text-xs font-bold text-primary-container uppercase tracking-[0.06em]">
+                            Serie efectiva
+                          </span>
+                          <span className="font-[family-name:var(--font-jetbrains-mono)] text-xs text-on-surface tabular-nums">
+                            {set.peso ?? "—"}
+                            {set.peso != null ? "kg" : ""} × {set.reps ?? "—"}
+                            {set.objetivo ? ` · plan ${set.objetivo}` : ""}
+                          </span>
+                        </div>
+                      ))}
+                      {ej.comentario && (
+                        <p className="text-xs text-on-surface-variant italic">“{ej.comentario}”</p>
+                      )}
+                    </div>
+                  );
+                }
+                return (
                 <div
                   key={i}
                   className="bg-[#131313] border border-[#262626] rounded-lg p-3 flex flex-col gap-1.5"
@@ -650,7 +774,8 @@ export default async function AlumnoDetallePage(
                     <p className="text-xs text-on-surface-variant italic">“{ej.comentario}”</p>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
 
             {sesion.comentarios && (
@@ -824,13 +949,16 @@ export default async function AlumnoDetallePage(
         panels={{
           resumen: panelResumen,
           planificacion: (
-            <PlanificacionTab
-              idAlumno={id_alumno}
-              idPrograma={programaActivo.id_programa}
-              nombrePrograma={programaActivo.nombre}
-              tipoPlanificacion={programaConBloques?.tipo_planificacion ?? "fija"}
-              bloques={programaConBloques?.bloques ?? []}
-            />
+            <div className="flex flex-col gap-4">
+              <RmReferenciaCoach idAlumno={id_alumno} rms={rmsSerializados} />
+              <PlanificacionTab
+                idAlumno={id_alumno}
+                idPrograma={programaActivo.id_programa}
+                nombrePrograma={programaActivo.nombre}
+                tipoPlanificacion={programaConBloques?.tipo_planificacion ?? "fija"}
+                bloques={programaConBloques?.bloques ?? []}
+              />
+            </div>
           ),
           ejecucion: panelEjecucion,
           objetivos: <ObjetivosAlumno idAlumno={id_alumno} objetivos={objetivosSerializados} />,

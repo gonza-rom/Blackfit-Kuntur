@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { encolarSesion, sincronizarPendientes } from "@/lib/offline-queue";
 import { ModalVideoEjercicio, type EjercicioDetalle } from "./modal-video-ejercicio";
 import { BloqueRondas, claveCheck, type GrupoPlan } from "./bloque-rondas";
+import { TarjetaFuerza, type DatosFuerza } from "./tarjeta-fuerza";
 import { agruparItemsDia } from "@/lib/plan-dia";
 import {
   leerBorrador,
@@ -25,6 +26,8 @@ type EjercicioPrograma = {
   metodo_entrenamiento: string | null;
   tiempo_bajo_tension_sugerido: number | null;
   nota: string | null;
+  // Progresión de fuerza (calculada en el servidor para la semana actual).
+  fuerza?: DatosFuerza | null;
   ejercicio: EjercicioDetalle;
 };
 
@@ -121,18 +124,27 @@ export function FormRegistrarEntrenamiento({
   const [filasPorEjercicio, setFilasPorEjercicio] = useState<Record<string, number>>(() => {
     const inicial: Record<string, number> = {};
     for (const ep of ejercicios) {
+      // En progresión de fuerza las "filas" son las aproximaciones: arrancan
+      // como las planificó el coach, y solo cambian si tiene permiso.
+      const porDefecto = ep.fuerza ? ep.fuerza.aproximaciones.length : Math.max(1, ep.series);
+      const guardado = borrador.filas[ep.id_ejercicio_programa];
       inicial[ep.id_ejercicio_programa] =
-        borrador.filas[ep.id_ejercicio_programa] ?? Math.max(1, ep.series);
+        ep.fuerza && !ep.fuerza.alumnoEdita ? porDefecto : (guardado ?? porDefecto);
     }
     return inicial;
   });
 
+  const fuerzaPorId = new Map(ejercicios.flatMap((ep) => (ep.fuerza ? [[ep.id_ejercicio_programa, ep.fuerza]] : [])));
+
   function agregarFila(id: string) {
-    setFilasPorEjercicio((prev) => ({ ...prev, [id]: Math.min(15, (prev[id] ?? 1) + 1) }));
+    const max = fuerzaPorId.has(id) ? 20 : 15;
+    setFilasPorEjercicio((prev) => ({ ...prev, [id]: Math.min(max, (prev[id] ?? 1) + 1) }));
   }
 
   function quitarFila(id: string) {
-    setFilasPorEjercicio((prev) => ({ ...prev, [id]: Math.max(1, (prev[id] ?? 1) - 1) }));
+    // Las aproximaciones pueden quedar en 0; una serie común, mínimo 1.
+    const min = fuerzaPorId.has(id) ? 0 : 1;
+    setFilasPorEjercicio((prev) => ({ ...prev, [id]: Math.max(min, (prev[id] ?? 1) - 1) }));
   }
   // Bloques: un check por ejercicio y ronda; una ronda queda registrada
   // cuando están todos sus ejercicios, y ahí se pasa sola a la siguiente.
@@ -237,8 +249,9 @@ export function FormRegistrarEntrenamiento({
 
     let volumen = 0;
     for (const ep of ejercicios) {
-      const filas = filasDe(ep);
-      for (let n = 1; n <= filas; n++) {
+      const sufijos: (number | "ef")[] = Array.from({ length: filasDe(ep) }, (_, i) => i + 1);
+      if (ep.fuerza) sufijos.push("ef");
+      for (const n of sufijos) {
         const peso = Number(formData.get(`peso_${ep.id_ejercicio_programa}_${n}`)) || 0;
         const reps = Number(formData.get(`reps_${ep.id_ejercicio_programa}_${n}`)) || 0;
         volumen += peso * reps;
@@ -272,23 +285,28 @@ export function FormRegistrarEntrenamiento({
         const descanso_real = numeroOpcional(formData.get(`descanso_${ep.id_ejercicio_programa}`));
         const tiempo_bajo_tension = numeroOpcional(formData.get(`tut_${ep.id_ejercicio_programa}`));
         const comentarios = textoOpcional(formData.get(`comentario_${ep.id_ejercicio_programa}`));
-        return Array.from({ length: filas }, (_, i) => {
-          const n = i + 1;
-          return {
-            id_ejercicio_programa: ep.id_ejercicio_programa,
-            numero_serie: n,
-            numero_ronda: ep.id_grupo && grupoPorId.has(ep.id_grupo) ? n : null,
-            peso_utilizado: numeroOpcional(formData.get(`peso_${ep.id_ejercicio_programa}_${n}`)),
-            repeticiones_realizadas: numeroOpcional(
-              formData.get(`reps_${ep.id_ejercicio_programa}_${n}`)
-            ),
-            series_completadas: null,
-            rpe,
-            descanso_real,
-            tiempo_bajo_tension,
-            comentarios,
-          };
+        const serie = (n: number, sufijo: number | "ef", tipo_serie: "aproximacion" | "efectiva" | null) => ({
+          id_ejercicio_programa: ep.id_ejercicio_programa,
+          numero_serie: n,
+          numero_ronda: ep.id_grupo && grupoPorId.has(ep.id_grupo) ? n : null,
+          peso_utilizado: numeroOpcional(formData.get(`peso_${ep.id_ejercicio_programa}_${sufijo}`)),
+          repeticiones_realizadas: numeroOpcional(formData.get(`reps_${ep.id_ejercicio_programa}_${sufijo}`)),
+          series_completadas: null,
+          rpe,
+          descanso_real,
+          tiempo_bajo_tension,
+          comentarios,
+          tipo_serie,
         });
+        // Progresión de fuerza: aproximaciones 1..n y después la efectiva.
+        // El servidor calcula y copia el objetivo de cada una.
+        if (ep.fuerza) {
+          return [
+            ...Array.from({ length: filas }, (_, i) => serie(i + 1, i + 1, "aproximacion")),
+            serie(filas + 1, "ef", "efectiva"),
+          ];
+        }
+        return Array.from({ length: filas }, (_, i) => serie(i + 1, i + 1, null));
       }),
     };
 
@@ -469,6 +487,22 @@ export function FormRegistrarEntrenamiento({
           }
           const ep = item.ejercicio;
           const completo = completados.has(ep.id_ejercicio_programa);
+          if (ep.fuerza) {
+            return (
+              <TarjetaFuerza
+                key={ep.id_ejercicio_programa}
+                id={ep.id_ejercicio_programa}
+                nombre={ep.ejercicio.nombre}
+                fuerza={ep.fuerza}
+                aproximaciones={filasPorEjercicio[ep.id_ejercicio_programa] ?? ep.fuerza.aproximaciones.length}
+                completo={completo}
+                onAgregar={() => agregarFila(ep.id_ejercicio_programa)}
+                onQuitar={() => quitarFila(ep.id_ejercicio_programa)}
+                onAlternarCompletado={() => alternarCompletado(ep.id_ejercicio_programa)}
+                onVerVideo={() => setVideoAbierto(ep.ejercicio)}
+              />
+            );
+          }
           return (
             <div
               key={ep.id_ejercicio_programa}

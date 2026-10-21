@@ -24,6 +24,7 @@ export type SesionPendiente = {
     descanso_real: number | null;
     tiempo_bajo_tension: number | null;
     comentarios: string | null;
+    tipo_serie?: "aproximacion" | "efectiva" | null;
   }[];
   guardado_en: string;
 };

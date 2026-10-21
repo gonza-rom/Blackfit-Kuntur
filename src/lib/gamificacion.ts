@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { crearNotificacion } from "@/lib/notificaciones";
+import { detectarLevantamiento, NOMBRE_LEVANTAMIENTO } from "@/lib/progresion-fuerza";
 
 // Puntos que otorga cada evento de actividad diaria. Un único lugar para
 // definirlos — el resto del código llama a otorgarPuntos() con estas
@@ -317,28 +318,15 @@ export async function registrarVisitaDiaria(id_usuario: string, id_alumno: strin
   }
 }
 
-// Logro automático por PR (PROMPT MAESTRO sección 15.A): solo los 4
-// levantamientos base, matcheados por nombre porque cada coach arma su
-// propia biblioteca de ejercicios con nombres libres. El orden importa —
-// "peso muerto rumano" también matchea el patrón de "convencional", así
-// que rumano se chequea primero.
-const PATRONES_PR_COMPATIBLE: { clave: string; patrones: RegExp[] }[] = [
-  { clave: "Sentadilla", patrones: [/sentadilla/i, /back squat/i, /\bsquat\b/i] },
-  { clave: "Press de banca", patrones: [/press.*banca/i, /bench press/i, /press plano/i] },
-  {
-    clave: "Peso muerto rumano",
-    patrones: [/peso muerto rumano/i, /\brumano\b/i, /\brdl\b/i, /romanian deadlift/i],
-  },
-  { clave: "Peso muerto convencional", patrones: [/peso muerto/i, /\bdeadlift\b/i] },
-];
+// Sistema automático de PR: EXCLUSIVAMENTE sentadilla con barra, press de
+// banca plano con barra y peso muerto convencional (variantes como
+// búlgara, inclinado o rumano no cuentan). La detección por nombre vive en
+// lib/progresion-fuerza.ts, compartida con la progresión de fuerza.
 
-/** Si el nombre del ejercicio corresponde a uno de los 4 levantamientos
- *  base del sistema de PR automático, devuelve su nombre canónico. */
+/** Nombre canónico del levantamiento del sistema de PR, o null si no es uno de los 3. */
 export function levantamientoCompatiblePR(nombreEjercicio: string): string | null {
-  for (const { clave, patrones } of PATRONES_PR_COMPATIBLE) {
-    if (patrones.some((p) => p.test(nombreEjercicio))) return clave;
-  }
-  return null;
+  const levantamiento = detectarLevantamiento(nombreEjercicio);
+  return levantamiento ? NOMBRE_LEVANTAMIENTO[levantamiento] : null;
 }
 
 /**
@@ -382,7 +370,9 @@ export async function notificarNuevosPR(
       await crearNotificacion({
         id_usuario: idCoachUsuario,
         titulo: "Nuevo PR de tu alumno",
-        contenido,
+        // El 1RM de referencia NO se cambia solo: lo actualiza el coach
+        // (actualización autorizada), y ahí se recalculan las cargas futuras.
+        contenido: `${contenido}. Si corresponde, actualizá su 1RM de referencia.`,
         tipo: "pr",
         url: `/coach/alumnos/${id_alumno}`,
       }).catch(() => {});

@@ -9,6 +9,8 @@ import {
   tipoDeBloque,
 } from "@/lib/plan-dia";
 import { SelectorEjercicio, type EjercicioCatalogo } from "./selector-ejercicio";
+import { ConfigProgresionFuerza, type AproximacionesEditor } from "./config-progresion-fuerza";
+import { SEMANAS, detectarLevantamiento, type Levantamiento, type Semana } from "@/lib/progresion-fuerza";
 
 // ------------------------------------------------------------
 // Tipos
@@ -26,7 +28,13 @@ type Fila = {
   metodo_entrenamiento: string;
   tiempo_bajo_tension_sugerido: string;
   nota: string;
+  // Progresión de fuerza (solo ejercicios individuales de los 3 levantamientos).
+  progresion_fuerza?: boolean;
+  aproximaciones?: AproximacionesEditor;
+  alumno_edita_aproximaciones?: boolean;
 };
+
+export type RmPorLevantamiento = Partial<Record<Levantamiento, number>>;
 
 type DatosGrupo = {
   id_grupo?: string;
@@ -123,6 +131,7 @@ export function FormDiaPlan({
   catalogo,
   itemsIniciales,
   opcionesSemanas,
+  rmVigentes,
 }: {
   idPrograma: string;
   idAlumno: string;
@@ -132,7 +141,9 @@ export function FormDiaPlan({
   catalogo: EjercicioCatalogo[];
   itemsIniciales: ItemInicial[];
   opcionesSemanas: OpcionSemanas[];
+  rmVigentes: RmPorLevantamiento;
 }) {
+  const semanasDelDia = SEMANAS.filter((s) => s >= semanaInicio && s <= semanaFin) as Semana[];
   const [state, action, pending] = useActionState(guardarDiaPlan, undefined);
   const [items, setItems] = useState<ItemEditor[]>(() =>
     itemsIniciales.map((item) =>
@@ -352,6 +363,8 @@ export function FormDiaPlan({
                   {...props}
                   fila={item.ejercicio}
                   catalogo={catalogo}
+                  rmVigentes={rmVigentes}
+                  semanas={semanasDelDia}
                   autoFocus={claveEnfocar === item.ejercicio.clave}
                   onCambiar={(cambios) => actualizarEjercicioSuelto(item.clave, cambios)}
                   onElegir={(ej) =>
@@ -531,6 +544,8 @@ function Asa({
 function TarjetaEjercicioIndividual({
   fila,
   catalogo,
+  rmVigentes,
+  semanas,
   autoFocus,
   onCambiar,
   onElegir,
@@ -538,10 +553,17 @@ function TarjetaEjercicioIndividual({
 }: PropsItem & {
   fila: FilaEditor;
   catalogo: EjercicioCatalogo[];
+  rmVigentes: RmPorLevantamiento;
+  semanas: Semana[];
   autoFocus: boolean;
   onCambiar: (cambios: Partial<Fila>) => void;
   onElegir: (ejercicio: EjercicioCatalogo) => void;
 }) {
+  // Solo sentadilla con barra, press de banca plano y peso muerto
+  // convencional pueden usar la progresión de fuerza.
+  const levantamiento = fila.nombre ? detectarLevantamiento(fila.nombre) : null;
+  const enProgresion = Boolean(levantamiento && fila.progresion_fuerza);
+
   return (
     <div
       data-arrastrable
@@ -566,6 +588,38 @@ function TarjetaEjercicioIndividual({
         />
       </div>
 
+      {levantamiento && (
+        <label className="flex items-center gap-2 text-sm text-on-surface">
+          <input
+            type="checkbox"
+            checked={enProgresion}
+            onChange={(e) => onCambiar({ progresion_fuerza: e.target.checked })}
+            className="accent-[var(--color-primary-container)]"
+          />
+          Progresión de fuerza (bloque de 4 semanas con 1RM)
+        </label>
+      )}
+
+      {enProgresion && levantamiento ? (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <input type="text" required value={fila.repeticiones} onChange={(e) => onCambiar({ repeticiones: e.target.value })} placeholder="Reps serie efectiva" aria-label="Repeticiones de la serie efectiva" className={inputClase} />
+            <input type="text" value={fila.descanso} onChange={(e) => onCambiar({ descanso: e.target.value })} placeholder="Descanso (ej. 3min)" aria-label="Descanso" className={inputClase} />
+            <input type="text" value={fila.tempo} onChange={(e) => onCambiar({ tempo: e.target.value })} placeholder="Tempo (opcional)" aria-label="Tempo" className={inputClase} />
+            <input type="text" value={fila.nota} onChange={(e) => onCambiar({ nota: e.target.value })} placeholder="Nota (opcional)" aria-label="Nota" className={inputClase} />
+          </div>
+          <ConfigProgresionFuerza
+            levantamiento={levantamiento}
+            rm={rmVigentes[levantamiento] ?? null}
+            semanas={semanas}
+            repeticionesEfectiva={fila.repeticiones}
+            aproximaciones={fila.aproximaciones ?? {}}
+            alumnoEdita={fila.alumno_edita_aproximaciones !== false}
+            onCambiarAproximaciones={(aproximaciones) => onCambiar({ aproximaciones })}
+            onCambiarAlumnoEdita={(valor) => onCambiar({ alumno_edita_aproximaciones: valor })}
+          />
+        </>
+      ) : (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <input type="number" min={1} required value={fila.series} onChange={(e) => onCambiar({ series: e.target.value })} placeholder="Series" aria-label="Series" className={inputClase} />
         <input type="text" required value={fila.repeticiones} onChange={(e) => onCambiar({ repeticiones: e.target.value })} placeholder="Reps (ej. 8-10)" aria-label="Repeticiones" className={inputClase} />
@@ -576,6 +630,7 @@ function TarjetaEjercicioIndividual({
         <input type="number" min={0} value={fila.tiempo_bajo_tension_sugerido} onChange={(e) => onCambiar({ tiempo_bajo_tension_sugerido: e.target.value })} placeholder="TUT sugerido (seg)" aria-label="Tiempo bajo tensión sugerido" className={inputClase} />
         <input type="text" value={fila.nota} onChange={(e) => onCambiar({ nota: e.target.value })} placeholder="Nota (opcional)" aria-label="Nota" className={`col-span-2 ${inputClase}`} />
       </div>
+      )}
     </div>
   );
 }
