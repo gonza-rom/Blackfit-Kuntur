@@ -46,3 +46,6 @@ next-env.d.ts
 # datos personales de socios (nombre/DNI) que Kuntur manda para importar —
 # nunca al repo, ver /admin/usuarios/importar
 *SOCIOS*.csv
+
+# Motor OCR copiado desde node_modules en el postinstall (scripts/copiar-ocr.mjs)
+/public/ocr

@@ -1,12 +1,15 @@
 "use client";
 
-import { useActionState, useEffect, useState, type ChangeEvent } from "react";
+import { useActionState, useRef, useState, useTransition, type ChangeEvent } from "react";
 import {
   crearProgresoFisicoAlumno,
   editarProgresoFisicoAlumno,
   eliminarProgresoFisicoAlumno,
   extraerComposicionDeDocumento,
+  extraerComposicionDeTextoOcr,
+  type ResultadoExtraccionComposicion,
 } from "@/app/actions/coach";
+import { esImagen, leerTextoDeImagen } from "@/lib/ocr-cliente";
 import { useEditorEnLinea } from "@/lib/use-editor-en-linea";
 import { ConfirmForm } from "@/components/confirm-form";
 
@@ -136,10 +139,14 @@ function CamposComposicion({
   );
 }
 
-// Sube un PDF o Word del reporte de la balanza y le extrae el texto en el
-// servidor (pdf-parse / mammoth, sin ninguna IA) para completar los campos
-// de arriba por nombre — el coach siempre revisa y corrige lo que se
-// completó antes de guardar, esto nunca guarda nada por sí solo.
+type ResultadoLectura = Exclude<ResultadoExtraccionComposicion, undefined>;
+
+// Completa los 5 indicadores desde el informe de bioimpedancia, SIN IA:
+// - PDF / Word: el servidor extrae el texto (pdf-parse / mammoth).
+// - Foto (jpg, jpeg, png, webp...): OCR con Tesseract en el navegador del
+//   coach (lib/ocr-cliente.ts); la imagen no sale del dispositivo.
+// En ambos casos el texto pasa por el mismo lector de reglas. Nunca guarda
+// nada por sí solo: el coach revisa y confirma con "Guardar medición".
 function ImportarDesdeDocumento({
   onExtraido,
 }: {
@@ -150,61 +157,103 @@ function ImportarDesdeDocumento({
     faltantes: Campo[];
   }) => void;
 }) {
-  const [state, action, pending] = useActionState(extraerComposicionDeDocumento, undefined);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [nombreArchivo, setNombreArchivo] = useState<string | null>(null);
+  const [resultado, setResultado] = useState<ResultadoLectura | null>(null);
+  const [desdeFoto, setDesdeFoto] = useState(false);
+  const [progresoOcr, setProgresoOcr] = useState<number | null>(null);
+  const [pending, startTransition] = useTransition();
 
-  useEffect(() => {
-    if (state && "valores" in state) {
-      onExtraido(state);
-    }
-    // Solo debe reaccionar cuando llega un resultado nuevo del server action.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state]);
+  function leer() {
+    const archivo = inputRef.current?.files?.[0];
+    if (!archivo) return;
+    const foto = esImagen(archivo);
+    setResultado(null);
+    setDesdeFoto(foto);
+
+    startTransition(async () => {
+      let r: ResultadoExtraccionComposicion;
+      try {
+        if (foto) {
+          setProgresoOcr(0);
+          const texto = await leerTextoDeImagen(archivo, setProgresoOcr);
+          r = await extraerComposicionDeTextoOcr(texto);
+        } else {
+          const datos = new FormData();
+          datos.set("archivo", archivo);
+          r = await extraerComposicionDeDocumento(undefined, datos);
+        }
+      } catch {
+        r = {
+          error: foto
+            ? "No se pudo leer la foto. Probá con otra más nítida o completá los datos a mano."
+            : "No se pudo leer el archivo. Probá de nuevo o completá los datos a mano.",
+        };
+      }
+      setProgresoOcr(null);
+      if (!r) return;
+      setResultado(r);
+      if ("valores" in r) onExtraido(r);
+    });
+  }
 
   return (
-    <form
-      action={action}
-      className="border border-dashed border-outline-variant rounded-lg p-3 flex flex-col gap-2"
-    >
-      <p className={LABEL}>Completar desde el PDF o Word de la balanza (opcional)</p>
+    <div className="border border-dashed border-outline-variant rounded-lg p-3 flex flex-col gap-2">
+      <p className={LABEL}>Completar desde el informe: PDF, Word o foto (opcional)</p>
       <div className="flex flex-wrap items-center gap-2">
         <input
-          name="archivo"
+          ref={inputRef}
           type="file"
-          accept=".pdf,.docx,.jpg,.jpeg,.png,.webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*"
-          onChange={(e) => setNombreArchivo(e.target.files?.[0]?.name ?? null)}
+          accept=".pdf,.docx,.jpg,.jpeg,.png,.webp,.bmp,.gif,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*"
+          onChange={(e) => {
+            setNombreArchivo(e.target.files?.[0]?.name ?? null);
+            setResultado(null);
+          }}
           className="text-xs text-on-surface-variant file:mr-2 file:rounded file:border-0 file:bg-[#262626] file:px-3 file:py-1.5 file:text-on-surface file:text-xs"
         />
         <button
-          type="submit"
+          type="button"
+          onClick={leer}
           disabled={pending || !nombreArchivo}
           className="font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] uppercase px-3 py-1.5 rounded-full border border-outline-variant text-on-surface-variant disabled:opacity-40"
         >
-          {pending ? "Leyendo..." : "Extraer datos"}
+          {pending
+            ? progresoOcr !== null
+              ? `Leyendo foto ${Math.round(progresoOcr * 100)}%`
+              : "Leyendo..."
+            : resultado && "error" in resultado
+              ? "Reintentar"
+              : "Extraer datos"}
         </button>
       </div>
-      {state && "error" in state && <p className="text-xs text-[#ffb4ab]">{state.error}</p>}
-      {state && "valores" in state && (
+      {resultado && "error" in resultado && <p className="text-xs text-[#ffb4ab]">{resultado.error}</p>}
+      {resultado && "valores" in resultado && (
         <div className="text-xs flex flex-col gap-0.5">
           <p className="text-primary-container">
-            Se completaron {Object.keys(state.valores).length} de 5 indicadores. Revisalos antes de
-            guardar.
+            Se completaron {Object.keys(resultado.valores).length} de 5 indicadores. Revisalos antes
+            de guardar.
           </p>
-          {state.revisar.length > 0 && (
+          {desdeFoto && (
             <p className="text-[#eda100]">
-              Revisar (no quedó claro cuál es el valor actual):{" "}
-              {state.revisar.map(etiquetaCampo).join(", ")}.
+              Leído de una foto: compará cada valor con la imagen, la lectura de fotos puede
+              confundir algún número.
             </p>
           )}
-          {state.faltantes.length > 0 && (
+          {resultado.revisar.length > 0 && (
+            <p className="text-[#eda100]">
+              Revisar (no quedó claro cuál es el valor actual):{" "}
+              {resultado.revisar.map(etiquetaCampo).join(", ")}.
+            </p>
+          )}
+          {resultado.faltantes.length > 0 && (
             <p className="text-on-surface-variant">
-              No están en el archivo, completalos a mano si los tenés:{" "}
-              {state.faltantes.map(etiquetaCampo).join(", ")}.
+              No están en el informe, completalos a mano si los tenés:{" "}
+              {resultado.faltantes.map(etiquetaCampo).join(", ")}.
             </p>
           )}
         </div>
       )}
-    </form>
+    </div>
   );
 }
 

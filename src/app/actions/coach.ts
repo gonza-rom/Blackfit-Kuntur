@@ -22,7 +22,6 @@ import {
 import { TAG_CATALOGO_EJERCICIOS } from "@/lib/catalogos";
 import {
   CAMPOS_PERFIL_COMPOSICION,
-  type CampoComposicionCorporal,
   type CampoPerfilComposicion,
 } from "@/lib/composicion-corporal";
 import { subirFotoProgreso } from "@/lib/storage";
@@ -1927,126 +1926,12 @@ export type ResultadoExtraccionComposicion =
     }
   | undefined;
 
-function soloCamposPerfil(
-  valores: Partial<Record<CampoComposicionCorporal, string>>
-): Partial<Record<CampoPerfilComposicion, string>> {
-  const salida: Partial<Record<CampoPerfilComposicion, string>> = {};
-  for (const campo of CAMPOS_PERFIL_COMPOSICION) {
-    if (valores[campo]) salida[campo] = valores[campo];
-  }
-  return salida;
-}
-
 function faltantesDe(valores: Partial<Record<CampoPerfilComposicion, string>>): CampoPerfilComposicion[] {
   return CAMPOS_PERFIL_COMPOSICION.filter((c) => !valores[c]);
 }
 
-const EXTENSIONES_SOPORTADAS = [".pdf", ".docx", ".jpg", ".jpeg", ".png", ".webp"];
+const EXTENSIONES_SOPORTADAS = [".pdf", ".docx"];
 const TAMANO_MAXIMO_DOCUMENTO = 10 * 1024 * 1024; // 10 MB
-const TIPOS_IMAGEN: Record<string, string> = {
-  "image/jpeg": "image/jpeg",
-  "image/jpg": "image/jpeg",
-  "image/png": "image/png",
-  "image/webp": "image/webp",
-};
-
-// Lectura por IA de una FOTO del visor de la balanza (ej. Beurer BF 990):
-// a diferencia del PDF/Word (texto real, se lee con reglas sin IA — ver
-// extraerComposicionDeTexto), una foto no tiene texto extraíble, así que
-// acá sí hace falta un modelo con visión. Requiere ANTHROPIC_API_KEY; si
-// no está configurada, se avisa en vez de fallar en silencio.
-async function leerComposicionDeImagen(
-  buffer: Buffer,
-  mediaType: string
-): Promise<{ valores: Partial<Record<CampoComposicionCorporal, string>>; fecha: string | null } | { error: string }> {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return {
-      error:
-        "La lectura por IA no está configurada todavía (falta ANTHROPIC_API_KEY). Completá los datos a mano, o subí el PDF/Word del reporte si tu balanza lo exporta así.",
-    };
-  }
-
-  const camposValidos: CampoComposicionCorporal[] = [
-    "peso_corporal",
-    "imc",
-    "pulso",
-    "porcentaje_graso",
-    "porcentaje_agua",
-    "porcentaje_musculo",
-    "masa_osea",
-    "metabolismo_basal",
-    "metabolismo_activo",
-    "grasa_visceral",
-    "edad_metabolica",
-    "soft_lean_mass",
-    "lean_body_mass",
-    "proteina",
-    "masa_muscular",
-  ];
-
-  try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": process.env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 500,
-        system:
-          "Sos un asistente que lee la pantalla o el ticket impreso de una balanza de composición corporal (ej. Beurer BF 990, InBody) a partir de una foto. " +
-          `Devolvé ÚNICAMENTE un objeto JSON (sin texto alrededor, sin markdown) con esta forma: {"fecha": "YYYY-MM-DD o null", "valores": {...}}. ` +
-          `Las claves posibles de "valores" son exactamente: ${camposValidos.join(", ")} — usá SOLO las que puedas leer con confianza en la imagen, como números (string), sin unidades. ` +
-          "Nunca inventes un valor que no se vea con claridad en la foto: omití esa clave en vez de adivinar.",
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "image", source: { type: "base64", media_type: mediaType, data: buffer.toString("base64") } },
-              { type: "text", text: "Leé esta captura de la balanza y devolvé el JSON." },
-            ],
-          },
-        ],
-      }),
-    });
-
-    if (!res.ok) {
-      return { error: "El asistente de IA no pudo leer la imagen. Probá de nuevo o completá los datos a mano." };
-    }
-
-    const data = await res.json();
-    const texto: string = (data.content ?? [])
-      .map((b: { type: string; text?: string }) => (b.type === "text" ? b.text : ""))
-      .join("");
-
-    const match = texto.match(/\{[\s\S]*\}/);
-    if (!match) return { error: "El asistente no devolvió una lectura válida. Completá los datos a mano." };
-
-    const parseado = JSON.parse(match[0]) as {
-      fecha?: string | null;
-      valores?: Record<string, unknown>;
-    };
-
-    const valores: Partial<Record<CampoComposicionCorporal, string>> = {};
-    for (const campo of camposValidos) {
-      const v = parseado.valores?.[campo];
-      if (v !== undefined && v !== null && String(v).trim() !== "") {
-        valores[campo] = String(v);
-      }
-    }
-
-    if (Object.keys(valores).length === 0) {
-      return { error: "El asistente no reconoció ningún dato en la imagen. Completá los datos a mano." };
-    }
-
-    return { valores, fecha: parseado.fecha ?? null };
-  } catch {
-    return { error: "No se pudo conectar con el asistente de IA. Completá los datos a mano." };
-  }
-}
-
 export async function extraerComposicionDeDocumento(
   _prev: ResultadoExtraccionComposicion,
   formData: FormData
@@ -2056,7 +1941,7 @@ export async function extraerComposicionDeDocumento(
 
   const archivo = formData.get("archivo");
   if (!(archivo instanceof File) || archivo.size === 0) {
-    return { error: "Elegí un archivo PDF, Word o una foto de la balanza." };
+    return { error: "Elegí un archivo PDF o Word del informe." };
   }
   if (archivo.size > TAMANO_MAXIMO_DOCUMENTO) {
     return { error: "El archivo es demasiado grande (máx. 10 MB)." };
@@ -2065,16 +1950,9 @@ export async function extraerComposicionDeDocumento(
   const nombreArchivo = archivo.name.toLowerCase();
   const esPdf = archivo.type === "application/pdf" || nombreArchivo.endsWith(".pdf");
   const esDocx = nombreArchivo.endsWith(".docx");
-  const mediaTypeImagen = TIPOS_IMAGEN[archivo.type];
 
-  if (mediaTypeImagen) {
-    const buffer = Buffer.from(await archivo.arrayBuffer());
-    const resultado = await leerComposicionDeImagen(buffer, mediaTypeImagen);
-    if ("error" in resultado) return resultado;
-    const valores = soloCamposPerfil(resultado.valores);
-    return { fecha: resultado.fecha, valores, revisar: [], faltantes: faltantesDe(valores) };
-  }
-
+  // Las fotos (jpg, png...) se leen con OCR en el navegador del coach y
+  // llegan como texto a extraerComposicionDeTextoOcr.
   if (!esPdf && !esDocx) {
     return {
       error: `Formato no soportado: subí un archivo ${EXTENSIONES_SOPORTADAS.join(" o ")}.`,
@@ -2110,17 +1988,34 @@ export async function extraerComposicionDeDocumento(
     };
   }
 
+  return interpretarTextoComposicion(texto, "el archivo");
+}
+
+function interpretarTextoComposicion(texto: string, origen: string): ResultadoExtraccionComposicion {
   const { valores, revisar } = extraerComposicionDeTexto(texto);
   const fecha = extraerFechaDeTexto(texto);
 
   if (Object.keys(valores).length === 0) {
     return {
-      error:
-        "No se reconoció ninguno de los 5 indicadores (peso, IMC, % grasa, grasa visceral, % músculo) en el archivo. Completá los datos a mano o probá con otro archivo.",
+      error: `No se reconoció ninguno de los 5 indicadores (peso, IMC, % grasa, grasa visceral, % músculo) en ${origen}. Completá los datos a mano o probá con otro archivo.`,
     };
   }
 
   return { fecha, valores, revisar, faltantes: faltantesDe(valores) };
+}
+
+// Texto que el navegador del coach leyó de una FOTO del informe con OCR
+// (Tesseract, sin IA — ver src/lib/ocr-cliente.ts). Pasa por el mismo
+// lector de reglas que el PDF/Word.
+export async function extraerComposicionDeTextoOcr(texto: string): Promise<ResultadoExtraccionComposicion> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+  if (typeof texto !== "string" || !texto.trim()) {
+    return {
+      error: "No se pudo leer texto en la foto. Probá con una foto más nítida, de frente y con buena luz, o completá los datos a mano.",
+    };
+  }
+  return interpretarTextoComposicion(texto.slice(0, 50_000), "la foto");
 }
 
 // ------------------------------------------------------------

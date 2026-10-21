@@ -210,36 +210,74 @@ function unidadValida(def: Definicion, t: Token, contexto: string): boolean {
 
 type Lectura = { valor: string; revisar: boolean };
 
-function elegirValor(def: Definicion, cand: Token[], contexto: string, columnas: Columnas): Lectura | null {
-  const validos = cand.filter(
-    (t) => unidadValida(def, t, contexto) && t.valor >= def.rango[0] && t.valor <= def.rango[1]
-  );
-  const sinSigno = validos.filter((t) => !t.signo);
-  if (sinSigno.length === 0) return null;
+function enRango(def: Definicion, valor: number): boolean {
+  return valor >= def.rango[0] && valor <= def.rango[1];
+}
 
-  // Informe comparativo con columnas reconocidas: el valor en la posición
-  // de "actual". Si la fila trae todas las columnas, por posición exacta;
-  // si no, entre los valores sin signo (las diferencias suelen ir con +/-).
+/**
+ * Valor de un número para este campo, o null si no sirve (diferencia con
+ * signo, unidad incorrecta, fuera de rango). Si el número quedó fuera de
+ * rango porque el OCR de una foto perdió la coma ("431" en vez de "43,1")
+ * y con la coma recuperada tiene sentido, se usa pero marcado `reparado`
+ * para que el coach lo revise.
+ */
+function leerToken(
+  def: Definicion,
+  t: Token | undefined,
+  contexto: string
+): { valor: string; reparado: boolean } | null {
+  if (!t || t.signo || !unidadValida(def, t, contexto)) return null;
+  if (enRango(def, t.valor)) return { valor: t.crudo, reparado: false };
+  if (/^\d{2,4}$/.test(t.crudo) && enRango(def, t.valor / 10)) {
+    return { valor: String(t.valor / 10), reparado: true };
+  }
+  return null;
+}
+
+function elegirValor(def: Definicion, cand: Token[], contexto: string, columnas: Columnas): Lectura | null {
+  // Informe comparativo con columnas reconocidas: SOLO el valor de la
+  // columna "actual". Si ese valor no se puede leer, el campo queda vacío:
+  // nunca se reemplaza por el anterior ni por la diferencia.
   if (columnas && columnas.tipos.length >= 2) {
-    const idxActual = columnas.tipos.indexOf("actual");
+    let elegido: Token | undefined;
+    let ubicado = false;
     if (cand.length === columnas.tipos.length) {
-      const t = cand[idxActual];
-      if (t && validos.includes(t) && !t.signo) return { valor: t.crudo, revisar: false };
+      elegido = cand[columnas.tipos.indexOf("actual")];
+      ubicado = true;
+    } else {
+      // Fila sin la columna de diferencia (o con la diferencia sin signo):
+      // se ubica entre los valores sin signo.
+      const sinSigno = cand.filter((t) => !t.signo);
+      const sinDiferencia = columnas.tipos.filter((x) => x !== "diferencia");
+      if (sinSigno.length === sinDiferencia.length) {
+        elegido = sinSigno[sinDiferencia.indexOf("actual")];
+        ubicado = true;
+      }
     }
-    const sinDiferencia = columnas.tipos.filter((x) => x !== "diferencia");
-    const idx = sinDiferencia.indexOf("actual");
-    if (sinSigno.length === sinDiferencia.length && sinSigno[idx]) {
-      return { valor: sinSigno[idx].crudo, revisar: false };
+
+    if (ubicado) {
+      const l = leerToken(def, elegido, contexto);
+      return l ? { valor: l.valor, revisar: l.reparado } : null;
     }
-    // No se pudo ubicar con certeza la columna actual.
-    return { valor: sinSigno[0].crudo, revisar: sinSigno.length > 1 };
+    // No se pudo ubicar la columna actual en esta fila: el primer valor
+    // válido, siempre marcado para revisión.
+    for (const t of cand) {
+      const l = leerToken(def, t, contexto);
+      if (l) return { valor: l.valor, revisar: true };
+    }
+    return null;
   }
 
-  // Lista simple. Si hay dos valores con la misma unidad (ej. "58,6 kg
-  // 59,5 kg") sin encabezado que diga cuál es el actual, se pide revisión.
-  const [primero, segundo] = sinSigno;
-  const dudoso = Boolean(segundo && primero.unidad && segundo.unidad === primero.unidad);
-  return { valor: primero.crudo, revisar: dudoso };
+  // Lista simple: el primer valor válido. Si hay otro con la misma unidad
+  // (ej. "58,6 kg 59,5 kg") sin encabezado que diga cuál es el actual, se
+  // pide revisión.
+  const validos = cand
+    .map((t) => ({ t, l: leerToken(def, t, contexto) }))
+    .filter((x): x is { t: Token; l: { valor: string; reparado: boolean } } => x.l !== null);
+  if (validos.length === 0) return null;
+  const [primero, segundo] = validos;
+  const dudoso = Boolean(segundo && primero.t.unidad && segundo.t.unidad === primero.t.unidad);
+  return { valor: primero.l.valor, revisar: primero.l.reparado || dudoso };
 }
 
 export type LecturaComposicion = {

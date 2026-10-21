@@ -10,9 +10,12 @@ const esDev = process.env.NODE_ENV !== "production";
 // - Imágenes: Cloudinary (URLs firmadas), avatares, etc. → https: en img-src.
 // Next inyecta scripts inline para hidratar, por eso 'unsafe-inline' en
 // script-src (sin nonces); 'unsafe-eval' solo en desarrollo (React Refresh).
+// 'wasm-unsafe-eval' permite SOLO compilar WebAssembly (no eval de JS): lo
+// necesita el OCR de fotos de balanza, que corre en el navegador desde
+// /ocr (ver src/lib/ocr-cliente.ts).
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${esDev ? " 'unsafe-eval'" : ""}`,
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${esDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' data: https://fonts.gstatic.com",
   "img-src 'self' data: blob: https:",
