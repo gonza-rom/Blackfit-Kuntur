@@ -11,6 +11,7 @@ import {
 import { SelectorEjercicio, type EjercicioCatalogo } from "./selector-ejercicio";
 import { ConfigProgresionFuerza, type AproximacionesEditor } from "./config-progresion-fuerza";
 import { SEMANAS, detectarLevantamiento, type Levantamiento, type Semana } from "@/lib/progresion-fuerza";
+import { MAX_DIAS_SESION } from "@/lib/secuencia";
 
 // ------------------------------------------------------------
 // Tipos
@@ -102,15 +103,8 @@ function sinClave(fila: FilaEditor) {
   return resto;
 }
 
-const DIAS: { valor: string; etiqueta: string }[] = [
-  { valor: "lunes", etiqueta: "Lunes" },
-  { valor: "martes", etiqueta: "Martes" },
-  { valor: "miercoles", etiqueta: "Miércoles" },
-  { valor: "jueves", etiqueta: "Jueves" },
-  { valor: "viernes", etiqueta: "Viernes" },
-  { valor: "sabado", etiqueta: "Sábado" },
-  { valor: "domingo", etiqueta: "Domingo" },
-];
+// Sesiones numeradas (orden, no días del calendario) — ver lib/secuencia.ts.
+const DIAS_SESION = Array.from({ length: MAX_DIAS_SESION }, (_, i) => i + 1);
 
 const inputClase =
   "bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface text-sm p-2.5 w-full";
@@ -127,7 +121,8 @@ export function FormDiaPlan({
   idAlumno,
   semanaInicio,
   semanaFin,
-  diaSemana,
+  numeroDia,
+  nombreSesion,
   catalogo,
   itemsIniciales,
   opcionesSemanas,
@@ -137,7 +132,8 @@ export function FormDiaPlan({
   idAlumno: string;
   semanaInicio: number;
   semanaFin: number;
-  diaSemana: string;
+  numeroDia: number;
+  nombreSesion: string;
   catalogo: EjercicioCatalogo[];
   itemsIniciales: ItemInicial[];
   opcionesSemanas: OpcionSemanas[];
@@ -320,12 +316,24 @@ export function FormDiaPlan({
       <input type="hidden" name="id_programa" value={idPrograma} />
       <input type="hidden" name="semana_inicio" value={semanaInicio} />
       <input type="hidden" name="semana_fin" value={semanaFin} />
-      <input type="hidden" name="dia_semana" value={diaSemana} />
+      <input type="hidden" name="numero_dia" value={numeroDia} />
       <input type="hidden" name="items" value={JSON.stringify(payload)} />
+
+      <label className="flex flex-col gap-1">
+        <span className={etiquetaClase}>Nombre de la sesión (opcional)</span>
+        <input
+          name="nombre_sesion"
+          type="text"
+          maxLength={60}
+          defaultValue={nombreSesion}
+          placeholder={`Ej. Tren inferior (si no, se muestra "Día ${numeroDia}")`}
+          className={inputClase}
+        />
+      </label>
 
       {items.length === 0 ? (
         <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 text-on-surface-variant text-sm">
-          Día de descanso — sin ejercicios cargados.
+          Sesión sin ejercicios todavía: mientras esté vacía no cuenta en la secuencia del alumno.
         </div>
       ) : (
         <div className="flex flex-col gap-3">
@@ -827,7 +835,7 @@ function TarjetaBloque({
               className="flex items-center gap-1.5 border border-outline-variant text-on-surface-variant hover:text-on-surface font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] uppercase px-3 py-1.5 rounded-full"
             >
               <span className="material-symbols-outlined text-[14px]">calendar_month</span>
-              Copiar a otro día / semana
+              Copiar a otra sesión / semana
             </button>
           )}
         </div>
@@ -860,7 +868,7 @@ function PanelCopiarBloque({
   onListo: () => void;
 }) {
   const [semanas, setSemanas] = useState(0);
-  const [dia, setDia] = useState("lunes");
+  const [dia, setDia] = useState(1);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -874,7 +882,7 @@ function PanelCopiarBloque({
         id_grupo: idGrupo,
         semana_inicio: opcion.semana_inicio,
         semana_fin: opcion.semana_fin,
-        dia_semana: dia,
+        numero_dia: dia,
       });
       if (resultado?.error) setError(resultado.error);
       else onListo();
@@ -899,11 +907,11 @@ function PanelCopiarBloque({
           </select>
         </label>
         <label className="flex flex-col gap-1">
-          <span className={etiquetaClase}>Día</span>
-          <select value={dia} onChange={(e) => setDia(e.target.value)} className={inputClase}>
-            {DIAS.map((d) => (
-              <option key={d.valor} value={d.valor}>
-                {d.etiqueta}
+          <span className={etiquetaClase}>Sesión</span>
+          <select value={dia} onChange={(e) => setDia(Number(e.target.value))} className={inputClase}>
+            {DIAS_SESION.map((n) => (
+              <option key={n} value={n}>
+                Día {n}
               </option>
             ))}
           </select>

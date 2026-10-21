@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { etiquetaSesion } from "@/lib/secuencia";
 import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoActual } from "@/lib/auth";
 import { BotonEliminarEntrenamiento } from "./_components/boton-eliminar-entrenamiento";
@@ -46,7 +47,9 @@ export default async function HistorialPage() {
     }
     return {
       id_entrenamiento: entrenamiento.id_entrenamiento,
-      nombre: entrenamiento.nombre,
+      // Sesión del plan (Día N) y, aparte, la fecha real en que se hizo.
+      nombre: etiquetaSesion(entrenamiento.numero_dia, entrenamiento.nombre),
+      semana: entrenamiento.semana_programa,
       fecha: entrenamiento.fecha,
       comentarios: entrenamiento.comentarios,
       volumen_total: entrenamiento.volumen_total,
@@ -79,6 +82,7 @@ export default async function HistorialPage() {
                 </h3>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className="text-xs text-on-surface-variant">
+                    {entrenamiento.semana ? `Semana ${entrenamiento.semana} · ` : ""}
                     {FORMATEADOR_FECHA.format(entrenamiento.fecha)}
                   </span>
                   <BotonEliminarEntrenamiento idEntrenamiento={entrenamiento.id_entrenamiento} />

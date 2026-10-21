@@ -10,6 +10,13 @@ import {
   semanaDelPrograma,
 } from "@/lib/progresion-fuerza";
 import { obtenerRmVigentes } from "@/lib/rm-referencia";
+import {
+  esPlanSecuencial,
+  posicionSecuencia,
+  semanaParaSesion,
+  type DiaPlan,
+} from "@/lib/secuencia";
+import type { Semana } from "@/lib/progresion-fuerza";
 
 const PROGRAMA_ACTIVO_INCLUDE = {
   bloques: {
@@ -48,18 +55,6 @@ export type BloqueActual = ProgramaActivo["bloques"][number];
 
 const MS_POR_SEMANA = 7 * 24 * 60 * 60 * 1000;
 
-// Índice = Date.getDay() (0 = domingo). Traduce la fecha de hoy al enum
-// DiaSemana para elegir el bloque del día en un plan armado por día.
-const DIAS_SEMANA_JS = [
-  "domingo",
-  "lunes",
-  "martes",
-  "miercoles",
-  "jueves",
-  "viernes",
-  "sabado",
-] as const;
-
 export async function obtenerProgramaActivo(
   id_alumno: string
 ): Promise<ProgramaActivo | null> {
@@ -70,35 +65,83 @@ export async function obtenerProgramaActivo(
   });
 }
 
+// ------------------------------------------------------------
+// Sesiones secuenciales (Día 1, Día 2, ...) — ver lib/secuencia.ts
+// ------------------------------------------------------------
+
+/** Sesiones del plan que el alumno ya completó (las vinculadas a un Día N). */
+export async function contarSesionesCompletadas(id_programa: string): Promise<number> {
+  return prisma.entrenamiento.count({
+    where: { id_programa, estado: "completado", numero_dia: { not: null } },
+  });
+}
+
+function comoDiaPlan<B extends { id_bloque: string; numero_dia: number | null; semana_inicio: number | null; semana_fin: number | null }>(
+  bloque: B,
+  cantidadEjercicios: number
+): B & DiaPlan {
+  return { ...bloque, cantidadEjercicios };
+}
+
+export type SiguienteSesion =
+  | { tipo: "sesion"; bloque: BloqueActual; numeroDia: number | null; semana: Semana | null; completadas: number }
+  | { tipo: "bloque_completo"; completadas: number }
+  | { tipo: "sin_plan" };
+
+/**
+ * Qué le toca entrenar al alumno. Plan secuencial: la siguiente sesión
+ * pendiente según su historial real (nunca según el día de la semana).
+ * Plan viejo por tramos: se sigue eligiendo por semana como siempre.
+ */
+export async function obtenerSiguienteSesion(programa: ProgramaActivo): Promise<SiguienteSesion> {
+  if (!esPlanSecuencial(programa.bloques)) {
+    const bloque = calcularBloqueActual(programa);
+    return bloque
+      ? { tipo: "sesion", bloque, numeroDia: null, semana: null, completadas: 0 }
+      : { tipo: "sin_plan" };
+  }
+  const dias = programa.bloques.map((b) => comoDiaPlan(b, b.ejercicios_programa.length));
+  const completadas = await contarSesionesCompletadas(programa.id_programa);
+  const pos = posicionSecuencia(dias, completadas);
+  if (pos.completo) {
+    return dias.some((d) => d.cantidadEjercicios > 0 && d.numero_dia != null)
+      ? { tipo: "bloque_completo", completadas }
+      : { tipo: "sin_plan" };
+  }
+  return { tipo: "sesion", bloque: pos.bloque, numeroDia: pos.bloque.numero_dia, semana: pos.semana, completadas };
+}
+
+/**
+ * Semana del bloque de 4 para hacer (o guardar) una sesión. En un plan
+ * secuencial sale de las sesiones completadas — retrasarse no adelanta la
+ * semana. En un plan viejo, por calendario como hasta ahora.
+ */
+export async function semanaDeLaSesion(
+  programa: { id_programa: string; fecha_inicio: Date },
+  bloque: { id_bloque: string; numero_dia: number | null; semana_inicio: number | null; semana_fin: number | null },
+  bloquesDelPrograma: (DiaPlan & { id_bloque: string })[]
+): Promise<Semana> {
+  if (bloque.numero_dia == null) return semanaDelPrograma(programa.fecha_inicio);
+  const completadas = await contarSesionesCompletadas(programa.id_programa);
+  const propio = bloquesDelPrograma.find((b) => b.id_bloque === bloque.id_bloque) ?? comoDiaPlan(bloque, 1);
+  return semanaParaSesion(bloquesDelPrograma, completadas, propio);
+}
+
+/**
+ * Bloque vigente de un plan VIEJO armado por tramos libres (sin Día N):
+ * se elige por semana, como siempre. Los planes por sesiones usan
+ * obtenerSiguienteSesion. Los días de descanso vacíos de la planificación
+ * por día de la semana anterior (dia_semana sin numero_dia) no son
+ * sesiones y se ignoran.
+ */
 export function calcularBloqueActual(programa: ProgramaActivo): BloqueActual | null {
-  if (programa.bloques.length === 0) return null;
+  const bloques = programa.bloques.filter((b) => b.dia_semana == null);
+  if (bloques.length === 0) return null;
 
   const semanaActual =
     Math.floor((Date.now() - programa.fecha_inicio.getTime()) / MS_POR_SEMANA) + 1;
 
-  // Planificación nueva (por día): si algún bloque tiene dia_semana
-  // cargado, el programa entero se arma con ese esquema — se busca el
-  // bloque de HOY dentro de la semana actual, y si no hay ninguno (día de
-  // descanso planificado) no se devuelve nada, en vez de caer a
-  // cualquier otro bloque.
-  const esPorDia = programa.bloques.some((b) => b.dia_semana != null);
-  if (esPorDia) {
-    const hoy = DIAS_SEMANA_JS[new Date().getDay()];
-    return (
-      programa.bloques.find(
-        (b) =>
-          b.dia_semana === hoy &&
-          b.semana_inicio != null &&
-          b.semana_fin != null &&
-          semanaActual >= b.semana_inicio &&
-          semanaActual <= b.semana_fin
-      ) ?? null
-    );
-  }
-
-  // Planificación vieja (por bloques libres): se mantiene igual que
-  // siempre, para no romper ningún programa ya armado.
-  const bloquePorSemana = programa.bloques.find(
+  const bloquePorSemana = bloques.find(
     (b) =>
       b.semana_inicio != null &&
       b.semana_fin != null &&
@@ -106,7 +149,7 @@ export function calcularBloqueActual(programa: ProgramaActivo): BloqueActual | n
       semanaActual <= b.semana_fin
   );
 
-  return bloquePorSemana ?? programa.bloques[0];
+  return bloquePorSemana ?? bloques[0];
 }
 
 export type EstadisticasAlumno = {
@@ -261,7 +304,22 @@ export async function guardarSesionEntrenamiento(
 ): Promise<{ error?: string }> {
   const bloque = await prisma.bloqueEntrenamiento.findUnique({
     where: { id_bloque },
-    include: { programa: true, ejercicios_programa: { include: { ejercicio: true } } },
+    include: {
+      programa: {
+        include: {
+          bloques: {
+            select: {
+              id_bloque: true,
+              numero_dia: true,
+              semana_inicio: true,
+              semana_fin: true,
+              _count: { select: { ejercicios_programa: { where: { archivado: false } } } },
+            },
+          },
+        },
+      },
+      ejercicios_programa: { include: { ejercicio: true } },
+    },
   });
 
   if (!bloque || bloque.programa.id_alumno !== id_alumno) {
@@ -287,7 +345,13 @@ export async function guardarSesionEntrenamiento(
   // semana, % fijo de la efectiva y carga con el 1RM vigente) se calcula
   // ACÁ y se copia en la serie. Nunca se confía en lo que mande el
   // teléfono, y así lo ya entrenado no cambia si después cambia el 1RM.
-  const semana = semanaDelPrograma(bloque.programa.fecha_inicio);
+  // Semana del bloque: en un plan secuencial, según las sesiones ya
+  // completadas (calculada ANTES de guardar esta), nunca por calendario.
+  const semana = await semanaDeLaSesion(
+    bloque.programa,
+    bloque,
+    bloque.programa.bloques.map((b) => ({ ...b, cantidadEjercicios: b._count.ejercicios_programa }))
+  );
   const epPorIdPlan = new Map(bloque.ejercicios_programa.map((ep) => [ep.id_ejercicio_programa, ep]));
   const hayProgresion = bloque.ejercicios_programa.some((ep) => ep.progresion_fuerza);
   const rmVigentes = hayProgresion ? await obtenerRmVigentes(id_alumno) : null;
@@ -352,6 +416,9 @@ export async function guardarSesionEntrenamiento(
           sensacion_general: resumen?.sensacionGeneral ?? null,
           volumen_total: volumenTotal,
           semana_programa: semana,
+          // Qué sesión fue (Día N), aparte de la fecha real.
+          id_bloque: bloque.numero_dia != null ? bloque.id_bloque : null,
+          numero_dia: bloque.numero_dia,
         },
       });
 

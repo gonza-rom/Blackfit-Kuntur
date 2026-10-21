@@ -1,16 +1,20 @@
 import Link from "next/link";
 import { establecerTipoPlanificacion, crearGrupoSemanas } from "@/app/actions/coach";
 import { BotonEliminarGrupo } from "./boton-eliminar-grupo";
+import { MAX_DIAS_SESION, nombrePropioSesion } from "@/lib/secuencia";
 
-const DIAS: { valor: string; etiqueta: string }[] = [
-  { valor: "lunes", etiqueta: "Lun" },
-  { valor: "martes", etiqueta: "Mar" },
-  { valor: "miercoles", etiqueta: "Mié" },
-  { valor: "jueves", etiqueta: "Jue" },
-  { valor: "viernes", etiqueta: "Vie" },
-  { valor: "sabado", etiqueta: "Sáb" },
-  { valor: "domingo", etiqueta: "Dom" },
-];
+// Seguimiento de la secuencia de sesiones (calculado en la página con
+// lib/secuencia.ts a partir del historial real).
+export type FilaSeguimiento = {
+  semana: number;
+  sesiones: {
+    id_bloque: string;
+    numero_dia: number;
+    nombre: string;
+    estado: "completada" | "siguiente" | "pendiente";
+    fechaLabel: string | null;
+  }[];
+};
 
 const TIPOS: { valor: string; etiqueta: string; ayuda: string }[] = [
   { valor: "fija", etiqueta: "Rutina fija", ayuda: "1 semana se repite en las 4" },
@@ -26,7 +30,8 @@ type Bloque = {
   id_bloque: string;
   semana_inicio: number | null;
   semana_fin: number | null;
-  dia_semana: string | null;
+  numero_dia: number | null;
+  nombre: string;
   _count: { ejercicios_programa: number };
 };
 
@@ -36,14 +41,20 @@ export function PlanificacionTab({
   nombrePrograma,
   tipoPlanificacion,
   bloques,
+  seguimiento,
+  completadas,
 }: {
   idAlumno: string;
   idPrograma: string;
   nombrePrograma: string;
   tipoPlanificacion: string;
   bloques: Bloque[];
+  seguimiento: FilaSeguimiento[];
+  completadas: number;
 }) {
-  const bloquesPorDia = bloques.filter((b) => b.dia_semana != null);
+  // Sesiones numeradas (Día 1, Día 2, ...). Los bloques sin número son de
+  // la planificación vieja por tramos y se ven en la pantalla del programa.
+  const bloquesPorDia = bloques.filter((b) => b.numero_dia != null);
 
   let grupos: { semana_inicio: number; semana_fin: number; etiqueta: string }[];
   if (tipoPlanificacion === "fija") {
@@ -155,35 +166,97 @@ export function PlanificacionTab({
                   />
                 )}
               </div>
-              <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
-                {DIAS.map((dia) => {
-                  const bloque = bloquesGrupo.find((b) => b.dia_semana === dia.valor);
-                  const cantidad = bloque?._count.ejercicios_programa ?? 0;
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[...bloquesGrupo]
+                  .sort((a, b) => (a.numero_dia ?? 0) - (b.numero_dia ?? 0))
+                  .map((bloque) => {
+                    const cantidad = bloque._count.ejercicios_programa;
+                    const nombre = nombrePropioSesion(bloque.nombre);
+                    return (
+                      <Link
+                        key={bloque.id_bloque}
+                        href={`/coach/alumnos/${idAlumno}/dia?programa=${idPrograma}&semana_inicio=${grupo.semana_inicio}&semana_fin=${grupo.semana_fin}&dia=${bloque.numero_dia}`}
+                        className={`flex flex-col gap-1 rounded-xl p-3 border ${
+                          cantidad > 0
+                            ? "border-primary-container/40 bg-primary-container/5"
+                            : "border-[#262626] bg-[#1A1A1A]"
+                        }`}
+                      >
+                        <span className="font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.06em] text-on-surface uppercase">
+                          Día {bloque.numero_dia}
+                        </span>
+                        {nombre && <span className="text-sm text-on-surface truncate">{nombre}</span>}
+                        <span
+                          className={`text-xs ${cantidad > 0 ? "text-primary-container" : "text-on-surface-variant"}`}
+                        >
+                          {cantidad > 0 ? `${cantidad} ej.` : "Sin ejercicios"}
+                        </span>
+                      </Link>
+                    );
+                  })}
+                {(() => {
+                  const siguienteNumero =
+                    Math.max(0, ...bloquesGrupo.map((b) => b.numero_dia ?? 0)) + 1;
+                  if (siguienteNumero > MAX_DIAS_SESION) return null;
                   return (
                     <Link
-                      key={dia.valor}
-                      href={`/coach/alumnos/${idAlumno}/dia?programa=${idPrograma}&semana_inicio=${grupo.semana_inicio}&semana_fin=${grupo.semana_fin}&dia=${dia.valor}`}
-                      className={`flex flex-col items-center gap-1 rounded-xl p-3 border text-center ${
-                        cantidad > 0
-                          ? "border-primary-container/40 bg-primary-container/5"
-                          : "border-[#262626] bg-[#1A1A1A]"
-                      }`}
+                      href={`/coach/alumnos/${idAlumno}/dia?programa=${idPrograma}&semana_inicio=${grupo.semana_inicio}&semana_fin=${grupo.semana_fin}&dia=${siguienteNumero}`}
+                      className="flex flex-col items-center justify-center gap-1 rounded-xl p-3 border border-dashed border-outline-variant text-on-surface-variant hover:text-primary-container hover:border-primary-container/60"
                     >
-                      <span className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.06em] text-on-surface-variant uppercase">
-                        {dia.etiqueta}
-                      </span>
-                      <span
-                        className={`text-xs ${cantidad > 0 ? "text-primary-container" : "text-on-surface-variant"}`}
-                      >
-                        {cantidad > 0 ? `${cantidad} ej.` : "Descanso"}
-                      </span>
+                      <span className="material-symbols-outlined text-[20px]">add</span>
+                      <span className="text-xs">Agregar Día {siguienteNumero}</span>
                     </Link>
                   );
-                })}
+                })()}
               </div>
             </section>
           );
         })
+      )}
+
+      {seguimiento.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <div>
+            <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
+              Seguimiento de sesiones · {completadas} completada{completadas === 1 ? "" : "s"}
+            </h2>
+            <p className="text-xs text-on-surface-variant mt-0.5">
+              El alumno avanza por las sesiones que completa, el día que entrene. Descansar no es una
+              ausencia: la sesión queda pendiente hasta que la haga.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2">
+            {seguimiento.map((fila) => (
+              <div key={fila.semana} className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-3 flex flex-col gap-2">
+                <span className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] text-on-surface-variant uppercase">
+                  Semana {fila.semana}
+                </span>
+                <div className="flex flex-col gap-1">
+                  {fila.sesiones.map((sesion) => (
+                    <div key={sesion.id_bloque} className="flex items-center justify-between gap-2 text-sm">
+                      <span className="text-on-surface truncate">{sesion.nombre}</span>
+                      <span
+                        className={`shrink-0 font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.06em] uppercase ${
+                          sesion.estado === "completada"
+                            ? "text-primary-container"
+                            : sesion.estado === "siguiente"
+                              ? "text-[#eda100]"
+                              : "text-on-surface-variant"
+                        }`}
+                      >
+                        {sesion.estado === "completada"
+                          ? `Completada · ${sesion.fechaLabel}`
+                          : sesion.estado === "siguiente"
+                            ? "Siguiente"
+                            : "Pendiente"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       {tipoPlanificacion === "personalizada" && (

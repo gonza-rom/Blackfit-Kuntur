@@ -330,14 +330,20 @@ model BloqueEntrenamiento {
   semana_inicio Int?
   semana_fin    Int?
   tipo          String? // ej: acumulacion, intensificacion, deload
-  // Día de la semana que cubre este bloque en la planificación nueva
-  // (por día). Nulo en bloques viejos armados antes de este cambio — ahí
-  // se sigue eligiendo el bloque solo por semana, como siempre.
+  // Legado: día de la semana de la planificación por día anterior. Ya no
+  // se usa para nada (se conserva el dato); ver numero_dia.
   dia_semana    DiaSemana?
+  // Planificación por sesiones secuenciales: Día 1, Día 2, ... dentro de
+  // un rango de semanas. NO es un día del calendario: el alumno hace la
+  // siguiente sesión pendiente el día que entrene (ver lib/secuencia.ts).
+  // `nombre` es el nombre de la sesión ("Tren inferior"). Nulo = bloque
+  // viejo armado por tramos libres (se sigue eligiendo por semana).
+  numero_dia    Int?
 
   programa            ProgramaEntrenamiento @relation(fields: [id_programa], references: [id_programa], onDelete: Cascade)
   ejercicios_programa EjercicioPrograma[]
   grupos              GrupoEjercicios[]
+  entrenamientos      Entrenamiento[]
 
   @@map("bloques_entrenamiento")
 }
@@ -466,12 +472,18 @@ model Entrenamiento {
   // Semana del bloque de 4 (1..4) en la que se hizo: define la intensidad
   // de la serie efectiva en la progresión de fuerza.
   semana_programa    Int?
+  // Qué sesión del plan fue (Día N), aparte de la fecha real (`fecha`).
+  // Copia al guardar: si después cambia el plan, el historial no cambia.
+  id_bloque          String?
+  numero_dia         Int?
 
   alumno   Alumno                 @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
   programa ProgramaEntrenamiento? @relation(fields: [id_programa], references: [id_programa])
+  bloque   BloqueEntrenamiento?   @relation(fields: [id_bloque], references: [id_bloque], onDelete: SetNull)
   series   SerieEntrenamiento[]
 
   @@index([id_alumno, fecha])
+  @@index([id_programa, id_bloque])
   @@map("entrenamientos")
 }
 

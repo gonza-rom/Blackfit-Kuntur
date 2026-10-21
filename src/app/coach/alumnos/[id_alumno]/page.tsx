@@ -25,6 +25,16 @@ import { FotosTab, type FotoSerializada } from "./_components/fotos-tab";
 import { RmReferenciaCoach, type RmSerializado } from "./_components/rm-referencia-coach";
 import { obtenerHistorialRm, obtenerRmVigentes } from "@/lib/rm-referencia";
 import type { Levantamiento } from "@/lib/progresion-fuerza";
+import { etiquetaSesion, posicionSecuencia, sesionesDeSemana } from "@/lib/secuencia";
+import type { FilaSeguimiento } from "./_components/planificacion-tab";
+
+// "jueves 22 de octubre": la fecha real en que entrenó, aparte del Día N.
+const FORMATEADOR_FECHA_SESION = new Intl.DateTimeFormat("es-AR", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  timeZone: "America/Argentina/Buenos_Aires",
+});
 
 const CAMPOS_PROGRESO = [
   "peso_corporal",
@@ -177,6 +187,7 @@ export default async function AlumnoDetallePage(
     sesionesEjecucion,
     catalogoLogros,
     logrosObtenidos,
+    sesionesDelPlan,
   ] = await Promise.all([
     prisma.entrenamiento.findFirst({
       where: { id_alumno },
@@ -265,6 +276,7 @@ export default async function AlumnoDetallePage(
         comentarios: true,
         sensacion_general: true,
         semana_programa: true,
+        numero_dia: true,
         series: {
           orderBy: [{ id_ejercicio_programa: "asc" }, { numero_serie: "asc" }],
           select: {
@@ -306,6 +318,13 @@ export default async function AlumnoDetallePage(
         fecha_obtenido: true,
         logro: { select: { titulo: true, icono: true, color: true } },
       },
+    }),
+    // Seguimiento de la secuencia: sesiones del plan completadas (Día N),
+    // en el orden en que las hizo, con su fecha real.
+    prisma.entrenamiento.findMany({
+      where: { id_programa: programaActivo.id_programa, estado: "completado", numero_dia: { not: null } },
+      orderBy: { fecha: "asc" },
+      select: { id_bloque: true, numero_dia: true, semana_programa: true, fecha: true },
     }),
   ]);
 
@@ -382,6 +401,43 @@ export default async function AlumnoDetallePage(
     })
   );
 
+  // Seguimiento de sesiones (Día N por semana del bloque): completada con
+  // su fecha real, la siguiente pendiente, o pendiente. Nunca "ausente"
+  // por no haber entrenado un día del calendario.
+  const diasPlan = (programaConBloques?.bloques ?? []).map((b) => ({
+    ...b,
+    cantidadEjercicios: b._count.ejercicios_programa,
+  }));
+  const posicionActual = posicionSecuencia(diasPlan, sesionesDelPlan.length);
+  const usadas = new Set<number>();
+  const seguimiento: FilaSeguimiento[] = [1, 2, 3, 4]
+    .map((semana) => ({
+      semana,
+      sesiones: sesionesDeSemana(diasPlan, semana).map((dia) => {
+        const idx = sesionesDelPlan.findIndex(
+          (e, k) =>
+            !usadas.has(k) &&
+            e.semana_programa === semana &&
+            (e.id_bloque === dia.id_bloque || (e.id_bloque == null && e.numero_dia === dia.numero_dia))
+        );
+        if (idx >= 0) usadas.add(idx);
+        const hecha = idx >= 0 ? sesionesDelPlan[idx] : null;
+        const esSiguiente =
+          !hecha &&
+          !posicionActual.completo &&
+          posicionActual.semana === semana &&
+          posicionActual.bloque.id_bloque === dia.id_bloque;
+        return {
+          id_bloque: dia.id_bloque,
+          numero_dia: dia.numero_dia ?? 0,
+          nombre: etiquetaSesion(dia.numero_dia, dia.nombre),
+          estado: hecha ? ("completada" as const) : esSiguiente ? ("siguiente" as const) : ("pendiente" as const),
+          fechaLabel: hecha ? FORMATEADOR_FECHA_SESION.format(hecha.fecha) : null,
+        };
+      }),
+    }))
+    .filter((fila) => fila.sesiones.length > 0);
+
   // Ejecución: agrupa las series reales de cada sesión por ejercicio, para
   // mostrar "Serie 1 → 80×6" tal como lo cargó el alumno, comparado contra
   // lo prescrito por el coach en ese ejercicio.
@@ -448,6 +504,7 @@ export default async function AlumnoDetallePage(
       comentarios: s.comentarios,
       sensacion_general: s.sensacion_general,
       semana_programa: s.semana_programa,
+      numero_dia: s.numero_dia,
       ejercicios: Array.from(porEjercicio.values()),
     };
   });
@@ -661,11 +718,11 @@ export default async function AlumnoDetallePage(
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 className="font-[family-name:var(--font-sora)] text-base font-semibold text-on-surface">
-                  {sesion.nombre ?? "Entrenamiento"}
+                  {etiquetaSesion(sesion.numero_dia, sesion.nombre)}
                 </h3>
                 <p className="text-xs text-on-surface-variant">
-                  {FORMATEADOR_FECHA.format(sesion.fecha)}
-                  {sesion.semana_programa ? ` · semana ${sesion.semana_programa}` : ""}
+                  Realizado el {FORMATEADOR_FECHA_SESION.format(sesion.fecha)}
+                  {sesion.semana_programa ? ` · semana ${sesion.semana_programa} del bloque` : ""}
                 </p>
               </div>
               {sesion.sensacion_general != null && (
@@ -957,6 +1014,8 @@ export default async function AlumnoDetallePage(
                 nombrePrograma={programaActivo.nombre}
                 tipoPlanificacion={programaConBloques?.tipo_planificacion ?? "fija"}
                 bloques={programaConBloques?.bloques ?? []}
+                seguimiento={seguimiento}
+                completadas={sesionesDelPlan.length}
               />
             </div>
           ),

@@ -2,7 +2,8 @@ import Link from "next/link";
 import { AvisoSesionEnCurso } from "@/components/aviso-sesion-en-curso";
 import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoActual, tieneRol } from "@/lib/auth";
-import { obtenerProgramaActivo, calcularBloqueActual, obtenerUltimoPR } from "@/lib/alumno";
+import { obtenerProgramaActivo, obtenerSiguienteSesion, obtenerUltimoPR } from "@/lib/alumno";
+import { etiquetaSesion } from "@/lib/secuencia";
 import { resumenDia } from "@/lib/plan-dia";
 import { obtenerDiasMembresia, claseColorMembresia } from "@/lib/membresia";
 
@@ -79,6 +80,7 @@ export default async function PanelPage() {
         id_entrenamiento: true,
         fecha: true,
         nombre: true,
+        numero_dia: true,
         comentarios: true,
         duracion_minutos: true,
         sensacion_general: true,
@@ -93,7 +95,10 @@ export default async function PanelPage() {
     }),
   ]);
 
-  const bloqueActual = programa ? calcularBloqueActual(programa) : null;
+  // Siguiente sesión pendiente según lo que realmente completó (Día 1,
+  // Día 2, ...), nunca según el día de la semana.
+  const siguiente = programa ? await obtenerSiguienteSesion(programa) : ({ tipo: "sin_plan" } as const);
+  const bloqueActual = siguiente.tipo === "sesion" ? siguiente.bloque : null;
 
   const pesoActual = ultimosProgresos[0]?.peso_corporal
     ? Number(ultimosProgresos[0].peso_corporal)
@@ -136,7 +141,7 @@ export default async function PanelPage() {
       {/* Protocolo de hoy */}
       <section className="flex flex-col gap-2">
         <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
-          Protocolo de Hoy
+          Siguiente entrenamiento
         </h2>
         {bloqueActual ? (
           <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 relative overflow-hidden [border:1px_solid_#61edda] shadow-[inset_0_0_20px_rgba(97,237,218,0.05)]">
@@ -145,13 +150,14 @@ export default async function PanelPage() {
               <div className="flex justify-between items-start">
                 <div>
                   <h3 className="font-[family-name:var(--font-sora)] text-[24px] leading-8 tracking-[-0.01em] font-semibold text-on-surface">
-                    {bloqueActual.nombre}
+                    {etiquetaSesion(bloqueActual.numero_dia, bloqueActual.nombre)}
                   </h3>
                   <p className="font-[family-name:var(--font-inter)] text-base text-on-surface-variant flex items-center gap-1 mt-1">
                     <span className="material-symbols-outlined text-[16px]">
                       fitness_center
                     </span>{" "}
                     {resumenDia(bloqueActual.ejercicios_programa)}
+                    {siguiente.tipo === "sesion" && siguiente.semana ? ` · Semana ${siguiente.semana}` : ""}
                   </p>
                 </div>
                 <span
@@ -169,6 +175,13 @@ export default async function PanelPage() {
               </Link>
             </div>
           </div>
+        ) : siguiente.tipo === "bloque_completo" ? (
+          <div className="bg-[#1A1A1A] border border-primary-container/40 rounded-xl p-4 text-sm">
+            <p className="text-on-surface font-semibold">¡Completaste todas las sesiones del bloque! 🎉</p>
+            <p className="text-on-surface-variant mt-1">
+              Tu coach va a cargar el próximo. Mientras tanto podés repetir una sesión desde Entrenar.
+            </p>
+          </div>
         ) : (
           <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 text-on-surface-variant text-sm">
             Todavía no tenés un programa asignado. Tu entrenador te va a asignar uno pronto.
@@ -185,7 +198,7 @@ export default async function PanelPage() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="font-[family-name:var(--font-sora)] text-base font-semibold text-on-surface">
-                  {ultimoEntrenamiento.nombre ?? "Sesión"}
+                  {etiquetaSesion(ultimoEntrenamiento.numero_dia, ultimoEntrenamiento.nombre)}
                 </p>
                 <p className="text-[12px] text-on-surface-variant">
                   {FORMATEADOR_FECHA_PR.format(ultimoEntrenamiento.fecha)}

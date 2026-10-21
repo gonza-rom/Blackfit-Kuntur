@@ -1,4 +1,6 @@
 import { notFound, redirect } from "next/navigation";
+import { numeroDiaValido } from "@/lib/plan-dia-server";
+import { nombrePropioSesion } from "@/lib/secuencia";
 import type { DiaSemana } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
@@ -13,25 +15,9 @@ import {
 import { normalizarAproximaciones } from "@/lib/progresion-fuerza";
 import { obtenerRmVigentes } from "@/lib/rm-referencia";
 
-const DIAS_VALIDOS = [
-  "lunes",
-  "martes",
-  "miercoles",
-  "jueves",
-  "viernes",
-  "sabado",
-  "domingo",
-] as const;
-
-const ETIQUETA_DIA: Record<string, string> = {
-  lunes: "Lunes",
-  martes: "Martes",
-  miercoles: "Miércoles",
-  jueves: "Jueves",
-  viernes: "Viernes",
-  sabado: "Sábado",
-  domingo: "Domingo",
-};
+// Links viejos (?dia=lunes): se traducen al número de sesión que les tocó
+// en la migración a sesiones secuenciales.
+const DIAS_SEMANA_LEGADO = ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"];
 
 export default async function DiaPlanPage(
   props: PageProps<"/coach/alumnos/[id_alumno]/dia">
@@ -47,27 +33,36 @@ export default async function DiaPlanPage(
   const semana_fin = Number(sp.semana_fin);
   const dia = typeof sp.dia === "string" ? sp.dia : "";
 
-  if (
-    !id_programa ||
-    !Number.isFinite(semana_inicio) ||
-    !Number.isFinite(semana_fin) ||
-    !DIAS_VALIDOS.includes(dia as (typeof DIAS_VALIDOS)[number])
-  ) {
+  if (!id_programa || !Number.isFinite(semana_inicio) || !Number.isFinite(semana_fin)) {
     notFound();
   }
+
+  if (DIAS_SEMANA_LEGADO.includes(dia)) {
+    const legado = await prisma.bloqueEntrenamiento.findFirst({
+      where: { id_programa, semana_inicio, semana_fin, dia_semana: dia as DiaSemana, numero_dia: { not: null } },
+      select: { numero_dia: true },
+    });
+    if (!legado?.numero_dia) notFound();
+    redirect(
+      `/coach/alumnos/${id_alumno}/dia?programa=${id_programa}&semana_inicio=${semana_inicio}&semana_fin=${semana_fin}&dia=${legado.numero_dia}`
+    );
+  }
+
+  const numero_dia = numeroDiaValido(dia);
+  if (numero_dia === null) notFound();
 
   const [programa, diaExistente, catalogo] = await Promise.all([
     prisma.programaEntrenamiento.findUnique({
       where: { id_programa },
       include: {
         bloques: {
-          where: { dia_semana: { not: null } },
+          where: { numero_dia: { not: null } },
           select: { semana_inicio: true, semana_fin: true },
         },
       },
     }),
     prisma.bloqueEntrenamiento.findFirst({
-      where: { id_programa, semana_inicio, semana_fin, dia_semana: dia as DiaSemana },
+      where: { id_programa, semana_inicio, semana_fin, numero_dia },
       include: {
         ejercicios_programa: {
           where: { archivado: false },
@@ -166,7 +161,7 @@ export default async function DiaPlanPage(
     <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-6">
       <div>
         <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
-          {ETIQUETA_DIA[dia]}
+          Día {numero_dia}
         </h1>
         <p className="text-sm text-on-surface-variant">
           {alumno.usuario.nombre} {alumno.usuario.apellido} · semana
@@ -179,7 +174,8 @@ export default async function DiaPlanPage(
         idAlumno={id_alumno}
         semanaInicio={semana_inicio}
         semanaFin={semana_fin}
-        diaSemana={dia}
+        numeroDia={numero_dia}
+        nombreSesion={nombrePropioSesion(diaExistente?.nombre)}
         catalogo={catalogo}
         itemsIniciales={itemsIniciales}
         opcionesSemanas={opcionesSemanas}

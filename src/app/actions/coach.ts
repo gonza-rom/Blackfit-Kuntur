@@ -8,7 +8,6 @@ import type {
   TipoObjetivo,
   EstadoObjetivo,
   TipoPlanificacion,
-  DiaSemana,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { avisar } from "@/lib/aviso";
@@ -37,6 +36,7 @@ import {
 } from "@/lib/membresia";
 import {
   obtenerOCrearDia,
+  numeroDiaValido,
   guardarContenidoDia,
   clonarEjerciciosEnDia,
   INCLUDE_DIA_CLONABLE,
@@ -897,6 +897,7 @@ async function clonarDiasDePrograma(
         semana_fin: b.semana_fin,
         tipo: b.tipo,
         dia_semana: b.dia_semana,
+        numero_dia: b.numero_dia,
       },
     });
     await clonarEjerciciosEnDia(tx, nuevo.id_bloque, b.ejercicios_programa, b.grupos);
@@ -904,34 +905,12 @@ async function clonarDiasDePrograma(
 }
 
 // ------------------------------------------------------------
-// PLANIFICACIÓN POR DÍA — pantalla "Planificación" del perfil del
-// alumno. Reusa BloqueEntrenamiento/EjercicioPrograma tal cual (ver
-// dia_semana en el schema): un bloque ahora puede representar el
-// entrenamiento de UN día de la semana dentro de un rango de semanas
-// (1-4), en vez de un tramo libre del programa. Nada de esto toca cómo
-// se guarda el historial real (SerieEntrenamiento sigue igual), así que
-// las sesiones ya registradas no se alteran nunca.
+// PLANIFICACIÓN POR SESIONES — pantalla "Planificación" del perfil del
+// alumno. Cada BloqueEntrenamiento con numero_dia es una sesión "Día N"
+// dentro de un rango de semanas (1-4): el ORDEN de la sesión, no un día
+// del calendario (ver lib/secuencia.ts). El historial real
+// (Entrenamiento/SerieEntrenamiento) no se altera nunca desde acá.
 // ------------------------------------------------------------
-
-const DIAS_SEMANA: DiaSemana[] = [
-  "lunes",
-  "martes",
-  "miercoles",
-  "jueves",
-  "viernes",
-  "sabado",
-  "domingo",
-];
-
-const ETIQUETA_DIA: Record<DiaSemana, string> = {
-  lunes: "Lunes",
-  martes: "Martes",
-  miercoles: "Miércoles",
-  jueves: "Jueves",
-  viernes: "Viernes",
-  sabado: "Sábado",
-  domingo: "Domingo",
-};
 
 /** El programa activo (no plantilla) del alumno con este coach, creándolo si hace falta. */
 // Al estar exportada desde un archivo "use server" también es invocable
@@ -1013,24 +992,15 @@ export async function crearGrupoSemanas(formData: FormData): Promise<void> {
   });
   if (!programa || programa.id_entrenador !== contexto.id_entrenador) return;
 
-  const existentes = new Set(
-    programa.bloques
-      .filter((b) => b.semana_inicio === semana_inicio && b.semana_fin === semana_fin)
-      .map((b) => b.dia_semana)
+  // El grupo arranca con su Día 1 (sesión vacía) para que aparezca en la
+  // planificación; el coach agrega Día 2, Día 3... desde ahí.
+  const yaTieneDias = programa.bloques.some(
+    (b) => b.semana_inicio === semana_inicio && b.semana_fin === semana_fin && b.numero_dia != null
   );
+  if (yaTieneDias) return;
 
-  const faltantes = DIAS_SEMANA.filter((d) => !existentes.has(d));
-  if (faltantes.length === 0) return;
-
-  await prisma.bloqueEntrenamiento.createMany({
-    data: faltantes.map((dia_semana, i) => ({
-      id_programa,
-      nombre: ETIQUETA_DIA[dia_semana],
-      orden: DIAS_SEMANA.indexOf(dia_semana) + i,
-      semana_inicio,
-      semana_fin,
-      dia_semana,
-    })),
+  await prisma.bloqueEntrenamiento.create({
+    data: { id_programa, nombre: "Día 1", orden: 1, semana_inicio, semana_fin, numero_dia: 1 },
   });
 
   await avisar("Semanas creadas.");
@@ -1096,7 +1066,9 @@ export async function guardarDiaPlan(
   const id_programa = String(formData.get("id_programa") ?? "");
   const semana_inicio = Number(formData.get("semana_inicio") ?? "");
   const semana_fin = Number(formData.get("semana_fin") ?? "");
-  const dia_semana = String(formData.get("dia_semana") ?? "") as DiaSemana;
+  const numero_dia = numeroDiaValido(formData.get("numero_dia"));
+  // Nombre de la sesión ("Tren inferior"); vacío = "Día N".
+  const nombre_sesion = String(formData.get("nombre_sesion") ?? "").trim().slice(0, 60);
 
   let items: ItemDiaEntrada[];
   try {
@@ -1110,7 +1082,7 @@ export async function guardarDiaPlan(
     !id_programa ||
     !Number.isFinite(semana_inicio) ||
     !Number.isFinite(semana_fin) ||
-    !DIAS_SEMANA.includes(dia_semana)
+    numero_dia === null
   ) {
     return { error: "Datos inválidos." };
   }
@@ -1144,7 +1116,11 @@ export async function guardarDiaPlan(
   }
 
   await prisma.$transaction(async (tx) => {
-    const dia = await obtenerOCrearDia(tx, id_programa, semana_inicio, semana_fin, dia_semana);
+    const dia = await obtenerOCrearDia(tx, id_programa, semana_inicio, semana_fin, numero_dia);
+    await tx.bloqueEntrenamiento.update({
+      where: { id_bloque: dia.id_bloque },
+      data: { nombre: nombre_sesion || `Día ${numero_dia}` },
+    });
     await guardarContenidoDia(tx, dia.id_bloque, items);
   });
 
@@ -1163,16 +1139,16 @@ export async function copiarBloqueADia(datos: {
   id_grupo: string;
   semana_inicio: number;
   semana_fin: number;
-  dia_semana: string;
+  numero_dia: number;
 }): Promise<EstadoCoach> {
   const contexto = await obtenerEntrenadorActual();
   if (!contexto) return { error: "No autorizado." };
 
   const { id_grupo, semana_inicio, semana_fin } = datos;
-  const dia_semana = datos.dia_semana as DiaSemana;
+  const numero_dia = numeroDiaValido(datos.numero_dia);
   if (
     !id_grupo ||
-    !DIAS_SEMANA.includes(dia_semana) ||
+    numero_dia === null ||
     !Number.isInteger(semana_inicio) ||
     !Number.isInteger(semana_fin) ||
     semana_inicio < 1 ||
@@ -1199,14 +1175,14 @@ export async function copiarBloqueADia(datos: {
       grupo.bloque.id_programa,
       semana_inicio,
       semana_fin,
-      dia_semana
+      numero_dia
     );
     await clonarEjerciciosEnDia(tx, destino.id_bloque, grupo.ejercicios, [grupo]);
   });
 
   const semanas =
     semana_inicio === semana_fin ? `semana ${semana_inicio}` : `semanas ${semana_inicio}-${semana_fin}`;
-  await avisar(`Bloque copiado a ${ETIQUETA_DIA[dia_semana]} (${semanas}).`);
+  await avisar(`Bloque copiado al Día ${numero_dia} (${semanas}).`);
   if (grupo.bloque.programa.id_alumno) {
     revalidatePath(`/coach/alumnos/${grupo.bloque.programa.id_alumno}`);
   }

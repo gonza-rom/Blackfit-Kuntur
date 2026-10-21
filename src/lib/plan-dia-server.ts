@@ -1,4 +1,5 @@
-import { Prisma, type DiaSemana } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import { MAX_DIAS_SESION } from "@/lib/secuencia";
 import {
   detectarLevantamiento,
   normalizarAproximaciones,
@@ -11,26 +12,6 @@ import {
 // transacción, así cada acción decide su propia atomicidad.
 
 type Tx = Prisma.TransactionClient;
-
-export const ORDEN_DIA_SEMANA: DiaSemana[] = [
-  "lunes",
-  "martes",
-  "miercoles",
-  "jueves",
-  "viernes",
-  "sabado",
-  "domingo",
-];
-
-export const ETIQUETA_DIA_SEMANA: Record<DiaSemana, string> = {
-  lunes: "Lunes",
-  martes: "Martes",
-  miercoles: "Miércoles",
-  jueves: "Jueves",
-  viernes: "Viernes",
-  sabado: "Sábado",
-  domingo: "Domingo",
-};
 
 // ------------------------------------------------------------
 // Payload que manda el editor del día (form-dia-plan.tsx)
@@ -91,27 +72,38 @@ function decimal(valor: string | null | undefined): string | null {
 // Día (BloqueEntrenamiento) de una semana/grupo de semanas
 // ------------------------------------------------------------
 
+/** Número de sesión válido (Día 1 a Día 7) o null. */
+export function numeroDiaValido(valor: unknown): number | null {
+  const n = Number(valor);
+  return Number.isInteger(n) && n >= 1 && n <= MAX_DIAS_SESION ? n : null;
+}
+
+/**
+ * La sesión "Día N" de un rango de semanas, creándola si no existe. Los
+ * días se identifican por su número de orden, no por el día de la semana
+ * (dia_semana queda solo como dato legado).
+ */
 export async function obtenerOCrearDia(
   tx: Tx,
   id_programa: string,
   semana_inicio: number,
   semana_fin: number,
-  dia_semana: DiaSemana
+  numero_dia: number
 ) {
   // No hay @@unique sobre (id_programa, semana_inicio, semana_fin,
-  // dia_semana), así que "encontrar o crear" se resuelve a mano.
+  // numero_dia), así que "encontrar o crear" se resuelve a mano.
   const existente = await tx.bloqueEntrenamiento.findFirst({
-    where: { id_programa, semana_inicio, semana_fin, dia_semana },
+    where: { id_programa, semana_inicio, semana_fin, numero_dia },
   });
   if (existente) return existente;
   return tx.bloqueEntrenamiento.create({
     data: {
       id_programa,
-      nombre: ETIQUETA_DIA_SEMANA[dia_semana],
-      orden: ORDEN_DIA_SEMANA.indexOf(dia_semana),
+      nombre: `Día ${numero_dia}`,
+      orden: numero_dia,
       semana_inicio,
       semana_fin,
-      dia_semana,
+      numero_dia,
     },
   });
 }

@@ -7,8 +7,9 @@ import {
   cargaDe1RM,
   detectarLevantamiento,
   objetivoEfectiva,
-  semanaDelPrograma,
 } from "@/lib/progresion-fuerza";
+import { semanaDeLaSesion } from "@/lib/alumno";
+import { etiquetaSesion } from "@/lib/secuencia";
 import { obtenerRmVigentes } from "@/lib/rm-referencia";
 
 export default async function RegistrarEntrenamientoPage(
@@ -22,7 +23,19 @@ export default async function RegistrarEntrenamientoPage(
   const bloque = await prisma.bloqueEntrenamiento.findUnique({
     where: { id_bloque },
     include: {
-      programa: true,
+      programa: {
+        include: {
+          bloques: {
+            select: {
+              id_bloque: true,
+              numero_dia: true,
+              semana_inicio: true,
+              semana_fin: true,
+              _count: { select: { ejercicios_programa: { where: { archivado: false } } } },
+            },
+          },
+        },
+      },
       ejercicios_programa: {
         where: { archivado: false },
         orderBy: { orden: "asc" },
@@ -38,7 +51,13 @@ export default async function RegistrarEntrenamientoPage(
 
   // Progresión de fuerza: semana actual del bloque de 4 y 1RM vigente. El
   // servidor vuelve a calcular todo esto al guardar (no confía en el cliente).
-  const semana = semanaDelPrograma(bloque.programa.fecha_inicio);
+  // Semana del bloque: en un plan por sesiones, según las completadas
+  // (retrasarse no adelanta la semana); en un plan viejo, por calendario.
+  const semana = await semanaDeLaSesion(
+    bloque.programa,
+    bloque,
+    bloque.programa.bloques.map((b) => ({ ...b, cantidadEjercicios: b._count.ejercicios_programa }))
+  );
   const rmVigentes = bloque.ejercicios_programa.some((ep) => ep.progresion_fuerza)
     ? await obtenerRmVigentes(contexto.id_alumno)
     : null;
@@ -94,17 +113,8 @@ export default async function RegistrarEntrenamientoPage(
     nota: g.nota,
   }));
 
-  const ETIQUETA_DIA: Record<string, string> = {
-    lunes: "Lunes",
-    martes: "Martes",
-    miercoles: "Miércoles",
-    jueves: "Jueves",
-    viernes: "Viernes",
-    sabado: "Sábado",
-    domingo: "Domingo",
-  };
-
-  const titulo = bloque.dia_semana ? `Hoy — ${ETIQUETA_DIA[bloque.dia_semana]}` : bloque.nombre;
+  // "Día 2 — Tren superior": el orden de la sesión, nunca un día de la semana.
+  const titulo = etiquetaSesion(bloque.numero_dia, bloque.nombre);
 
   return (
     <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-6">
@@ -112,7 +122,10 @@ export default async function RegistrarEntrenamientoPage(
         <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
           {titulo}
         </h1>
-        <p className="text-sm text-on-surface-variant">{bloque.programa.nombre}</p>
+        <p className="text-sm text-on-surface-variant">
+          {bloque.programa.nombre}
+          {bloque.numero_dia != null ? ` · Semana ${semana} del bloque` : ""}
+        </p>
       </div>
 
       <FormRegistrarEntrenamientoCliente

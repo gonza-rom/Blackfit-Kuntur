@@ -2,7 +2,8 @@ import Link from "next/link";
 import { AvisoSesionEnCurso } from "@/components/aviso-sesion-en-curso";
 import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoActual } from "@/lib/auth";
-import { obtenerProgramaActivo, calcularBloqueActual } from "@/lib/alumno";
+import { obtenerProgramaActivo, obtenerSiguienteSesion } from "@/lib/alumno";
+import { esPlanSecuencial, etiquetaSesion } from "@/lib/secuencia";
 import { FilterChips } from "./_components/filter-chips";
 import { resumenDia } from "@/lib/plan-dia";
 
@@ -53,7 +54,21 @@ export default async function EntrenamientosPage() {
   });
 
   const programaActivo = contexto ? await obtenerProgramaActivo(contexto.id_alumno) : null;
-  const bloqueActual = programaActivo ? calcularBloqueActual(programaActivo) : null;
+  const siguiente = programaActivo
+    ? await obtenerSiguienteSesion(programaActivo)
+    : ({ tipo: "sin_plan" } as const);
+  const bloqueActual = siguiente.tipo === "sesion" ? siguiente.bloque : null;
+  // Plan por sesiones: solo los Día N con ejercicios, en orden (semana y número).
+  const sesionesDelPrograma = programaActivo
+    ? esPlanSecuencial(programaActivo.bloques)
+      ? programaActivo.bloques
+          .filter((b) => b.numero_dia != null && b.ejercicios_programa.length > 0)
+          .sort(
+            (a, b) =>
+              (a.semana_inicio ?? 1) - (b.semana_inicio ?? 1) || (a.numero_dia ?? 0) - (b.numero_dia ?? 0)
+          )
+      : programaActivo.bloques
+    : [];
 
   return (
     <main className="flex-1 w-full md:pl-0 px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-8 max-w-6xl mx-auto">
@@ -77,26 +92,32 @@ export default async function EntrenamientosPage() {
         <FilterChips />
       </section>
 
-      {/* Sesión sugerida según la semana actual del programa */}
+      {/* Siguiente sesión pendiente (por historial real, no por calendario) */}
       <section>
         {bloqueActual ? (
           <div className="rounded-xl border border-outline-variant bg-surface-container overflow-hidden relative">
             <div className="relative z-10 p-4 md:p-6 flex flex-col gap-6">
               <div className="flex justify-between items-start">
                 <span className="inline-block px-3 py-1 bg-background/80 backdrop-blur border border-primary-container/30 text-primary-container font-[family-name:var(--font-jetbrains-mono)] text-[12px] rounded-full uppercase tracking-widest">
-                  Sesión sugerida
+                  Siguiente entrenamiento
                 </span>
               </div>
               <div className="flex flex-col gap-4">
                 <div>
                   <h3 className="font-[family-name:var(--font-sora)] text-[24px] leading-8 tracking-[-0.01em] font-semibold text-on-surface mb-1">
-                    {bloqueActual.nombre}
+                    {etiquetaSesion(bloqueActual.numero_dia, bloqueActual.nombre)}
                   </h3>
                   <p className="font-[family-name:var(--font-inter)] text-base text-on-surface-variant flex items-center gap-2 flex-wrap">
                     <span className="material-symbols-outlined text-[16px]">
                       fitness_center
                     </span>
                     {resumenDia(bloqueActual.ejercicios_programa)}
+                    {siguiente.tipo === "sesion" && siguiente.semana && (
+                      <>
+                        <span className="w-1 h-1 rounded-full bg-outline-variant mx-1" />
+                        Semana {siguiente.semana}
+                      </>
+                    )}
                     {bloqueActual.tipo && (
                       <>
                         <span className="w-1 h-1 rounded-full bg-outline-variant mx-1" />
@@ -109,13 +130,22 @@ export default async function EntrenamientosPage() {
                   href={`/panel/entrenamientos/${bloqueActual.id_bloque}`}
                   className="w-full md:w-auto md:self-start bg-primary-container text-background font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] py-4 px-8 rounded-lg uppercase hover:opacity-90 transition-colors active:scale-95 flex items-center justify-center gap-2"
                 >
-                  COMENZAR ENTRENAMIENTO
+                  COMENZAR SESIÓN
                   <span className="material-symbols-outlined text-[18px]">
                     arrow_forward
                   </span>
                 </Link>
               </div>
             </div>
+          </div>
+        ) : siguiente.tipo === "bloque_completo" ? (
+          <div className="rounded-xl border border-primary-container/40 bg-surface-container p-6 text-center">
+            <p className="font-[family-name:var(--font-sora)] font-semibold text-on-surface">
+              ¡Completaste todas las sesiones del bloque! 🎉
+            </p>
+            <p className="font-[family-name:var(--font-inter)] text-sm text-on-surface-variant mt-1">
+              Tu coach va a cargar el próximo. Si querés, repetí una sesión de la lista.
+            </p>
           </div>
         ) : (
           <div className="rounded-xl border border-outline-variant bg-surface-container p-6 text-center">
@@ -173,9 +203,9 @@ export default async function EntrenamientosPage() {
         {/* Columna derecha: bloques del programa activo */}
         <div className="lg:col-span-5 flex flex-col gap-4">
           <h3 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase border-b border-outline-variant pb-2">
-            Bloques de tu programa
+            Sesiones de tu programa
           </h3>
-          {!programaActivo || programaActivo.bloques.length === 0 ? (
+          {sesionesDelPrograma.length === 0 ? (
             <div className="p-4 rounded-xl border border-outline-variant bg-surface">
               <p className="font-[family-name:var(--font-inter)] text-on-surface-variant text-sm">
                 No hay bloques cargados todavía.
@@ -183,7 +213,7 @@ export default async function EntrenamientosPage() {
             </div>
           ) : (
             <div className="flex flex-col gap-3">
-              {programaActivo.bloques.map((bloque) => (
+              {sesionesDelPrograma.map((bloque) => (
                 <Link
                   key={bloque.id_bloque}
                   href={`/panel/entrenamientos/${bloque.id_bloque}`}
@@ -195,7 +225,12 @@ export default async function EntrenamientosPage() {
                 >
                   <div>
                     <h4 className="font-[family-name:var(--font-sora)] font-bold text-on-surface">
-                      {bloque.nombre}
+                      {etiquetaSesion(bloque.numero_dia, bloque.nombre)}
+                      {bloqueActual?.id_bloque === bloque.id_bloque && (
+                        <span className="ml-2 font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] text-primary-container uppercase">
+                          Siguiente
+                        </span>
+                      )}
                     </h4>
                     <p className="font-[family-name:var(--font-inter)] text-[12px] text-on-surface-variant">
                       {bloque.semana_inicio && bloque.semana_fin
