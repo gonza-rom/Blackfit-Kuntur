@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { CategoriaBiblioteca } from "@prisma/client";
 import { obtenerBibliotecaCatalogo } from "@/lib/catalogos";
+import { exigirMembresiaActiva } from "@/lib/auth";
 
 const CATEGORIAS = [
   { value: "todas", label: "Todas" },
@@ -22,6 +23,9 @@ export default async function PanelBibliotecaPage({
 }: {
   searchParams: Promise<{ categoria?: string }>;
 }) {
+  // Con la membresía vencida solo queda el perfil: acá, aviso de renovación.
+  await exigirMembresiaActiva();
+
   const supabase = await createClient();
   const {
     data: { user },

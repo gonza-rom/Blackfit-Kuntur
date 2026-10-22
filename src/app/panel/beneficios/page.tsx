@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { MerchantList } from "./_components/merchant-list";
 import { CredencialCard } from "./_components/credencial-card";
+import { exigirMembresiaActiva } from "@/lib/auth";
 
 const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
   day: "2-digit",
@@ -27,6 +28,9 @@ type Beneficio = {
 };
 
 export default async function BeneficiosPage() {
+  // Con la membresía vencida solo queda el perfil: acá, aviso de renovación.
+  await exigirMembresiaActiva();
+
   const supabase = await createClient();
   const {
     data: { user },

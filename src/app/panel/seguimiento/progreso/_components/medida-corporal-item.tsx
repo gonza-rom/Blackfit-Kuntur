@@ -9,12 +9,15 @@ const INPUT =
   "w-full bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface text-sm p-2 transition-colors";
 
 export function MedidaCorporalItem({
+  soloLectura = false,
   id,
   fecha,
   tipoMedida,
   valorCm,
   fotoUrl,
 }: {
+  // Membresía vencida: se ve el historial, sin editar ni borrar.
+  soloLectura?: boolean;
   id: string;
   fecha: string;
   tipoMedida: string;
@@ -50,6 +53,7 @@ export function MedidaCorporalItem({
             </span>
           </span>
         )}
+        {!soloLectura && (
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
@@ -72,6 +76,7 @@ export function MedidaCorporalItem({
             </button>
           </ConfirmForm>
         </div>
+        )}
       </div>
 
       {ampliada && fotoUrl && !editar && (

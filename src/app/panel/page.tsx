@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AvisoSesionEnCurso } from "@/components/aviso-sesion-en-curso";
 import { prisma } from "@/lib/prisma";
-import { obtenerAlumnoActual, tieneRol } from "@/lib/auth";
+import { obtenerAlumnoActual, tieneRol, exigirMembresiaActiva } from "@/lib/auth";
 import { obtenerProgramaActivo, obtenerSiguienteSesion, obtenerUltimoPR } from "@/lib/alumno";
 import { etiquetaSesion } from "@/lib/secuencia";
 import { resumenDia } from "@/lib/plan-dia";
@@ -18,6 +18,9 @@ const SENSACION_EMOJI: Record<number, string> = {
 };
 
 export default async function PanelPage() {
+  // Con la membresía vencida solo queda el perfil: acá, aviso de renovación.
+  await exigirMembresiaActiva();
+
   const contexto = await obtenerAlumnoActual();
 
   if (!contexto) {

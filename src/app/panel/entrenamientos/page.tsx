@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AvisoSesionEnCurso } from "@/components/aviso-sesion-en-curso";
 import { prisma } from "@/lib/prisma";
-import { obtenerAlumnoActual } from "@/lib/auth";
+import { obtenerAlumnoActual, exigirMembresiaActiva } from "@/lib/auth";
 import { obtenerProgramaActivo, obtenerSiguienteSesion } from "@/lib/alumno";
 import { esPlanSecuencial, etiquetaSesion } from "@/lib/secuencia";
 import { FilterChips } from "./_components/filter-chips";
@@ -24,6 +24,9 @@ type ProgramaItem = {
 };
 
 export default async function EntrenamientosPage() {
+  // Con la membresía vencida solo queda el perfil: acá, aviso de renovación.
+  await exigirMembresiaActiva();
+
   const contexto = await obtenerAlumnoActual();
 
   const alumno = contexto

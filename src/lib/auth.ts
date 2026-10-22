@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { estadoAccesoMembresia } from "@/lib/membresia";
@@ -108,6 +109,37 @@ export const accesoAlumnoBloqueado = cache(
     if (!tieneRol(usuario, "alumno") || !usuario.alumno) return false;
     if (tieneRol(usuario, "entrenador") || tieneAccesoAdmin(usuario)) return false;
     return (await estadoAccesoMembresia(usuario.id_usuario)) === "vencida";
+  }
+);
+
+/**
+ * Pantallas de ENTRENAMIENTO (Inicio, Entrenar, sesión, planificación,
+ * mensajes, hábitos...): con la membresía vencida, al aviso de
+ * renovación. Se llama en cada página (no solo en el layout: en Next los
+ * layouts no se vuelven a ejecutar al navegar dentro de la app, así que
+ * un link guardado o una pantalla ya cargada podría saltear el bloqueo).
+ */
+export async function exigirMembresiaActiva(): Promise<void> {
+  const usuario = await obtenerUsuarioActual();
+  if (usuario && (await accesoAlumnoBloqueado(usuario))) redirect("/membresia-vencida");
+}
+
+/**
+ * Consultas de SOLO LECTURA que siguen disponibles con la membresía
+ * vencida (perfil, logros, historial de entrenamientos, progreso y
+ * fotos). Devuelve el alumno aunque esté bloqueado, con `bloqueado` para
+ * que la pantalla oculte toda acción de edición. Las acciones del
+ * servidor siguen usando obtenerAlumnoActual(), que lo rechaza.
+ */
+export const obtenerAlumnoLectura = cache(
+  async (): Promise<{ usuario: UsuarioActual; id_alumno: string; bloqueado: boolean } | null> => {
+    const usuario = await obtenerUsuarioActual();
+    if (!usuario || !tieneRol(usuario, "alumno") || !usuario.alumno) return null;
+    return {
+      usuario,
+      id_alumno: usuario.alumno.id_alumno,
+      bloqueado: await accesoAlumnoBloqueado(usuario),
+    };
   }
 );
 

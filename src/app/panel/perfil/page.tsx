@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { cerrarSesion } from "@/app/actions/auth";
+import { obtenerAlumnoLectura } from "@/lib/auth";
 import { CredencialCard } from "../beneficios/_components/credencial-card";
 import {
   calcularEstadisticasAlumno,
@@ -15,14 +16,6 @@ const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
   month: "short",
   year: "numeric",
 });
-
-const ETIQUETA_ESTADO: Record<string, string> = {
-  activa: "Activa",
-  vencida: "Vencida",
-  cancelada: "Cancelada",
-  suspendida: "Suspendida",
-  pendiente: "Pendiente",
-};
 
 export default async function PerfilPage() {
   const supabase = await createClient();
@@ -90,6 +83,9 @@ export default async function PerfilPage() {
   };
 
   const diasMembresia = usuario ? await obtenerDiasMembresia(usuario.id_usuario) : null;
+  // Membresía vencida: el perfil queda disponible solo para consultar; lo
+  // que es entrenamiento o edición no se muestra.
+  const bloqueado = (await obtenerAlumnoLectura())?.bloqueado ?? false;
 
   const programaActivo = usuario?.alumno ? await obtenerProgramaActivo(usuario.alumno.id_alumno) : null;
   const { semanaActual, diasActivos } = programaActivo
@@ -184,7 +180,7 @@ export default async function PerfilPage() {
         )}
 
       {/* Plan actual */}
-      {programaActivo && semanaActual !== null && (
+      {!bloqueado && programaActivo && semanaActual !== null && (
         <section className="bg-[#1f1f1f] border border-[#262626] rounded-xl p-4 mb-6">
           <div className="flex items-center justify-between mb-2">
             <span className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
@@ -238,12 +234,14 @@ export default async function PerfilPage() {
             Gestión de Cuenta
           </h2>
           {[
-            { icon: "badge", label: "Información Personal", href: "/panel/perfil/informacion-personal" },
-            { icon: "credit_card", label: "Plan de Membresía", href: "/panel/beneficios" },
+            { icon: "badge", label: "Información Personal", href: "/panel/perfil/informacion-personal", soloActiva: true },
+            { icon: "credit_card", label: "Plan de Membresía", href: "/panel/beneficios", soloActiva: true },
             { icon: "monitor_heart", label: "Mi progreso", href: "/panel/seguimiento/progreso" },
             { icon: "emoji_events", label: "Mis logros", href: "/panel/logros" },
             { icon: "history", label: "Mis evaluaciones", href: "/panel/entrenamientos/historial" },
-          ].map((item) => (
+          ]
+            .filter((item) => !bloqueado || !item.soloActiva)
+            .map((item) => (
             <Link
               key={item.label}
               className="flex items-center justify-between bg-[#1f1f1f] border border-[#262626] rounded-lg p-4 hover:border-outline-variant transition-colors group"
@@ -282,30 +280,45 @@ export default async function PerfilPage() {
             <div className="flex items-end gap-3 mb-2">
               <span
                 className={`w-3 h-3 rounded-full mb-2 ${
-                  membresia?.estado_membresia === "activa"
+                  diasMembresia !== null && diasMembresia > 0
                     ? "bg-primary-container shadow-[0_0_10px_#61EDDA]"
-                    : "bg-on-surface-variant"
+                    : diasMembresia === 0
+                      ? "bg-[#ffb4ab]"
+                      : "bg-on-surface-variant"
                 }`}
               />
+              {/* Mismo dato que Inicio y Coach → Alumnos (días por fecha real),
+                  no el estado guardado, que puede seguir "activa" ya vencida. */}
               <span className="font-[family-name:var(--font-sora)] text-[24px] leading-8 font-semibold text-on-surface">
-                {membresia
-                  ? ETIQUETA_ESTADO[membresia.estado_membresia]
-                  : "Sin membresía"}
+                {diasMembresia === null
+                  ? "Sin membresía"
+                  : diasMembresia > 0
+                    ? `Activa · ${diasMembresia} día${diasMembresia === 1 ? "" : "s"}`
+                    : "Vencida"}
               </span>
             </div>
             <p className="font-[family-name:var(--font-inter)] text-sm text-on-surface-variant">
               {membresia
-                ? `${membresia.plan_membresia.nombre} · Se renueva el ${FORMATEADOR_FECHA.format(
-                    membresia.fecha_vencimiento_membresia
-                  )}`
+                ? `${membresia.plan_membresia.nombre} · ${
+                    diasMembresia !== null && diasMembresia > 0 ? "Vence el" : "Venció el"
+                  } ${FORMATEADOR_FECHA.format(membresia.fecha_vencimiento_membresia)}`
                 : "Todavía no tenés un plan activo."}
             </p>
-            <Link
-              href="/panel/beneficios"
-              className="mt-6 w-full py-3 px-4 bg-transparent border border-primary-container text-primary-container font-[family-name:var(--font-sora)] text-sm rounded-lg hover:bg-primary-container/10 transition-colors uppercase tracking-wider flex items-center justify-center"
-            >
-              Gestionar Plan
-            </Link>
+            {bloqueado ? (
+              <Link
+                href="/membresia-vencida"
+                className="mt-6 w-full py-3 px-4 bg-transparent border border-[#ffb4ab] text-[#ffb4ab] font-[family-name:var(--font-sora)] text-sm rounded-lg hover:bg-[#ffb4ab]/10 transition-colors uppercase tracking-wider flex items-center justify-center"
+              >
+                Renovar membresía
+              </Link>
+            ) : (
+              <Link
+                href="/panel/beneficios"
+                className="mt-6 w-full py-3 px-4 bg-transparent border border-primary-container text-primary-container font-[family-name:var(--font-sora)] text-sm rounded-lg hover:bg-primary-container/10 transition-colors uppercase tracking-wider flex items-center justify-center"
+              >
+                Gestionar Plan
+              </Link>
+            )}
           </div>
 
           {/* Acceso QR — credencial real, la misma que en /panel/beneficios */}

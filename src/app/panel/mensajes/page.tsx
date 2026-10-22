@@ -1,12 +1,15 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { obtenerAlumnoActual } from "@/lib/auth";
+import { obtenerAlumnoActual, exigirMembresiaActiva } from "@/lib/auth";
 import { obtenerOCrearConversacion } from "@/app/actions/comunicacion";
 import { ChatThread } from "@/components/chat-thread";
 
 const FORMATEADOR_HORA = new Intl.DateTimeFormat("es-AR", { hour: "2-digit", minute: "2-digit" });
 
 export default async function PanelMensajesPage() {
+  // Con la membresía vencida solo queda el perfil: acá, aviso de renovación.
+  await exigirMembresiaActiva();
+
   const contexto = await obtenerAlumnoActual();
   if (!contexto) redirect("/panel");
 

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { obtenerAlumnoActual } from "@/lib/auth";
+import { obtenerAlumnoActual, exigirMembresiaActiva } from "@/lib/auth";
 import { eliminarHabito } from "@/app/actions/alumno";
 import { FormHabito } from "./_components/form-habito";
 import { ConfirmForm } from "@/components/confirm-form";
@@ -11,6 +11,9 @@ const FORMATEADOR_DIA = new Intl.DateTimeFormat("es-AR", {
 });
 
 export default async function HabitosPage() {
+  // Con la membresía vencida solo queda el perfil: acá, aviso de renovación.
+  await exigirMembresiaActiva();
+
   const contexto = await obtenerAlumnoActual();
   if (!contexto) redirect("/panel");
 

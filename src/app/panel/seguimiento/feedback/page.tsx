@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { obtenerAlumnoActual } from "@/lib/auth";
+import { obtenerAlumnoActual, exigirMembresiaActiva } from "@/lib/auth";
 import { FormFeedbackDiario } from "./_components/form-feedback-diario";
 import { FormFeedbackSemanal } from "./_components/form-feedback-semanal";
 import { FeedbackDiarioItem } from "./_components/feedback-diario-item";
@@ -12,6 +12,9 @@ const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
 });
 
 export default async function FeedbackPage() {
+  // Con la membresía vencida solo queda el perfil: acá, aviso de renovación.
+  await exigirMembresiaActiva();
+
   const contexto = await obtenerAlumnoActual();
   if (!contexto) redirect("/panel");
 

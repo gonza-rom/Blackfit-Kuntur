@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { obtenerAlumnoActual } from "@/lib/auth";
+import { obtenerAlumnoActual, exigirMembresiaActiva } from "@/lib/auth";
 import { FormRegistrarEntrenamientoCliente } from "./_components/form-registrar-entrenamiento-cliente";
 import {
   aproximacionesDeSemana,
@@ -15,6 +15,9 @@ import { obtenerRmVigentes } from "@/lib/rm-referencia";
 export default async function RegistrarEntrenamientoPage(
   props: PageProps<"/panel/entrenamientos/[id_bloque]">
 ) {
+  // Con la membresía vencida solo queda el perfil: acá, aviso de renovación.
+  await exigirMembresiaActiva();
+
   const contexto = await obtenerAlumnoActual();
   if (!contexto) redirect("/panel");
 

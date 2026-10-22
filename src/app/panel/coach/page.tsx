@@ -1,9 +1,12 @@
 import { redirect } from "next/navigation";
-import { obtenerUsuarioActual, tieneRol } from "@/lib/auth";
+import { obtenerUsuarioActual, tieneRol, exigirMembresiaActiva } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { linkWhatsapp } from "@/lib/telefono";
 
 export default async function PanelCoachPage() {
+  // Con la membresía vencida solo queda el perfil: acá, aviso de renovación.
+  await exigirMembresiaActiva();
+
   const usuario = await obtenerUsuarioActual();
   if (!usuario || !tieneRol(usuario, "alumno") || !usuario.alumno) redirect("/panel");
 

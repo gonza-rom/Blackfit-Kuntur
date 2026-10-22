@@ -35,11 +35,11 @@ export default async function PanelLayout({
     redirect("/cuenta-inactiva");
   }
 
-  // Membresía vencida: la cuenta y todo su historial siguen intactos, solo
-  // se corta el acceso hasta que el coach toque "Activar 30 días".
-  if (await accesoAlumnoBloqueado(usuario)) {
-    redirect("/membresia-vencida");
-  }
+  // Membresía vencida: la cuenta y todo su historial siguen intactos. Solo
+  // quedan el perfil y las consultas de historial (solo lectura); cada
+  // pantalla de entrenamiento lo valida por su cuenta con
+  // exigirMembresiaActiva() y cada acción del servidor lo rechaza.
+  const membresiaVencida = await accesoAlumnoBloqueado(usuario);
 
   // Beneficiario puro (Kuntur, sin nada de Black Fit): su única casa es
   // /beneficiario. Se valida contra UsuarioRol en el servidor.
@@ -75,12 +75,15 @@ export default async function PanelLayout({
 
   // No bloquea el render: si falla (ej. sin fila de membresía todavía)
   // no debe tumbar la navegación del alumno.
-  verificarRecordatorioMembresia(usuario.id_usuario).catch(() => {});
+  if (!membresiaVencida) {
+    verificarRecordatorioMembresia(usuario.id_usuario).catch(() => {});
 
-  // Racha diaria + logros: después de responder, para no demorar la página.
-  const id_usuario = usuario.id_usuario;
-  const id_alumno = usuario.alumno?.id_alumno ?? null;
-  after(() => registrarVisitaDiaria(id_usuario, id_alumno));
+    // Racha diaria + logros: después de responder, para no demorar la página.
+    // Con la membresía vencida no se suman (no está usando el servicio).
+    const id_usuario = usuario.id_usuario;
+    const id_alumno = usuario.alumno?.id_alumno ?? null;
+    after(() => registrarVisitaDiaria(id_usuario, id_alumno));
+  }
 
   return (
     <div className="bg-background text-on-surface antialiased min-h-dvh flex flex-col pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(5rem+env(safe-area-inset-bottom))] md:pt-0 md:pb-0 font-[family-name:var(--font-inter)]">
@@ -123,6 +126,20 @@ export default async function PanelLayout({
       </aside>
 
       <div className="md:pl-[240px] lg:pl-[280px] flex-1 flex flex-col">
+        {membresiaVencida && (
+          <div className="w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 pt-4">
+            <Link
+              href="/membresia-vencida"
+              className="flex items-center justify-between gap-3 bg-[#ffb4ab]/10 border border-[#ffb4ab]/40 rounded-xl px-4 py-3"
+            >
+              <span className="flex items-center gap-2 text-sm text-on-surface">
+                <span className="material-symbols-outlined text-[#ffb4ab] text-[20px]">lock</span>
+                Tu membresía venció: solo podés consultar tu perfil e historial.
+              </span>
+              <span className="text-sm font-bold text-[#ffb4ab] shrink-0">Renovar</span>
+            </Link>
+          </div>
+        )}
         <OfflineSyncBanner />
         <div className="w-full max-w-md sm:max-w-2xl md:max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 pt-4 flex flex-col gap-3">
           <InstalarApp />

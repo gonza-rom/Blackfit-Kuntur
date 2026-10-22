@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { obtenerAlumnoActual } from "@/lib/auth";
+import { obtenerAlumnoLectura } from "@/lib/auth";
 import { urlesFirmadasFotos } from "@/lib/storage";
 import { FormProgresoFisico } from "./_components/form-progreso-fisico";
 import { FormMedidaCorporal } from "./_components/form-medida-corporal";
@@ -31,7 +31,8 @@ const CAMPOS_EXTRA: { campo: string; label: string; unit: string }[] = [
 ];
 
 export default async function ProgresoFisicoPage() {
-  const contexto = await obtenerAlumnoActual();
+  // Disponible con la membresía vencida, pero solo para consultar.
+  const contexto = await obtenerAlumnoLectura();
   if (!contexto) redirect("/panel");
 
   const [progresos, medidas] = await Promise.all([
@@ -81,6 +82,7 @@ export default async function ProgresoFisicoPage() {
 
       <GraficoEvolucion series={seriesGrafico} />
 
+      {!contexto.bloqueado && (
       <section className="flex flex-col gap-2">
         <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
           Registrar hoy
@@ -92,6 +94,7 @@ export default async function ProgresoFisicoPage() {
           <FormMedidaCorporal />
         </div>
       </section>
+      )}
 
       <section className="flex flex-col gap-2">
         <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
@@ -120,6 +123,7 @@ export default async function ProgresoFisicoPage() {
                   masaMuscular={p.masa_muscular ? p.masa_muscular.toString() : null}
                   extra={extra}
                   cargadoPorCoach={p.origen === "coach"}
+                  soloLectura={contexto.bloqueado}
                 />
               );
             })}
@@ -131,6 +135,7 @@ export default async function ProgresoFisicoPage() {
                 tipoMedida={m.tipo_medida}
                 valorCm={m.valor_cm.toString()}
                 fotoUrl={m.foto_url ? urlesFotos.get(m.foto_url) ?? null : null}
+                soloLectura={contexto.bloqueado}
               />
             ))}
           </div>

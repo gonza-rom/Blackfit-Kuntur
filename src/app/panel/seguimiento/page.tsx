@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { exigirMembresiaActiva } from "@/lib/auth";
 
 const SECCIONES = [
   {
@@ -21,7 +22,10 @@ const SECCIONES = [
   },
 ];
 
-export default function SeguimientoPage() {
+export default async function SeguimientoPage() {
+  // Con la membresía vencida solo queda el perfil: acá, aviso de renovación.
+  await exigirMembresiaActiva();
+
   return (
     <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-6">
       <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">

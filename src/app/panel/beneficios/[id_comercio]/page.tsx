@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { CredencialCard } from "../_components/credencial-card";
+import { exigirMembresiaActiva } from "@/lib/auth";
 
 const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
   day: "2-digit",
@@ -13,6 +14,9 @@ const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
 export default async function ComercioBeneficioPage(
   props: PageProps<"/panel/beneficios/[id_comercio]">
 ) {
+  // Con la membresía vencida solo queda el perfil: acá, aviso de renovación.
+  await exigirMembresiaActiva();
+
   const { id_comercio } = await props.params;
 
   const comercio = await prisma.comercio.findUnique({ where: { id_comercio } });

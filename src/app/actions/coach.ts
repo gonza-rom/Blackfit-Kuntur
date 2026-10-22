@@ -285,13 +285,6 @@ export async function activarMembresia30Dias(formData: FormData): Promise<void> 
     orderBy: { fecha_vencimiento_membresia: "desc" },
   });
 
-  // Doble toque / pestaña vieja: si ya está activa no se suman días.
-  if (membresias.some(membresiaVigente)) {
-    await avisar("Este alumno ya tiene la membresía activa.", "info");
-    revalidatePath("/coach/alumnos");
-    return;
-  }
-
   // Membresia exige un plan. Se reusa el último del alumno (así no pierde
   // los beneficios Kuntur asociados a su plan); si nunca tuvo uno, el plan
   // de 30 días existente, y si tampoco hay, se crea una sola vez.
@@ -308,44 +301,89 @@ export async function activarMembresia30Dias(formData: FormData): Promise<void> 
     ).id_plan_membresia;
 
   const ahora = new Date();
-  const [, membresia] = await prisma.$transaction([
+  // Una sola renovación por vez y por alumno: el lock serializa pedidos
+  // simultáneos (doble clic, dos pestañas) y la ventana de 2 minutos
+  // descarta el pedido repetido. Así nunca se suman 60 días por error.
+  const resultado = await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`membresia:${id_usuario}`}))`;
+
+    const reciente = await tx.membresia.findFirst({
+      where: { id_usuario, fecha_creacion: { gte: new Date(ahora.getTime() - 2 * 60 * 1000) } },
+      select: { id_membresia: true },
+    });
+    if (reciente) return { duplicada: true as const };
+
+    const vigentes = (
+      await tx.membresia.findMany({
+        where: { id_usuario, estado_membresia: "activa" },
+        select: { estado_membresia: true, fecha_vencimiento_membresia: true },
+      })
+    ).filter(membresiaVigente);
+    // Vencida (o nunca tuvo): 30 días desde AHORA. Todavía activa
+    // (renovación anticipada): los 30 días empiezan cuando termina el
+    // período actual, así no pierde ningún día de lo que ya pagó.
+    const finActual = vigentes.length
+      ? new Date(Math.max(...vigentes.map((m) => m.fecha_vencimiento_membresia.getTime())))
+      : null;
+    const inicio = finActual ?? ahora;
+    const vencimiento = finActual
+      ? new Date(finActual.getTime() + DIAS_MEMBRESIA_COACH * 24 * 60 * 60 * 1000)
+      : calcularVencimiento30Dias(ahora);
+
     // Las que quedaron "activa" con la fecha ya pasada pasan a "vencida",
     // así el historial refleja lo que realmente ocurrió.
-    prisma.membresia.updateMany({
+    await tx.membresia.updateMany({
       where: { id_usuario, estado_membresia: "activa", fecha_vencimiento_membresia: { lte: ahora } },
       data: { estado_membresia: "vencida" },
-    }),
-    prisma.membresia.create({
+    });
+    const membresia = await tx.membresia.create({
       data: {
         id_usuario,
         id_plan_membresia,
         estado_membresia: "activa",
-        fecha_inicio_membresia: ahora,
-        fecha_vencimiento_membresia: calcularVencimiento30Dias(ahora),
+        fecha_inicio_membresia: inicio,
+        fecha_vencimiento_membresia: vencimiento,
       },
-    }),
-  ]);
+    });
+    return { duplicada: false as const, membresia, renovacionAnticipada: finActual !== null };
+  });
+
+  if (resultado.duplicada) {
+    await avisar("La membresía ya se renovó recién. No se sumaron días de nuevo.", "info");
+    revalidatePath("/coach/alumnos");
+    revalidatePath(`/coach/alumnos/${id_alumno}`);
+    return;
+  }
+  const { membresia } = resultado;
 
   await registrarAuditoria({
     id_usuario_actor: contexto.usuario.id_usuario,
     accion: "cambio_membresia",
     recurso: "membresia",
     id_recurso: membresia.id_membresia,
-    resultado: "activada_30_dias_por_coach",
+    resultado: resultado.renovacionAnticipada ? "renovada_30_dias_anticipada" : "activada_30_dias_por_coach",
   });
 
   await crearNotificacion({
     id_usuario,
-    titulo: "Membresía activada",
-    contenido: `Tu coach activó ${DIAS_MEMBRESIA_COACH} días de acceso. ¡A entrenar!`,
+    titulo: resultado.renovacionAnticipada ? "Membresía renovada" : "Membresía activada",
+    contenido: resultado.renovacionAnticipada
+      ? `Tu coach renovó tu membresía: ${DIAS_MEMBRESIA_COACH} días más al terminar tu período actual.`
+      : `Tu coach activó ${DIAS_MEMBRESIA_COACH} días de acceso. ¡A entrenar!`,
     tipo: "membresia_activada",
     url: "/panel",
   }).catch(() => {});
 
   await avisar(
-    `Membresía activada: ${DIAS_MEMBRESIA_COACH} días para ${relacion.alumno.usuario.nombre}.`
+    resultado.renovacionAnticipada
+      ? `Membresía renovada: ${DIAS_MEMBRESIA_COACH} días más para ${relacion.alumno.usuario.nombre}.`
+      : `Membresía activada: ${DIAS_MEMBRESIA_COACH} días para ${relacion.alumno.usuario.nombre}.`
   );
   revalidatePath("/coach/alumnos");
+  revalidatePath(`/coach/alumnos/${id_alumno}`);
+  // El alumno recupera el acceso en su próxima carga: sus pantallas leen
+  // el estado real de la membresía en cada request.
+  revalidatePath("/panel", "layout");
 }
 
 export async function crearEjercicio(

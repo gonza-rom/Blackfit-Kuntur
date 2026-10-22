@@ -9,6 +9,7 @@ const INPUT =
   "w-full bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface text-sm p-2 transition-colors";
 
 export function ProgresoFisicoItem({
+  soloLectura = false,
   id,
   fecha,
   pesoCorporal,
@@ -17,6 +18,8 @@ export function ProgresoFisicoItem({
   extra = [],
   cargadoPorCoach = false,
 }: {
+  // Membresía vencida: se ve el historial, sin editar ni borrar.
+  soloLectura?: boolean;
   id: string;
   fecha: string;
   pesoCorporal: string | null;
@@ -47,6 +50,7 @@ export function ProgresoFisicoItem({
             {masaMuscular ? ` · ${masaMuscular}kg masa musc.` : ""}
           </span>
         )}
+        {!soloLectura && (
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
@@ -69,6 +73,7 @@ export function ProgresoFisicoItem({
             </button>
           </ConfirmForm>
         </div>
+        )}
       </div>
 
       {!editar && extra.length > 0 && (

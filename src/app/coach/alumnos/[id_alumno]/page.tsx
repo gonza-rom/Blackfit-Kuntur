@@ -26,6 +26,9 @@ import { RmReferenciaCoach, type RmSerializado } from "./_components/rm-referenc
 import { obtenerHistorialRm, obtenerRmVigentes } from "@/lib/rm-referencia";
 import type { Levantamiento } from "@/lib/progresion-fuerza";
 import { etiquetaSesion, posicionSecuencia, sesionesDeSemana } from "@/lib/secuencia";
+import { obtenerDiasMembresia, claseColorMembresia, DIAS_MEMBRESIA_COACH } from "@/lib/membresia";
+import { activarMembresia30Dias } from "@/app/actions/coach";
+import { ConfirmForm } from "@/components/confirm-form";
 import type { FilaSeguimiento } from "./_components/planificacion-tab";
 
 // "jueves 22 de octubre": la fecha real en que entrenó, aparte del Día N.
@@ -329,6 +332,8 @@ export default async function AlumnoDetallePage(
   ]);
 
   const { usuario } = relacion.alumno;
+  // Mismo dato que Coach → Alumnos e Inicio/Perfil del alumno.
+  const diasMembresia = await obtenerDiasMembresia(usuario.id_usuario);
 
   const urlesFotos = await urlesFirmadasFotos(medidas.map((m) => m.foto_url));
   const urlesFotosAngulo = await urlesFirmadasFotos(fotosAngulo.map((m) => m.foto_url));
@@ -999,6 +1004,44 @@ export default async function AlumnoDetallePage(
           idAlumno={id_alumno}
           nombreCompleto={`${usuario.nombre} ${usuario.apellido}`}
         />
+      </section>
+
+      {/* Membresía: el pago es por fuera; el coach confirma y activa/renueva. */}
+      <section className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-col gap-0.5">
+          <span className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] text-on-surface-variant uppercase">
+            Membresía
+          </span>
+          <span
+            className={`inline-flex items-center gap-2 font-[family-name:var(--font-sora)] text-base font-bold ${claseColorMembresia(diasMembresia)}`}
+          >
+            <span aria-hidden className="w-2 h-2 rounded-full bg-current" />
+            {diasMembresia === null
+              ? "Sin membresía"
+              : diasMembresia <= 0
+                ? "Vencida — acceso a entrenamientos bloqueado"
+                : `Activa · ${diasMembresia} día${diasMembresia === 1 ? "" : "s"}`}
+          </span>
+        </div>
+        <ConfirmForm
+          action={activarMembresia30Dias}
+          titulo={diasMembresia !== null && diasMembresia > 0 ? "Renovar membresía" : "Activar membresía"}
+          mensaje={
+            diasMembresia !== null && diasMembresia > 0
+              ? `¿Renovar ${DIAS_MEMBRESIA_COACH} días para ${usuario.nombre}? Se suman al final de su período actual.`
+              : `¿Activar ${DIAS_MEMBRESIA_COACH} días para ${usuario.nombre}? Empiezan a contar desde ahora.`
+          }
+          confirmLabel={diasMembresia !== null && diasMembresia > 0 ? "Renovar" : "Activar"}
+          variante="positiva"
+        >
+          <input type="hidden" name="id_alumno" value={id_alumno} />
+          <button
+            type="submit"
+            className="font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] uppercase px-4 py-2 rounded-full bg-primary-container text-black font-bold hover:opacity-90 active:scale-95 transition-all"
+          >
+            Activar / Renovar {DIAS_MEMBRESIA_COACH} días
+          </button>
+        </ConfirmForm>
       </section>
 
       <TabsAlumno

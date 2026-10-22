@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { obtenerUsuarioActual, cuentaActiva, accesoAlumnoBloqueado } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -36,15 +37,16 @@ export default async function MembresiaVencidaPage() {
           <span className="material-symbols-outlined text-4xl">lock</span>
         </span>
         <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface uppercase">
-          Membresía vencida
+          Tu membresía ha vencido
         </h1>
         <p className="font-[family-name:var(--font-inter)] text-sm text-on-surface-variant">
-          Tu acceso a Black Hub Coach se encuentra vencido.
+          Tu período de acceso a los entrenamientos ha finalizado.
           <br />
-          Para continuar utilizando la plataforma, contactá a tu Coach para renovar tu acceso.
+          Para volver a utilizar tu planificación y continuar entrenando, contactá a tu Coach para
+          renovar tu membresía.
         </p>
 
-        {wa && (
+        {wa ? (
           <a
             href={wa}
             target="_blank"
@@ -52,9 +54,23 @@ export default async function MembresiaVencidaPage() {
             className="w-full flex items-center justify-center gap-2 bg-primary-container text-black font-[family-name:var(--font-sora)] text-[15px] font-bold h-12 rounded mt-2 hover:opacity-90 active:scale-[0.98] transition-all uppercase"
           >
             <span className="material-symbols-outlined text-[20px]">chat</span>
-            Contactar a mi coach
+            Renovar por WhatsApp
           </a>
+        ) : (
+          // Sin teléfono del coach configurado: un aviso, nunca un link roto.
+          <p className="w-full bg-[#1A1A1A] border border-[#262626] rounded-xl p-3 text-sm text-on-surface-variant">
+            Tu coach todavía no configuró su WhatsApp. Escribile por el medio que usen
+            habitualmente para renovar.
+          </p>
         )}
+
+        <Link
+          href="/panel/perfil"
+          className="w-full flex items-center justify-center gap-2 border border-outline-variant text-on-surface font-[family-name:var(--font-sora)] text-[15px] font-bold h-12 rounded hover:bg-surface-variant/20 transition-all uppercase"
+        >
+          <span className="material-symbols-outlined text-[20px]">person</span>
+          Volver a mi perfil
+        </Link>
 
         {(entrenador?.alias_pago || entrenador?.mensaje_membresia) && (
           <div className="w-full bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col gap-2">

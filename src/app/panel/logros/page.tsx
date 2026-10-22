@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { obtenerAlumnoActual } from "@/lib/auth";
+import { obtenerAlumnoLectura } from "@/lib/auth";
 import { evaluarLogros } from "@/lib/gamificacion";
 
 const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
@@ -24,7 +24,8 @@ const ETIQUETA_TIPO_OBJETIVO: Record<string, string> = {
 };
 
 export default async function LogrosPage() {
-  const contexto = await obtenerAlumnoActual();
+  // Disponible con la membresía vencida (solo consulta).
+  const contexto = await obtenerAlumnoLectura();
 
   if (!contexto) {
     return (

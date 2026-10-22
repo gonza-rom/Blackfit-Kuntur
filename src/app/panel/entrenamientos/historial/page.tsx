@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { etiquetaSesion } from "@/lib/secuencia";
 import { prisma } from "@/lib/prisma";
-import { obtenerAlumnoActual } from "@/lib/auth";
+import { obtenerAlumnoLectura } from "@/lib/auth";
 import { BotonEliminarEntrenamiento } from "./_components/boton-eliminar-entrenamiento";
 
 const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
@@ -13,7 +13,8 @@ const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
 });
 
 export default async function HistorialPage() {
-  const contexto = await obtenerAlumnoActual();
+  // Disponible con la membresía vencida, pero solo para consultar.
+  const contexto = await obtenerAlumnoLectura();
   if (!contexto) redirect("/panel");
 
   const entrenamientos = await prisma.entrenamiento.findMany({
@@ -85,7 +86,9 @@ export default async function HistorialPage() {
                     {entrenamiento.semana ? `Semana ${entrenamiento.semana} · ` : ""}
                     {FORMATEADOR_FECHA.format(entrenamiento.fecha)}
                   </span>
-                  <BotonEliminarEntrenamiento idEntrenamiento={entrenamiento.id_entrenamiento} />
+                  {!contexto.bloqueado && (
+                    <BotonEliminarEntrenamiento idEntrenamiento={entrenamiento.id_entrenamiento} />
+                  )}
                 </div>
               </div>
 
