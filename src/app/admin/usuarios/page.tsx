@@ -159,15 +159,24 @@ export default async function AdminUsuariosPage(
             {(busqueda || rolFiltro || estadoFiltro) && " (filtrados)"}
           </p>
         </div>
+        <div className="flex gap-2">
+          <Link
+            href="/admin/usuarios/nuevo"
+            className="flex items-center gap-2 bg-primary-container text-black font-[family-name:var(--font-sora)] text-sm font-bold px-4 py-2 rounded-full"
+          >
+            <span className="material-symbols-outlined text-[18px]">person_add</span>
+            Nuevo
+          </Link>
         {puedeComercios && (
           <Link
             href="/admin/usuarios/importar"
-            className="flex items-center gap-2 bg-primary-container text-black font-[family-name:var(--font-sora)] text-sm font-bold px-4 py-2 rounded-full"
+            className="flex items-center gap-2 border border-outline-variant text-on-surface font-[family-name:var(--font-sora)] text-sm font-bold px-4 py-2 rounded-full"
           >
             <span className="material-symbols-outlined text-[18px]">upload_file</span>
             Importar
           </Link>
         )}
+        </div>
       </div>
 
       <form method="get" className="flex flex-col gap-2">

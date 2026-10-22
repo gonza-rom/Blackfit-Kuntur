@@ -24,11 +24,10 @@ import {
 } from "@/lib/auth";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { leerBeneficio, asegurarCredencial } from "@/lib/beneficios";
-import { crearUsuarioAuth } from "@/lib/cuentas";
+import { crearUsuarioAuth, cambiarEmailAuth, emailTomado, establecerContrasena } from "@/lib/cuentas";
 import { crearNotificacion } from "@/lib/notificaciones";
 import { avisar } from "@/lib/aviso";
 import { otorgarLogrosManualesIniciales } from "@/lib/gamificacion";
-import { createAdminClient } from "@/lib/supabase/admin";
 import {
   emailSinteticoBeneficiario,
   type FilaBeneficiarioParseada,
@@ -268,6 +267,98 @@ function esErrorDeIntegridadReferencial(err: unknown): boolean {
 // login (auth.uid() de Supabase Auth se resuelve por email en signIn), así
 // que si cambia hay que sincronizarlo en Supabase Auth antes de tocar
 // nuestra tabla — si esa sincronización falla, no se guarda nada acá.
+// Alta manual de un usuario (coach, alumno, admin, socio...). La
+// contraseña inicial la define quien lo crea (nunca una predeterminada
+// como el DNI) y se la pasa a la persona. Cada admin recortado solo crea
+// usuarios de su dominio; los roles de administración, solo el general.
+// Los comercios se crean desde Comercios (necesitan su ficha comercial).
+export async function crearUsuario(_prev: EstadoAdmin, formData: FormData): Promise<EstadoAdmin> {
+  const actor = await obtenerUsuarioActual();
+  if (!actor) return { error: "No autorizado." };
+  const esGeneral = tieneRol(actor, "administrador");
+  const puedeComercios = esGeneral || tieneRol(actor, "admin_comercios");
+  const puedeBlackfit = esGeneral || tieneRol(actor, "admin_blackfit");
+  if (!puedeComercios && !puedeBlackfit) return { error: "No autorizado." };
+
+  const nombre = String(formData.get("nombre") ?? "").trim().slice(0, 80);
+  const apellido = String(formData.get("apellido") ?? "").trim().slice(0, 80);
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const dni = String(formData.get("dni") ?? "").replace(/\D/g, "") || null;
+  const telefono = String(formData.get("telefono") ?? "").trim().slice(0, 40) || null;
+  const rol = String(formData.get("rol") ?? "") as RolUsuario;
+  const password = String(formData.get("password") ?? "");
+
+  if (!nombre || !apellido || !email) return { error: "Completá nombre, apellido y email." };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "El email no es válido." };
+  if (dni && (dni.length < 6 || dni.length > 9)) return { error: "El DNI no es válido." };
+  if (password.length < 8 || password.length > 72 || !/[a-zA-Z]/.test(password) || !/\d/.test(password)) {
+    return { error: "La contraseña inicial debe tener entre 8 y 72 caracteres, con al menos una letra y un número." };
+  }
+  if (dni && password.replace(/\D/g, "") === dni) return { error: "La contraseña no puede ser el DNI." };
+
+  const rolesPermitidos: RolUsuario[] = [
+    ...(esGeneral ? ROLES_ADMIN : []),
+    ...(puedeBlackfit ? ROLES_DOMINIO_BLACKFIT : []),
+    ...(puedeComercios ? (["beneficiario", "miembro_kuntur"] as RolUsuario[]) : []),
+  ];
+  if (!rolesPermitidos.includes(rol)) return { error: "No podés crear usuarios con ese rol." };
+
+  if (await emailTomado(email)) return { error: "Ya existe un usuario con ese email." };
+  if (dni && (await prisma.usuario.findUnique({ where: { dni }, select: { id_usuario: true } }))) {
+    return { error: "Ya existe un usuario con ese DNI." };
+  }
+
+  let id_usuario: string;
+  try {
+    id_usuario = await crearUsuarioAuth(email, { nombre, apellido, dni });
+    await establecerContrasena(id_usuario, password);
+  } catch (e) {
+    console.error("[admin] crearUsuario auth:", e);
+    return { error: "No se pudo crear la cuenta de acceso. Probá de nuevo." };
+  }
+
+  try {
+    await prisma.usuario.create({
+      data: {
+        id_usuario,
+        email,
+        dni,
+        nombre,
+        apellido,
+        telefono,
+        roles: { create: { rol } },
+        ...(rol === "alumno" ? { alumno: { create: {} } } : {}),
+        ...(rol === "entrenador" ? { entrenador: { create: {} } } : {}),
+        ...(rol === "beneficiario" || rol === "miembro_kuntur"
+          ? { socio_kuntur: { create: { fecha_alta_gimnasio: new Date(), cuenta_activada: true } } }
+          : {}),
+      },
+    });
+  } catch (e) {
+    // Que no quede una cuenta de acceso sin perfil.
+    await prisma.$executeRaw`delete from auth.users where id::text = ${id_usuario}`.catch(() => {});
+    console.error("[admin] crearUsuario perfil:", e);
+    return { error: "No se pudo crear el usuario. Revisá que el email y el DNI no estén usados." };
+  }
+
+  if (rol === "alumno") {
+    const alumno = await prisma.alumno.findUnique({ where: { id_usuario }, select: { id_alumno: true } });
+    if (alumno) await otorgarLogrosManualesIniciales(alumno.id_alumno);
+  }
+
+  await registrarAuditoria({
+    id_usuario_actor: actor.id_usuario,
+    accion: "alta_usuario_admin",
+    recurso: "usuario",
+    id_recurso: id_usuario,
+    resultado: `creado:${rol}`,
+  });
+
+  await avisar("Usuario creado. Pasale su email y la contraseña inicial.");
+  revalidatePath("/admin/usuarios");
+  redirect(`/admin/usuarios/${id_usuario}`);
+}
+
 export async function editarUsuario(
   _prev: EstadoAdmin,
   formData: FormData
@@ -289,12 +380,12 @@ export async function editarUsuario(
   const usuarioActual = await prisma.usuario.findUnique({ where: { id_usuario } });
   if (!usuarioActual) return { error: "Usuario inválido." };
 
-  if (email !== usuarioActual.email) {
-    const supabaseAdmin = createAdminClient();
-    const { error } = await supabaseAdmin.auth.admin.updateUserById(id_usuario, { email });
-    if (error) {
-      return { error: `No se pudo actualizar el email en Supabase Auth: ${error.message}` };
-    }
+  if (email.toLowerCase() !== usuarioActual.email.toLowerCase()) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "El email no es válido." };
+    if (await emailTomado(email, id_usuario)) return { error: "Ese email ya lo usa otro usuario." };
+    // Por SQL (mismo mecanismo que la activación de socios): no depende de
+    // que SUPABASE_SERVICE_ROLE_KEY esté configurada en el hosting.
+    await cambiarEmailAuth(id_usuario, email);
   }
 
   try {
@@ -345,20 +436,22 @@ export async function eliminarUsuario(
   const usuario = await prisma.usuario.findUnique({ where: { id_usuario } });
   if (!usuario) return { error: "Usuario inválido." };
 
+  // Perfil y cuenta de acceso juntos (todo o nada): antes, si faltaba la
+  // service_role key, se borraba el perfil y la cuenta de Auth quedaba suelta.
   try {
-    await prisma.usuario.delete({ where: { id_usuario } });
+    await prisma.$transaction([
+      prisma.usuario.delete({ where: { id_usuario } }),
+      prisma.$executeRaw`delete from auth.users where id::text = ${id_usuario}`,
+    ]);
   } catch (err) {
     if (esErrorDeIntegridadReferencial(err)) {
       return {
         error:
-          "No se puede eliminar: tiene membresías, mensajes, validaciones u otro historial asociado. Usá el estado \"Suspendido\" en vez de eliminarlo.",
+          "No se puede eliminar: tiene mensajes, validaciones de beneficios u otro historial asociado. Usá el estado \"Suspendido\" en vez de eliminarlo.",
       };
     }
     throw err;
   }
-
-  const supabaseAdmin = createAdminClient();
-  await supabaseAdmin.auth.admin.deleteUser(id_usuario).catch(() => {});
 
   await registrarAuditoria({
     id_usuario_actor: contexto.usuario.id_usuario,
