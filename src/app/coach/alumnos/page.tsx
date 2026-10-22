@@ -115,7 +115,7 @@ export default async function CoachAlumnosPage() {
           // vigente para mostrar sus días; si tuvo alguna pero ninguna lo
           // está, figura como vencida.
           prisma.membresia.findMany({
-            where: { id_usuario: { in: idsUsuarios } },
+            where: { id_usuario: { in: idsUsuarios }, plan_membresia: { organizacion: "blackfit" } },
             select: { id_usuario: true, estado_membresia: true, fecha_vencimiento_membresia: true },
           }),
         ]);

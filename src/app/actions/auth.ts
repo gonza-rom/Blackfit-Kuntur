@@ -11,6 +11,7 @@ import {
 } from "@/lib/gamificacion";
 import { crearNotificacion } from "@/lib/notificaciones";
 import { avisar } from "@/lib/aviso";
+import { destinoTrasLogin } from "@/lib/auth";
 import {
   confirmarEmailComercio,
   confirmarEmailAuth,
@@ -59,6 +60,10 @@ export async function iniciarSesion(
   // loguean con su DNI. En vez de reconstruir el email sintético con el
   // que se creó la cuenta (dependería de saber qué alta lo generó), se
   // busca directo por DNI el email real con el que quedó registrado.
+  // Ruta elegida en el login (Blackfit / Kuntur / Comercio): solo una
+  // preferencia de destino, nunca un permiso.
+  const ruta = String(formData.get("ruta") ?? "").trim() || null;
+
   let email = identificador;
   if (!identificador.includes("@")) {
     const dni = identificador.replace(/\D/g, "");
@@ -93,6 +98,18 @@ export async function iniciarSesion(
       };
     }
     await intentar(() => registrarLoginFallido(identificador), undefined);
+    // Socio cargado por Kuntur (Excel o alta manual) que todavía no creó su
+    // contraseña: no tiene ninguna que funcione hasta activar la cuenta.
+    const socioSinActivar = await prisma.socioKuntur.findFirst({
+      where: { cuenta_activada: false, usuario: { email } },
+      select: { id_socio: true },
+    });
+    if (socioSinActivar) {
+      return {
+        error:
+          "Tu cuenta de socio Kuntur todavía no está activada. Pedí tu código en recepción y activala en \"Ya soy socio: activar mi cuenta\".",
+      };
+    }
     return { error: "Email o contraseña incorrectos." };
   }
 
@@ -133,6 +150,14 @@ export async function iniciarSesion(
     if (perfil?.alumno) {
       await evaluarLogros(perfil.alumno.id_alumno).catch(() => {});
     }
+
+    // Cada persona a SU entorno según sus roles reales (nunca todos a
+    // Blackfit por defecto).
+    const usuarioConRoles = await prisma.usuario.findUnique({
+      where: { id_usuario: data.user.id },
+      include: { roles: true, alumno: true, entrenador: true, comercio: true },
+    });
+    redirect(destinoTrasLogin(usuarioConRoles, ruta));
   }
 
   redirect("/panel");
@@ -180,6 +205,24 @@ export async function registrarse(
 
   if (esComercio && !nombreComercio) {
     return { error: "Completá el nombre de tu comercio." };
+  }
+  const razonSocial = String(formData.get("razon_social") ?? "").trim().slice(0, 120) || null;
+  const cuit = String(formData.get("cuit") ?? "").replace(/[^\d-]/g, "").slice(0, 15) || null;
+  const responsable = String(formData.get("responsable") ?? "").trim().slice(0, 120) || null;
+
+  // Socio de Kuntur: el DNI es lo que lo identifica en el gimnasio. Si ya
+  // está (importado del Excel o cargado por la administración), NO se crea
+  // otra cuenta: tiene que activar la suya, así no hay perfiles duplicados.
+  const dni = String(formData.get("dni") ?? "").replace(/\D/g, "");
+  if (esBeneficiario) {
+    if (dni.length < 6 || dni.length > 9) return { error: "Ingresá tu DNI (sin puntos)." };
+    const conEseDni = await prisma.usuario.findUnique({ where: { dni }, select: { id_usuario: true } });
+    if (conEseDni) {
+      return {
+        error:
+          "Ese DNI ya está registrado como socio de Kuntur. Activá tu cuenta desde \"Ya soy socio: activar mi cuenta\" con el código que te dan en recepción.",
+      };
+    }
   }
 
   // Sin esto, GoTrue usa el Site URL configurado en Supabase como destino
@@ -238,6 +281,14 @@ export async function registrarse(
         email,
         nombre,
         apellido,
+        ...(esBeneficiario
+          ? {
+              dni,
+              // Se registró solo: ya tiene su acceso, pero la membresía
+              // la da de alta Kuntur (hasta entonces ve el estado pendiente).
+              socio_kuntur: { create: { fecha_alta_gimnasio: new Date(), cuenta_activada: true } },
+            }
+          : {}),
         // El beneficiario no recibe perfil de Alumno ni ningún rol de Black
         // Fit: solo el rol "beneficiario". El comercio se crea junto con su
         // perfil de Comercio en el mismo paso — nunca queda el rol suelto
@@ -256,6 +307,9 @@ export async function registrarse(
                   telefono: telefonoComercio,
                   direccion: direccionComercio,
                   descripcion: descripcionComercio,
+                  razon_social: razonSocial,
+                  cuit,
+                  responsable,
                   estado: "pendiente",
                 },
               },

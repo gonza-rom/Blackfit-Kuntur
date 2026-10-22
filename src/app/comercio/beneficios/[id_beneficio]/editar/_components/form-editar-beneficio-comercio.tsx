@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { editarBeneficioComercio } from "@/app/actions/comercio";
+import { CamposBeneficio } from "@/components/campos-beneficio";
 
 type Beneficio = {
   id_beneficio: string;
@@ -10,6 +11,9 @@ type Beneficio = {
   descuento: string | null;
   condiciones: string | null;
   fecha_inicio: Date;
+  audiencia: string;
+  categoria: string | null;
+  limite_usos: number | null;
   fecha_vencimiento: Date;
 };
 
@@ -92,7 +96,13 @@ export function FormEditarBeneficioComercio({ beneficio }: { beneficio: Benefici
         />
       </div>
 
-      <div className="flex gap-3">
+      <CamposBeneficio
+          audiencia={beneficio.audiencia}
+          categoria={beneficio.categoria}
+          limiteUsos={beneficio.limite_usos}
+        />
+
+        <div className="flex gap-3">
         <div className="flex flex-1 flex-col gap-2">
           <label
             htmlFor="fecha_inicio"

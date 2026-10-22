@@ -35,7 +35,7 @@ export default async function AdminPlanesPage() {
                 {plan.nombre}
               </p>
               <p className="text-sm text-on-surface-variant">
-                ${plan.precio.toString()} · {plan.duracion_dias} días
+                {plan.organizacion === "blackfit" ? "Blackfit" : "Kuntur"} · ${plan.precio.toString()} · {plan.duracion_dias} días
               </p>
               {plan.descripcion && (
                 <p className="text-sm text-on-surface-variant mt-1">{plan.descripcion}</p>

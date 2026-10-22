@@ -96,12 +96,25 @@ enum EstadoComercio {
   // por un admin (crearComercio en actions/admin.ts) sigue arrancando en
   // "activo" directamente, porque ahí la revisión ya la hizo el admin.
   pendiente
+  // La administración revisó la solicitud y no la aceptó.
+  rechazado
 }
 
 enum EstadoBeneficio {
   activo
   inactivo
   vencido
+  // Cargado por un comercio: no se publica en el catálogo hasta que la
+  // administración lo aprueba (y vuelve acá si cambia algo sensible).
+  pendiente
+  rechazado
+}
+
+// Para quién es un beneficio del catálogo único compartido.
+enum AudienciaBeneficio {
+  blackfit
+  kuntur
+  ambos
 }
 
 enum ResultadoValidacion {
@@ -167,6 +180,7 @@ model Usuario {
   comercio            Comercio?
   membresias          Membresia[]
   credencial          Credencial?
+  socio_kuntur        SocioKuntur?
   notificaciones      Notificacion[]
   mensajes_enviados   Mensaje[]             @relation("MensajesEnviados")
   conversaciones_1    Conversacion[]        @relation("ConversacionUsuario1")
@@ -262,13 +276,23 @@ model RelacionEntrenadorAlumno {
 // MEMBRESÍAS
 // ------------------------------------------------------------
 
+// Las dos organizaciones con membresías propias e INDEPENDIENTES:
+// Blackfit (entrenamiento personalizado) y Kuntur Training Club (socios
+// del gimnasio). Una membresía nunca habilita a la otra organización.
+enum Organizacion {
+  blackfit
+  kuntur
+}
+
 model PlanMembresia {
-  id_plan_membresia String   @id @default(uuid())
+  id_plan_membresia String       @id @default(uuid())
   nombre            String
   descripcion       String?
-  precio            Decimal  @db.Decimal(10, 2)
+  precio            Decimal      @db.Decimal(10, 2)
   duracion_dias     Int
-  fecha_creacion    DateTime @default(now())
+  fecha_creacion    DateTime     @default(now())
+  // A qué organización pertenece el plan (y con él cada membresía).
+  organizacion      Organizacion @default(kuntur)
 
   membresias        Membresia[]
   beneficios_planes BeneficioPlan[]
@@ -710,6 +734,11 @@ model Comercio {
   id_comercio    String         @id @default(uuid())
   id_usuario     String         @unique
   nombre         String
+  // Datos comerciales opcionales para validar la adhesión.
+  razon_social   String?
+  cuit           String?
+  responsable    String?
+  motivo_rechazo String?
   descripcion    String?
   direccion      String?
   telefono       String?
@@ -727,15 +756,23 @@ model Comercio {
 }
 
 model Beneficio {
-  id_beneficio      String          @id @default(uuid())
-  id_comercio       String
-  titulo            String
-  descripcion       String?
-  descuento         String?
-  condiciones       String?
-  fecha_inicio      DateTime
-  fecha_vencimiento DateTime
-  estado            EstadoBeneficio @default(activo)
+  id_beneficio        String             @id @default(uuid())
+  id_comercio         String
+  titulo              String
+  descripcion         String?
+  descuento           String?
+  condiciones         String?
+  fecha_inicio        DateTime
+  fecha_vencimiento   DateTime
+  estado              EstadoBeneficio    @default(activo)
+  // Catálogo único: el mismo beneficio aparece en Blackfit y/o Kuntur
+  // según su audiencia (ver src/lib/beneficios.ts).
+  audiencia           AudienciaBeneficio @default(kuntur)
+  categoria           String?
+  // Usos permitidos por persona (1 = uso único). Nulo = ilimitado.
+  limite_usos         Int?
+  motivo_rechazo      String?
+  fecha_actualizacion DateTime           @default(now()) @updatedAt
 
   comercio          Comercio              @relation(fields: [id_comercio], references: [id_comercio], onDelete: Cascade)
   beneficios_planes BeneficioPlan[]
@@ -777,6 +814,8 @@ model ValidacionBeneficio {
   id_beneficio     String
   fecha_validacion DateTime            @default(now())
   resultado        ResultadoValidacion
+  // Por qué se rechazó (o null si se aprobó).
+  motivo           String?
 
   comercio  Comercio  @relation(fields: [id_comercio], references: [id_comercio])
   usuario   Usuario   @relation(fields: [id_usuario], references: [id_usuario])
@@ -873,6 +912,29 @@ model MovimientoPuntos {
 // ------------------------------------------------------------
 // AUDITORÍA
 // ------------------------------------------------------------
+
+// Socio de Kuntur Training Club: lo que el gimnasio sabe de la persona,
+// aparte de la cuenta de acceso (Usuario) y de su membresía (Membresia de
+// un plan Kuntur). Tres estados independientes: socio registrado (esta
+// fila), cuenta activada (cuenta_activada) y membresía vigente.
+model SocioKuntur {
+  id_socio                String    @id @default(uuid())
+  id_usuario              String    @unique
+  // Desde cuándo es socio: la antigüedad NO se reinicia al renovar.
+  fecha_alta_gimnasio     DateTime
+  fecha_nacimiento        DateTime?
+  observaciones           String?
+  // false = alta administrativa / importada que todavía no creó su acceso.
+  cuenta_activada         Boolean   @default(false)
+  // Código de activación de un solo uso (se guarda solo su hash).
+  codigo_activacion_hash  String?
+  codigo_activacion_vence DateTime?
+  fecha_creacion          DateTime  @default(now())
+
+  usuario Usuario @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
+
+  @@map("socios_kuntur")
+}
 
 // 1RM de referencia para la progresión de fuerza, con historial: cada
 // actualización autorizada (la hace el coach) agrega una fila, nunca pisa

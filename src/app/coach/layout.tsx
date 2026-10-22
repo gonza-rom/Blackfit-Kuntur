@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { obtenerUsuarioActual, tieneRol, cuentaActiva } from "@/lib/auth";
+import { obtenerUsuarioActual, tieneRol, cuentaActiva, entornosDisponibles } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { cerrarSesion } from "@/app/actions/auth";
 import { ActivarPush } from "@/components/activar-push";
@@ -9,6 +9,7 @@ import { LogoMarca } from "@/components/logo-marca";
 import { BotonVolver } from "@/components/boton-volver";
 import { BottomNav } from "./_components/bottom-nav";
 import { SidebarNav } from "./_components/sidebar-nav";
+import { SelectorEntorno } from "@/components/selector-entorno";
 
 export default async function CoachLayout({
   children,
@@ -33,6 +34,8 @@ export default async function CoachLayout({
     where: { id_usuario: usuario.id_usuario, leido: false },
   });
 
+  const entornos = entornosDisponibles(usuario);
+
   return (
     <div className="bg-background text-on-surface antialiased min-h-dvh flex flex-col pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(5rem+env(safe-area-inset-bottom))] md:pt-0 md:pb-0 font-[family-name:var(--font-inter)]">
       {/* TopAppBar (mobile) */}
@@ -43,6 +46,7 @@ export default async function CoachLayout({
           <span className="font-[family-name:var(--font-sora)] text-primary-container tracking-tighter text-xl font-bold">
             BLACK HUB COACH
           </span>
+          <SelectorEntorno entornos={entornos} actual="coach" compacto />
         </div>
         <div className="flex items-center gap-4">
           <Link
@@ -93,6 +97,7 @@ export default async function CoachLayout({
             )}
           </Link>
         </div>
+        <SelectorEntorno entornos={entornos} actual="coach" />
         <SidebarNav />
         <form action={cerrarSesion} className="mt-auto px-4 pb-8">
           <button

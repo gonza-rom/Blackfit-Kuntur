@@ -81,6 +81,24 @@ export default function NuevoPlanPage() {
             />
           </div>
 
+          <div className="flex flex-col gap-2">
+            <label
+              htmlFor="organizacion"
+              className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface uppercase"
+            >
+              Organización
+            </label>
+            <select
+              id="organizacion"
+              name="organizacion"
+              defaultValue="kuntur"
+              className="w-full bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface text-base p-3"
+            >
+              <option value="kuntur">Kuntur Training Club (socios del gimnasio)</option>
+              <option value="blackfit">Blackfit (entrenamiento personalizado)</option>
+            </select>
+          </div>
+
           {state?.error && (
             <p className="font-[family-name:var(--font-inter)] text-sm text-[#ffb4ab]">
               {state.error}

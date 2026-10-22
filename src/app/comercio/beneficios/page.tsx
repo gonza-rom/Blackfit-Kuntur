@@ -13,6 +13,16 @@ const ESTILO_ESTADO: Record<string, string> = {
   activo: "border-primary-container text-primary-container",
   inactivo: "border-outline-variant text-on-surface-variant",
   vencido: "border-[#ffb4ab] text-[#ffb4ab]",
+  pendiente: "border-[#eda100] text-[#eda100]",
+  rechazado: "border-[#ffb4ab] text-[#ffb4ab]",
+};
+
+const ETIQUETA_ESTADO: Record<string, string> = {
+  activo: "Publicado",
+  inactivo: "Pausado",
+  vencido: "Vencido",
+  pendiente: "En revisión",
+  rechazado: "Rechazado",
 };
 
 export default async function ComercioBeneficiosPage() {
@@ -64,7 +74,7 @@ export default async function ComercioBeneficiosPage() {
                 <span
                   className={`font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] uppercase px-3 py-1 rounded-full border ${ESTILO_ESTADO[beneficio.estado]}`}
                 >
-                  {beneficio.estado}
+                  {ETIQUETA_ESTADO[beneficio.estado] ?? beneficio.estado}
                 </span>
               </div>
               {beneficio.descripcion && (

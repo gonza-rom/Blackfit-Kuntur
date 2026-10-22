@@ -2,6 +2,7 @@
 
 import { use, useActionState } from "react";
 import { crearBeneficio } from "@/app/actions/admin";
+import { CamposBeneficio } from "@/components/campos-beneficio";
 
 export default function NuevoBeneficioPage(
   props: PageProps<"/admin/comercios/[id_comercio]/beneficios/nuevo">
@@ -82,6 +83,8 @@ export default function NuevoBeneficioPage(
               className="w-full bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface font-[family-name:var(--font-inter)] text-base p-3 transition-colors"
             />
           </div>
+
+          <CamposBeneficio />
 
           <div className="flex gap-3">
             <div className="flex flex-1 flex-col gap-2">

@@ -1,11 +1,18 @@
 import { redirect } from "next/navigation";
-import { obtenerUsuarioActual, tieneRol, cuentaActiva } from "@/lib/auth";
+import {
+  obtenerUsuarioActual,
+  cuentaActiva,
+  entornosDisponibles,
+  esSocioKuntur,
+  destinoTrasLogin,
+} from "@/lib/auth";
 import { cerrarSesion } from "@/app/actions/auth";
 import { InstalarApp } from "@/components/instalar-app";
 import { LogoMarca } from "@/components/logo-marca";
 import { BotonVolver } from "@/components/boton-volver";
 import { BottomNav } from "./_components/bottom-nav";
 import { SidebarNav } from "./_components/sidebar-nav";
+import { SelectorEntorno } from "@/components/selector-entorno";
 
 export default async function BeneficiarioLayout({
   children,
@@ -24,9 +31,11 @@ export default async function BeneficiarioLayout({
 
   // El rol se valida SIEMPRE contra UsuarioRol en el servidor, nunca contra
   // un valor del cliente.
-  if (!tieneRol(usuario, "beneficiario")) {
-    redirect("/panel");
+  if (!esSocioKuntur(usuario)) {
+    redirect(destinoTrasLogin(usuario, "kuntur"));
   }
+
+  const entornos = entornosDisponibles(usuario);
 
   return (
     <div className="bg-background text-on-surface antialiased min-h-dvh flex flex-col pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(5rem+env(safe-area-inset-bottom))] md:pt-0 md:pb-0 font-[family-name:var(--font-inter)]">
@@ -38,6 +47,7 @@ export default async function BeneficiarioLayout({
           <span className="font-[family-name:var(--font-sora)] text-primary-container tracking-tighter text-xl font-bold">
             KUNTUR
           </span>
+          <SelectorEntorno entornos={entornos} actual="kuntur" compacto />
         </div>
         <form action={cerrarSesion}>
           <button
@@ -57,6 +67,7 @@ export default async function BeneficiarioLayout({
             KUNTUR
           </span>
         </div>
+        <SelectorEntorno entornos={entornos} actual="kuntur" />
         <SidebarNav />
         <form action={cerrarSesion} className="mt-auto px-4 pb-8">
           <button

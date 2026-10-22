@@ -9,6 +9,8 @@ import { prisma } from "@/lib/prisma";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { avisar } from "@/lib/aviso";
 import { subirAvatar } from "@/lib/storage";
+import { crearNotificacion } from "@/lib/notificaciones";
+import { contarUsos, evaluarUso, leerBeneficio, membresiasVigentes } from "@/lib/beneficios";
 
 // ------------------------------------------------------------
 // Nunca se expone al comercio información de entrenamiento, progreso
@@ -80,81 +82,75 @@ export type ResultadoBusquedaSocio =
       nombre_plan: string | null;
       fecha_vencimiento: string | null;
       beneficios: BeneficioDisponible[];
+      // Beneficios del comercio que esta persona NO puede usar, y por qué.
+      no_disponibles: (BeneficioDisponible & { motivo: string })[];
     }
   | undefined;
 
-function membresiaVigente(m: { estado_membresia: string; fecha_vencimiento_membresia: Date }) {
-  return m.estado_membresia === "activa" && m.fecha_vencimiento_membresia >= new Date();
-}
-
-function beneficioVigente(b: { estado: string; fecha_inicio: Date; fecha_vencimiento: Date }) {
-  const hoy = new Date();
-  return b.estado === "activo" && b.fecha_inicio <= hoy && b.fecha_vencimiento >= hoy;
+// Solo un comercio APROBADO valida beneficios o publica promociones. Uno
+// pendiente o rechazado puede ver su panel y su estado, nada más.
+async function obtenerComercioAprobado() {
+  const contexto = await obtenerComercioActual();
+  if (!contexto || contexto.usuario.comercio?.estado !== "activo") return null;
+  return contexto;
 }
 
 export async function buscarSocio(
   _prev: ResultadoBusquedaSocio,
   formData: FormData
 ): Promise<ResultadoBusquedaSocio> {
-  const contexto = await obtenerComercioActual();
-  if (!contexto) return { error: "No autorizado." };
+  const contexto = await obtenerComercioAprobado();
+  if (!contexto) return { error: "Tu comercio todavía no está aprobado para validar beneficios." };
 
   const identificador = String(formData.get("identificador") ?? "").trim();
   if (!identificador) return { error: "Ingresá un DNI, email o escaneá el QR." };
 
-  // El QR contiene el token opaco `codigo_qr_token`. Como fallback manual
-  // (si falla el escaneo) también se puede buscar por DNI o por email —
-  // nunca por otros datos sensibles del alumno. El número de socio ya no
-  // se usa como vía de búsqueda ni se muestra.
+  // El QR contiene el token opaco `codigo_qr_token` (se verifica acá, en
+  // el servidor: ver el QR en una pantalla no alcanza). Como respaldo si
+  // falla el escaneo: DNI o email. Solo personas con credencial (socios
+  // de Kuntur o alumnos de Blackfit que entraron a Beneficios), nunca
+  // cualquier usuario de la app.
   const usuario = await prisma.usuario.findFirst({
     where: {
+      credencial: { isNot: null },
       OR: [
         { email: identificador },
-        { dni: identificador },
+        { dni: identificador.replace(/\D/g, "") || "—" },
         { credencial: { codigo_qr_token: identificador } },
       ],
     },
-    include: {
-      credencial: true,
-      membresias: {
-        orderBy: { fecha_vencimiento_membresia: "desc" },
-        take: 1,
-        include: { plan_membresia: true },
-      },
-    },
+    select: { id_usuario: true, nombre: true, apellido: true },
   });
+  if (!usuario) return { error: "No se encontró ninguna credencial con ese dato." };
 
-  if (!usuario) {
-    return { error: "No se encontró ningún socio con ese dato." };
-  }
-  if (!usuario.credencial) {
-    return { error: "Ese usuario todavía no tiene una credencial Kuntur." };
-  }
+  const [vigentes, beneficiosDelComercio, membresia] = await Promise.all([
+    membresiasVigentes(usuario.id_usuario),
+    prisma.beneficio.findMany({ where: { id_comercio: contexto.id_comercio, estado: "activo" } }),
+    prisma.membresia.findFirst({
+      where: { id_usuario: usuario.id_usuario, estado_membresia: "activa" },
+      orderBy: { fecha_vencimiento_membresia: "desc" },
+      include: { plan_membresia: true },
+    }),
+  ]);
 
-  const membresia = usuario.membresias[0];
-  const activa = Boolean(membresia && membresiaVigente(membresia));
-
-  let beneficios: BeneficioDisponible[] = [];
-  if (activa && membresia) {
-    const beneficiosDelComercio = await prisma.beneficio.findMany({
-      where: {
-        id_comercio: contexto.id_comercio,
-        beneficios_planes: { some: { id_plan_membresia: membresia.id_plan_membresia } },
-      },
-    });
-    beneficios = beneficiosDelComercio
-      .filter(beneficioVigente)
-      .map((b) => ({ id_beneficio: b.id_beneficio, titulo: b.titulo, descuento: b.descuento }));
+  const beneficios: BeneficioDisponible[] = [];
+  const no_disponibles: (BeneficioDisponible & { motivo: string })[] = [];
+  for (const b of beneficiosDelComercio) {
+    const evaluacion = evaluarUso(b, vigentes, await contarUsos(usuario.id_usuario, b.id_beneficio));
+    const item = { id_beneficio: b.id_beneficio, titulo: b.titulo, descuento: b.descuento };
+    if (evaluacion.ok) beneficios.push(item);
+    else no_disponibles.push({ ...item, motivo: evaluacion.motivo });
   }
 
   return {
     id_usuario: usuario.id_usuario,
     nombre: usuario.nombre,
     apellido: usuario.apellido,
-    membresia_activa: activa,
+    membresia_activa: vigentes.blackfit || vigentes.kuntur,
     nombre_plan: membresia?.plan_membresia.nombre ?? null,
     fecha_vencimiento: membresia ? membresia.fecha_vencimiento_membresia.toISOString() : null,
     beneficios,
+    no_disponibles,
   };
 }
 
@@ -173,8 +169,8 @@ export async function validarBeneficio(
   _prev: ResultadoValidacion,
   formData: FormData
 ): Promise<ResultadoValidacion> {
-  const contexto = await obtenerComercioActual();
-  if (!contexto) return { error: "No autorizado." };
+  const contexto = await obtenerComercioAprobado();
+  if (!contexto) return { error: "Tu comercio todavía no está aprobado para validar beneficios." };
 
   const id_usuario = String(formData.get("id_usuario") ?? "");
   const id_beneficio = String(formData.get("id_beneficio") ?? "");
@@ -182,76 +178,70 @@ export async function validarBeneficio(
     return { error: "Faltan datos del socio o del beneficio." };
   }
 
-  // Se vuelve a validar todo desde cero contra la base — nunca se confía
-  // en lo que haya devuelto `buscarSocio` en el paso anterior.
+  // Todo se vuelve a validar desde cero contra la base — nunca se confía en
+  // lo que haya devuelto `buscarSocio` en el paso anterior.
   const [usuario, beneficio] = await Promise.all([
     prisma.usuario.findUnique({
       where: { id_usuario },
-      include: {
-        membresias: {
-          orderBy: { fecha_vencimiento_membresia: "desc" },
-          take: 1,
-          include: { plan_membresia: true },
-        },
-      },
+      select: { id_usuario: true, nombre: true, apellido: true, email: true, credencial: { select: { id_credencial: true } } },
     }),
     prisma.beneficio.findUnique({ where: { id_beneficio } }),
   ]);
-
-  if (!usuario || !beneficio) {
-    return { error: "Socio o beneficio inválido." };
-  }
+  if (!usuario?.credencial || !beneficio) return { error: "Socio o beneficio inválido." };
   if (beneficio.id_comercio !== contexto.id_comercio) {
     return { error: "Ese beneficio no pertenece a tu comercio." };
   }
-
-  const membresia = usuario.membresias[0];
-  const membresiaOk = Boolean(membresia && membresiaVigente(membresia));
-  const beneficioOk = beneficioVigente(beneficio);
-
-  let planAsociado = false;
-  if (membresiaOk && membresia) {
-    const relacion = await prisma.beneficioPlan.findUnique({
-      where: {
-        id_beneficio_id_plan_membresia: {
-          id_beneficio,
-          id_plan_membresia: membresia.id_plan_membresia,
-        },
-      },
-    });
-    planAsociado = Boolean(relacion);
+  // Un comercio no es beneficiario de su propia promoción.
+  if (usuario.id_usuario === contexto.usuario.id_usuario) {
+    return { error: "No podés validar un beneficio para tu propia cuenta." };
   }
 
-  const aprobado = membresiaOk && beneficioOk && planAsociado;
-  const resultado = aprobado ? "aprobado" : "rechazado";
-
-  await prisma.validacionBeneficio.create({
-    data: {
-      id_comercio: contexto.id_comercio,
-      id_usuario,
-      id_beneficio,
-      resultado,
-    },
+  // Lock por persona + beneficio: dos validaciones simultáneas (doble toque,
+  // dos cajas) no pueden pasar ambas el límite de usos.
+  const { evaluacion } = await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`validacion:${id_usuario}:${id_beneficio}`}))`;
+    const vigentes = await membresiasVigentes(id_usuario);
+    const usos = await tx.validacionBeneficio.count({ where: { id_usuario, id_beneficio, resultado: "aprobado" } });
+    const evaluacion = evaluarUso(beneficio, vigentes, usos);
+    await tx.validacionBeneficio.create({
+      data: {
+        id_comercio: contexto.id_comercio,
+        id_usuario,
+        id_beneficio,
+        resultado: evaluacion.ok ? "aprobado" : "rechazado",
+        motivo: evaluacion.ok ? null : evaluacion.motivo,
+      },
+    });
+    return { evaluacion, vigentes };
   });
 
+  const resultado = evaluacion.ok ? "aprobado" : "rechazado";
   await registrarAuditoria({
     id_usuario_actor: contexto.usuario.id_usuario,
     accion: "validacion_qr",
     recurso: "beneficio",
     id_recurso: id_beneficio,
-    resultado: `${resultado}:${usuario.email}`,
+    resultado: `${resultado}:${usuario.id_usuario}`,
   });
 
-  let mensaje = "Beneficio habilitado.";
-  if (!membresiaOk) mensaje = "El socio no tiene una membresía Kuntur activa.";
-  else if (!beneficioOk) mensaje = "Este beneficio no está vigente.";
-  else if (!planAsociado) mensaje = "Este beneficio no está disponible para el plan del socio.";
-
+  const mensaje = evaluacion.ok ? "Beneficio habilitado." : evaluacion.motivo;
   await avisar(
-    aprobado ? `Beneficio aceptado para ${usuario.nombre} ${usuario.apellido}.` : `Beneficio rechazado: ${mensaje}`,
-    aprobado ? "exito" : "info"
+    evaluacion.ok
+      ? `Beneficio aceptado para ${usuario.nombre} ${usuario.apellido}.`
+      : `Beneficio rechazado: ${mensaje}`,
+    evaluacion.ok ? "exito" : "info"
   );
 
+  const membresia = await prisma.membresia.findFirst({
+    where: {
+      id_usuario,
+      estado_membresia: "activa",
+      ...(beneficio.audiencia === "ambos" ? {} : { plan_membresia: { organizacion: beneficio.audiencia } }),
+    },
+    orderBy: { fecha_vencimiento_membresia: "desc" },
+  });
+
+  revalidatePath("/comercio/historial");
   return {
     resultado,
     mensaje,
@@ -262,49 +252,53 @@ export async function validarBeneficio(
 }
 
 // ------------------------------------------------------------
-// CRUD DE BENEFICIOS — el propio comercio los crea/edita/borra, ya no
-// depende de que lo cargue el administrador. Cada acción resuelve
-// id_comercio desde la sesión (obtenerComercioActual), nunca de un campo
-// oculto del form, y para editar/borrar/asignar plan revalida que el
-// beneficio en cuestión sea realmente de ESE comercio.
+// BENEFICIOS DEL COMERCIO — catálogo único (ver lib/beneficios.ts).
+// Cada acción resuelve id_comercio desde la sesión, nunca de un campo del
+// form, y revalida que el beneficio sea de ESE comercio. Lo que carga un
+// comercio queda PENDIENTE hasta que la administración lo aprueba; si
+// cambia una condición sensible, vuelve a revisión.
 // ------------------------------------------------------------
 
 export type EstadoBeneficioComercio = { error?: string; message?: string } | undefined;
 
-const ESTADOS_BENEFICIO: EstadoBeneficio[] = ["activo", "inactivo", "vencido"];
-
 function esErrorDeIntegridadReferencial(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003";
+}
+
+async function avisarAdminsBeneficioPendiente(titulo: string, comercio: string, id_beneficio: string, id_comercio: string) {
+  try {
+    const admins = await prisma.usuario.findMany({
+      where: { roles: { some: { rol: { in: ["administrador", "admin_comercios"] } } } },
+      select: { id_usuario: true },
+    });
+    await Promise.all(
+      admins.map((a) =>
+        crearNotificacion({
+          id_usuario: a.id_usuario,
+          titulo: "Beneficio para revisar",
+          contenido: `${comercio}: "${titulo}" espera aprobación.`,
+          tipo: "beneficio",
+          url: `/admin/comercios/${id_comercio}?beneficio=${id_beneficio}`,
+        })
+      )
+    );
+  } catch {
+    // Best-effort: el beneficio queda pendiente igual.
+  }
 }
 
 export async function crearBeneficioComercio(
   _prev: EstadoBeneficioComercio,
   formData: FormData
 ): Promise<EstadoBeneficioComercio> {
-  const contexto = await obtenerComercioActual();
-  if (!contexto) return { error: "No autorizado." };
+  const contexto = await obtenerComercioAprobado();
+  if (!contexto) return { error: "Tu comercio tiene que estar aprobado para cargar beneficios." };
 
-  const titulo = String(formData.get("titulo") ?? "").trim();
-  const descripcion = String(formData.get("descripcion") ?? "").trim() || null;
-  const descuento = String(formData.get("descuento") ?? "").trim() || null;
-  const condiciones = String(formData.get("condiciones") ?? "").trim() || null;
-  const fecha_inicioRaw = String(formData.get("fecha_inicio") ?? "");
-  const fecha_vencimientoRaw = String(formData.get("fecha_vencimiento") ?? "");
-
-  if (!titulo || !fecha_inicioRaw || !fecha_vencimientoRaw) {
-    return { error: "Completá título y vigencia del beneficio." };
-  }
+  const datos = leerBeneficio(formData);
+  if ("error" in datos) return datos;
 
   const beneficio = await prisma.beneficio.create({
-    data: {
-      id_comercio: contexto.id_comercio,
-      titulo,
-      descripcion,
-      descuento,
-      condiciones,
-      fecha_inicio: new Date(fecha_inicioRaw),
-      fecha_vencimiento: new Date(fecha_vencimientoRaw),
-    },
+    data: { ...datos, id_comercio: contexto.id_comercio, estado: "pendiente" },
   });
 
   await registrarAuditoria({
@@ -312,48 +306,46 @@ export async function crearBeneficioComercio(
     accion: "cambio_beneficio",
     recurso: "beneficio",
     id_recurso: beneficio.id_beneficio,
-    resultado: `creado:${beneficio.titulo}`,
+    resultado: `creado_pendiente:${beneficio.titulo}`,
   });
+  await avisarAdminsBeneficioPendiente(beneficio.titulo, contexto.usuario.comercio?.nombre ?? "", beneficio.id_beneficio, contexto.id_comercio);
 
-  await avisar(`Beneficio "${beneficio.titulo}" creado.`);
+  await avisar(`Beneficio "${beneficio.titulo}" enviado a revisión.`);
   revalidatePath("/comercio/beneficios");
   redirect(`/comercio/beneficios/${beneficio.id_beneficio}/editar`);
 }
+
+// Cambiar algo de esto exige una nueva aprobación.
+const CAMPOS_SENSIBLES = ["descuento", "condiciones", "audiencia", "limite_usos", "fecha_inicio", "fecha_vencimiento"] as const;
 
 export async function editarBeneficioComercio(
   _prev: EstadoBeneficioComercio,
   formData: FormData
 ): Promise<EstadoBeneficioComercio> {
-  const contexto = await obtenerComercioActual();
-  if (!contexto) return { error: "No autorizado." };
+  const contexto = await obtenerComercioAprobado();
+  if (!contexto) return { error: "Tu comercio tiene que estar aprobado para editar beneficios." };
 
   const id_beneficio = String(formData.get("id_beneficio") ?? "");
-  const titulo = String(formData.get("titulo") ?? "").trim();
-  const descripcion = String(formData.get("descripcion") ?? "").trim() || null;
-  const descuento = String(formData.get("descuento") ?? "").trim() || null;
-  const condiciones = String(formData.get("condiciones") ?? "").trim() || null;
-  const fecha_inicioRaw = String(formData.get("fecha_inicio") ?? "");
-  const fecha_vencimientoRaw = String(formData.get("fecha_vencimiento") ?? "");
-
-  if (!id_beneficio || !titulo || !fecha_inicioRaw || !fecha_vencimientoRaw) {
-    return { error: "Completá título y vigencia del beneficio." };
-  }
-
-  const beneficioActual = await prisma.beneficio.findUnique({ where: { id_beneficio } });
-  if (!beneficioActual || beneficioActual.id_comercio !== contexto.id_comercio) {
+  const actual = await prisma.beneficio.findUnique({ where: { id_beneficio } });
+  if (!actual || actual.id_comercio !== contexto.id_comercio) {
     return { error: "Ese beneficio no pertenece a tu comercio." };
   }
 
+  const datos = leerBeneficio(formData);
+  if ("error" in datos) return datos;
+
+  const cambioSensible = CAMPOS_SENSIBLES.some((campo) => {
+    const antes = actual[campo];
+    const despues = datos[campo];
+    return antes instanceof Date && despues instanceof Date
+      ? antes.getTime() !== despues.getTime()
+      : (antes ?? null) !== (despues ?? null);
+  });
+  const vuelveARevision = cambioSensible && actual.estado !== "pendiente";
+
   const beneficio = await prisma.beneficio.update({
     where: { id_beneficio },
-    data: {
-      titulo,
-      descripcion,
-      descuento,
-      condiciones,
-      fecha_inicio: new Date(fecha_inicioRaw),
-      fecha_vencimiento: new Date(fecha_vencimientoRaw),
-    },
+    data: { ...datos, ...(cambioSensible ? { estado: "pendiente", motivo_rechazo: null } : {}) },
   });
 
   await registrarAuditoria({
@@ -361,28 +353,39 @@ export async function editarBeneficioComercio(
     accion: "cambio_beneficio",
     recurso: "beneficio",
     id_recurso: id_beneficio,
-    resultado: `editado:${beneficio.titulo}`,
+    resultado: `editado${cambioSensible ? "_a_revision" : ""}:${beneficio.titulo}`,
   });
+  if (vuelveARevision) {
+    await avisarAdminsBeneficioPendiente(beneficio.titulo, contexto.usuario.comercio?.nombre ?? "", id_beneficio, contexto.id_comercio);
+  }
 
-  await avisar(`Beneficio "${beneficio.titulo}" actualizado.`);
+  const mensaje = cambioSensible
+    ? "Cambios guardados. Como modificaste condiciones del beneficio, vuelve a revisión antes de publicarse."
+    : "Beneficio actualizado.";
+  await avisar(mensaje, cambioSensible ? "info" : "exito");
   revalidatePath(`/comercio/beneficios/${id_beneficio}/editar`);
   revalidatePath("/comercio/beneficios");
-  return { message: "Beneficio actualizado." };
+  return { message: mensaje };
 }
 
+// El comercio puede pausar ("inactivo") o reanudar ("activo") un beneficio
+// YA APROBADO. Uno pendiente o rechazado solo lo publica la administración.
 export async function cambiarEstadoBeneficioComercio(formData: FormData): Promise<void> {
-  const contexto = await obtenerComercioActual();
+  const contexto = await obtenerComercioAprobado();
   if (!contexto) return;
 
   const id_beneficio = String(formData.get("id_beneficio") ?? "");
   const estado = String(formData.get("estado") ?? "") as EstadoBeneficio;
-  if (!id_beneficio || !ESTADOS_BENEFICIO.includes(estado)) return;
+  if (!id_beneficio || !["activo", "inactivo"].includes(estado)) return;
 
-  const beneficioActual = await prisma.beneficio.findUnique({ where: { id_beneficio } });
-  if (!beneficioActual || beneficioActual.id_comercio !== contexto.id_comercio) return;
+  const actual = await prisma.beneficio.findUnique({ where: { id_beneficio } });
+  if (!actual || actual.id_comercio !== contexto.id_comercio) return;
+  if (!["activo", "inactivo", "vencido"].includes(actual.estado)) {
+    await avisar("Este beneficio todavía no fue aprobado por la administración.", "info");
+    return;
+  }
 
   await prisma.beneficio.update({ where: { id_beneficio }, data: { estado } });
-
   await registrarAuditoria({
     id_usuario_actor: contexto.usuario.id_usuario,
     accion: "cambio_beneficio",
@@ -391,14 +394,13 @@ export async function cambiarEstadoBeneficioComercio(formData: FormData): Promis
     resultado: `estado:${estado}`,
   });
 
-  await avisar(estado === "activo" ? "Beneficio activado." : `Beneficio marcado como ${estado}.`, estado === "activo" ? "exito" : "info");
+  await avisar(estado === "activo" ? "Beneficio publicado." : "Beneficio pausado.", estado === "activo" ? "exito" : "info");
   revalidatePath(`/comercio/beneficios/${id_beneficio}/editar`);
   revalidatePath("/comercio/beneficios");
 }
 
 // Borrado definitivo. Si ya tiene validaciones registradas, Postgres
-// rechaza el borrado (igual que en admin.ts) — en ese caso conviene
-// marcarlo "inactivo"/"vencido" en vez de eliminarlo.
+// rechaza el borrado — en ese caso conviene pausarlo en vez de eliminarlo.
 export async function eliminarBeneficioComercio(
   _prev: EstadoBeneficioComercio,
   formData: FormData
@@ -419,8 +421,7 @@ export async function eliminarBeneficioComercio(
   } catch (err) {
     if (esErrorDeIntegridadReferencial(err)) {
       return {
-        error:
-          "No se puede eliminar: ya tiene validaciones registradas. Marcalo como \"inactivo\" o \"vencido\" en vez de borrarlo.",
+        error: "No se puede eliminar: ya tiene validaciones registradas. Pausalo en vez de borrarlo.",
       };
     }
     throw err;
@@ -437,58 +438,4 @@ export async function eliminarBeneficioComercio(
   await avisar(`Beneficio "${beneficio.titulo}" eliminado.`, "eliminado");
   revalidatePath("/comercio/beneficios");
   redirect("/comercio/beneficios");
-}
-
-export async function asignarBeneficioPlanComercio(formData: FormData): Promise<void> {
-  const contexto = await obtenerComercioActual();
-  if (!contexto) return;
-
-  const id_beneficio = String(formData.get("id_beneficio") ?? "");
-  const id_plan_membresia = String(formData.get("id_plan_membresia") ?? "");
-  if (!id_beneficio || !id_plan_membresia) return;
-
-  const beneficio = await prisma.beneficio.findUnique({ where: { id_beneficio } });
-  if (!beneficio || beneficio.id_comercio !== contexto.id_comercio) return;
-
-  await prisma.beneficioPlan.upsert({
-    where: { id_beneficio_id_plan_membresia: { id_beneficio, id_plan_membresia } },
-    update: {},
-    create: { id_beneficio, id_plan_membresia },
-  });
-
-  await registrarAuditoria({
-    id_usuario_actor: contexto.usuario.id_usuario,
-    accion: "cambio_beneficio",
-    recurso: "beneficio",
-    id_recurso: id_beneficio,
-    resultado: `plan_asignado:${id_plan_membresia}`,
-  });
-
-  await avisar("Plan asignado al beneficio.");
-  revalidatePath(`/comercio/beneficios/${id_beneficio}/editar`);
-}
-
-export async function quitarBeneficioPlanComercio(formData: FormData): Promise<void> {
-  const contexto = await obtenerComercioActual();
-  if (!contexto) return;
-
-  const id_beneficio = String(formData.get("id_beneficio") ?? "");
-  const id_plan_membresia = String(formData.get("id_plan_membresia") ?? "");
-  if (!id_beneficio || !id_plan_membresia) return;
-
-  const beneficio = await prisma.beneficio.findUnique({ where: { id_beneficio } });
-  if (!beneficio || beneficio.id_comercio !== contexto.id_comercio) return;
-
-  await prisma.beneficioPlan.deleteMany({ where: { id_beneficio, id_plan_membresia } });
-
-  await registrarAuditoria({
-    id_usuario_actor: contexto.usuario.id_usuario,
-    accion: "cambio_beneficio",
-    recurso: "beneficio",
-    id_recurso: id_beneficio,
-    resultado: `plan_quitado:${id_plan_membresia}`,
-  });
-
-  await avisar("Plan quitado del beneficio.", "eliminado");
-  revalidatePath(`/comercio/beneficios/${id_beneficio}/editar`);
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { vincularPerfilHuerfano } from "@/lib/reparar-cuenta";
+import { destinoTrasLogin } from "@/lib/auth";
 
 // A donde llega el navegador después de que GoTrue verifica el link del
 // mail de confirmación (ver emailRedirectTo en registrarse(), src/app/
@@ -26,18 +27,12 @@ export async function GET(request: Request) {
         return NextResponse.redirect(`${origin}/iniciar-sesion`);
       }
 
-      const roles = await prisma.usuarioRol.findMany({
+      // A su entorno según sus roles reales (ver destinoTrasLogin).
+      const usuario = await prisma.usuario.findUnique({
         where: { id_usuario: data.user.id },
-        select: { rol: true },
+        include: { roles: true, alumno: true, entrenador: true, comercio: true },
       });
-      const esSoloBeneficiario =
-        roles.some((r) => r.rol === "beneficiario") &&
-        !roles.some((r) => r.rol === "alumno");
-      const esComercio = roles.some((r) => r.rol === "comercio");
-
-      return NextResponse.redirect(
-        `${origin}${esSoloBeneficiario ? "/beneficiario" : esComercio ? "/comercio" : "/panel"}`
-      );
+      return NextResponse.redirect(`${origin}${destinoTrasLogin(usuario)}`);
     }
   }
 

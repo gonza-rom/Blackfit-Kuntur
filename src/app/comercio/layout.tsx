@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation";
-import { obtenerUsuarioActual, tieneRol, cuentaActiva } from "@/lib/auth";
+import { obtenerUsuarioActual, tieneRol, cuentaActiva, entornosDisponibles } from "@/lib/auth";
 import { cerrarSesion } from "@/app/actions/auth";
 import { InstalarApp } from "@/components/instalar-app";
 import { LogoMarca } from "@/components/logo-marca";
 import { BotonVolver } from "@/components/boton-volver";
 import { BottomNav } from "./_components/bottom-nav";
 import { SidebarNav } from "./_components/sidebar-nav";
+import { SelectorEntorno } from "@/components/selector-entorno";
 
 export default async function ComercioLayout({
   children,
@@ -28,6 +29,8 @@ export default async function ComercioLayout({
     redirect("/panel");
   }
 
+  const entornos = entornosDisponibles(usuario);
+
   return (
     <div className="bg-background text-on-surface antialiased min-h-dvh flex flex-col pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(5rem+env(safe-area-inset-bottom))] md:pt-0 md:pb-0 font-[family-name:var(--font-inter)]">
       {/* TopAppBar (mobile) */}
@@ -38,6 +41,7 @@ export default async function ComercioLayout({
           <span className="font-[family-name:var(--font-sora)] text-primary-container tracking-tighter text-xl font-bold">
             BLACK HUB COMERCIO
           </span>
+          <SelectorEntorno entornos={entornos} actual="comercio" compacto />
         </div>
         <form action={cerrarSesion}>
           <button
@@ -57,6 +61,7 @@ export default async function ComercioLayout({
             BLACK HUB COMERCIO
           </span>
         </div>
+        <SelectorEntorno entornos={entornos} actual="comercio" />
         <SidebarNav />
         <form action={cerrarSesion} className="mt-auto px-4 pb-8">
           <button

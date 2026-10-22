@@ -5,11 +5,22 @@ import {
   iniciarImportBeneficiarios,
   importarFilaBeneficiario,
   finalizarImportBeneficiarios,
+  previsualizarImportBeneficiarios,
 } from "@/app/actions/admin";
 import {
   parsearCsvBeneficiarios,
+  type FilaBeneficiarioParseada,
   type FilaOmitida,
 } from "@/lib/importarBeneficiarios";
+
+type VistaPrevia = {
+  filas: FilaBeneficiarioParseada[];
+  omitidas: FilaOmitida[];
+  nuevos: number;
+  renovaciones: number;
+  sin_cambios: number;
+  cuentas_blackfit: number;
+};
 
 type FilaError = { linea: number; motivo: string };
 
@@ -18,6 +29,7 @@ type EstadoImport = {
   procesadas: number;
   creados: number;
   actualizados: number;
+  sinCambios: number;
   omitidas: FilaOmitida[];
   errores: FilaError[];
   filaActual: string | null;
@@ -30,6 +42,7 @@ export default function ImportarBeneficiariosPage() {
   const [errorGeneral, setErrorGeneral] = useState<string | null>(null);
   const [corriendo, setCorriendo] = useState(false);
   const [estado, setEstado] = useState<EstadoImport | null>(null);
+  const [vistaPrevia, setVistaPrevia] = useState<VistaPrevia | null>(null);
 
   async function onArchivoSeleccionado(e: React.ChangeEvent<HTMLInputElement>) {
     const archivo = e.target.files?.[0];
@@ -43,9 +56,12 @@ export default function ImportarBeneficiariosPage() {
     setNombreArchivo(archivo.name);
   }
 
+  // Paso 1: leer el archivo y mostrar qué va a pasar, sin escribir nada.
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (corriendo) return;
+    setVistaPrevia(null);
+    setEstado(null);
 
     setErrorGeneral(null);
     const texto = textareaRef.current?.value ?? "";
@@ -60,12 +76,28 @@ export default function ImportarBeneficiariosPage() {
       return;
     }
 
+    const resumen = await previsualizarImportBeneficiarios(
+      filas.map((f) => ({ dni: f.dni, fecha_vencimiento_membresia: f.fecha_vencimiento_membresia }))
+    );
+    if ("error" in resumen) {
+      setErrorGeneral(resumen.error);
+      return;
+    }
+    setVistaPrevia({ filas, omitidas, ...resumen });
+  }
+
+  // Paso 2: importar lo revisado (idempotente: reprocesar no duplica).
+  async function confirmarImport() {
+    if (!vistaPrevia || corriendo) return;
+    const { filas, omitidas } = vistaPrevia;
+    setVistaPrevia(null);
     setCorriendo(true);
     setEstado({
       total: filas.length,
       procesadas: 0,
       creados: 0,
       actualizados: 0,
+      sinCambios: 0,
       omitidas,
       errores: [],
       filaActual: null,
@@ -82,6 +114,7 @@ export default function ImportarBeneficiariosPage() {
 
     let creados = 0;
     let actualizados = 0;
+    let sinCambios = 0;
     const errores: FilaError[] = [];
 
     for (const fila of filas) {
@@ -91,6 +124,7 @@ export default function ImportarBeneficiariosPage() {
       const resultado = await importarFilaBeneficiario(fila, preparacion.id_plan_membresia);
       if (resultado.tipo === "creado") creados++;
       else if (resultado.tipo === "actualizado") actualizados++;
+      else if (resultado.tipo === "sin_cambios") sinCambios++;
       else errores.push({ linea: fila.linea, motivo: resultado.motivo });
 
       setEstado((prev) =>
@@ -100,6 +134,7 @@ export default function ImportarBeneficiariosPage() {
               procesadas: prev.procesadas + 1,
               creados,
               actualizados,
+              sinCambios,
               errores: [...errores],
             }
           : prev
@@ -127,9 +162,9 @@ export default function ImportarBeneficiariosPage() {
         </h1>
         <p className="text-sm text-on-surface-variant mt-1">
           Subí o pegá el CSV de socios de Kuntur (columnas SOCIO;DNI;MEMBRESIA). Cada fila
-          crea una cuenta con rol beneficiario — el login es por DNI y la contraseña inicial
-          es el propio DNI. Si el DNI ya existe, se actualiza la membresía en vez de duplicar
-          la cuenta.
+          crea el socio (sin contraseña: cada uno activa su acceso con un código desde la
+          ficha del socio). Si el DNI ya existe no se duplica, y volver a procesar el mismo
+          archivo no cambia nada. Antes de importar vas a ver un resumen para confirmar.
         </p>
       </div>
 
@@ -184,10 +219,39 @@ export default function ImportarBeneficiariosPage() {
             disabled={corriendo}
             className="w-full bg-primary-container text-black font-[family-name:var(--font-sora)] text-[16px] font-bold h-12 rounded mt-2 hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-60"
           >
-            {corriendo ? "Importando..." : "Importar"}
+            {corriendo ? "Importando..." : "Revisar archivo"}
           </button>
         </form>
       </div>
+
+      {vistaPrevia && (
+        <div className="bg-[#1A1A1A] border border-primary-container/40 rounded-xl p-4 flex flex-col gap-3">
+          <p className="font-[family-name:var(--font-sora)] text-base font-semibold text-on-surface">Resumen antes de importar</p>
+          <ul className="text-sm text-on-surface flex flex-col gap-1">
+            <li>{vistaPrevia.nuevos} socio(s) nuevo(s)</li>
+            <li>{vistaPrevia.renovaciones} renovación(es) de membresía</li>
+            <li>{vistaPrevia.sin_cambios} sin cambios (ya estaban al día)</li>
+            {vistaPrevia.cuentas_blackfit > 0 && (
+              <li className="text-on-surface-variant">
+                {vistaPrevia.cuentas_blackfit} ya tienen cuenta de Blackfit: se vinculan como socios sin tocar Blackfit
+              </li>
+            )}
+            {vistaPrevia.omitidas.length > 0 && <li className="text-[#eda100]">{vistaPrevia.omitidas.length} fila(s) con errores, se omiten</li>}
+          </ul>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={confirmarImport}
+              className="bg-primary-container text-black font-[family-name:var(--font-sora)] text-sm font-bold px-4 py-2 rounded"
+            >
+              Confirmar importación
+            </button>
+            <button type="button" onClick={() => setVistaPrevia(null)} className="text-sm text-on-surface-variant px-3">
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
 
       {estado && (
         <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col gap-3">
@@ -212,7 +276,7 @@ export default function ImportarBeneficiariosPage() {
           )}
 
           <p className="text-sm text-on-surface-variant">
-            {estado.creados} cuenta(s) nueva(s), {estado.actualizados} membresía(s) actualizada(s)
+            {estado.creados} socio(s) nuevo(s), {estado.actualizados} renovación(es), {estado.sinCambios} sin cambios
             {estado.omitidas.length > 0 && `, ${estado.omitidas.length} fila(s) omitida(s)`}
             {estado.errores.length > 0 && `, ${estado.errores.length} error(es)`}.
           </p>

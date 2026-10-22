@@ -23,6 +23,9 @@ import {
   type UsuarioActual,
 } from "@/lib/auth";
 import { registrarAuditoria } from "@/lib/auditoria";
+import { leerBeneficio, asegurarCredencial } from "@/lib/beneficios";
+import { crearUsuarioAuth } from "@/lib/cuentas";
+import { crearNotificacion } from "@/lib/notificaciones";
 import { avisar } from "@/lib/aviso";
 import { otorgarLogrosManualesIniciales } from "@/lib/gamificacion";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -53,8 +56,9 @@ const ESTADOS_MEMBRESIA: EstadoMembresia[] = [
   "pendiente",
 ];
 
-const ESTADOS_COMERCIO: EstadoComercio[] = ["activo", "inactivo", "pendiente"];
-const ESTADOS_BENEFICIO: EstadoBeneficio[] = ["activo", "inactivo", "vencido"];
+const ESTADOS_COMERCIO: EstadoComercio[] = ["activo", "inactivo", "pendiente", "rechazado"];
+// "activo" desde la administración = aprobado y publicado en el catálogo.
+const ESTADOS_BENEFICIO: EstadoBeneficio[] = ["activo", "inactivo", "vencido", "rechazado"];
 
 // Número de socio legible, ej. "K-000123". No es criptográficamente
 // robusto ante alta concurrencia, pero alcanza para el volumen de un
@@ -149,6 +153,15 @@ export async function asignarRol(formData: FormData): Promise<void> {
         where: { id_usuario },
         update: {},
         create: { id_usuario },
+      });
+    }
+    // Vincular una cuenta existente a Kuntur: queda como socio (con su
+    // propia membresía de Kuntur, independiente de Blackfit).
+    if (rol === "beneficiario" || rol === "miembro_kuntur") {
+      await prisma.socioKuntur.upsert({
+        where: { id_usuario },
+        update: {},
+        create: { id_usuario, fecha_alta_gimnasio: new Date(), cuenta_activada: true },
       });
     }
   }
@@ -451,12 +464,15 @@ export async function crearPlanMembresia(
     return { error: "Completá nombre, precio y duración." };
   }
 
+  // Cada plan es de UNA organización (membresías independientes).
+  const organizacion = String(formData.get("organizacion") ?? "kuntur") === "blackfit" ? "blackfit" : "kuntur";
   await prisma.planMembresia.create({
     data: {
       nombre,
       descripcion,
       precio,
       duracion_dias: Number(duracion_diasRaw),
+      organizacion,
     },
   });
 
@@ -660,7 +676,47 @@ export async function cambiarEstadoMembresia(formData: FormData): Promise<void> 
 export type ResultadoFilaImport =
   | { tipo: "creado" }
   | { tipo: "actualizado" }
+  | { tipo: "sin_cambios" }
   | { tipo: "error"; motivo: string };
+
+// Ya tiene una membresía Kuntur que vence ese día o después: reimportar
+// el mismo archivo no crea nada (idempotente).
+const MARGEN_MISMO_DIA_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * Vista previa ANTES de importar: qué haría cada fila, sin escribir nada.
+ * Así se revisan altas, renovaciones y duplicados antes de confirmar.
+ */
+export async function previsualizarImportBeneficiarios(
+  filas: { dni: string; fecha_vencimiento_membresia: Date }[]
+): Promise<{ nuevos: number; renovaciones: number; sin_cambios: number; cuentas_blackfit: number } | { error: string }> {
+  if (!(await obtenerAdminComerciosActual())) return { error: "No autorizado." };
+  const dnis = filas.map((f) => f.dni);
+  const existentes = await prisma.usuario.findMany({
+    where: { dni: { in: dnis } },
+    select: {
+      dni: true,
+      roles: { select: { rol: true } },
+      membresias: {
+        where: { plan_membresia: { organizacion: "kuntur" } },
+        orderBy: { fecha_vencimiento_membresia: "desc" },
+        take: 1,
+        select: { fecha_vencimiento_membresia: true },
+      },
+    },
+  });
+  const porDni = new Map(existentes.map((u) => [u.dni, u]));
+  let nuevos = 0, renovaciones = 0, sin_cambios = 0, cuentas_blackfit = 0;
+  for (const f of filas) {
+    const u = porDni.get(f.dni);
+    if (!u) { nuevos++; continue; }
+    if (u.roles.some((r) => r.rol === "alumno" || r.rol === "entrenador")) cuentas_blackfit++;
+    const ultima = u.membresias[0]?.fecha_vencimiento_membresia;
+    if (ultima && ultima.getTime() >= new Date(f.fecha_vencimiento_membresia).getTime() - MARGEN_MISMO_DIA_MS) sin_cambios++;
+    else renovaciones++;
+  }
+  return { nuevos, renovaciones, sin_cambios, cuentas_blackfit };
+}
 
 const NOMBRE_PLAN_BENEFICIARIO_KUNTUR = "Kuntur — Beneficiario";
 
@@ -707,32 +763,28 @@ export async function importarFilaBeneficiario(
   const nombreCompleto = `${fila.nombre} ${fila.apellido}`.trim();
 
   try {
-    const existente = await prisma.usuario.findUnique({ where: { dni: fila.dni } });
+    const existente = await prisma.usuario.findUnique({
+      where: { dni: fila.dni },
+      include: { roles: { select: { rol: true } } },
+    });
 
     let id_usuario: string;
     if (existente) {
+      // Ya existe (reimportación, o alguien que ya tenía cuenta): NO se pisan
+      // nombre ni otros datos que pudo haber corregido la administración.
       id_usuario = existente.id_usuario;
-      await prisma.usuario.update({
-        where: { id_usuario },
-        data: { nombre: fila.nombre, apellido: fila.apellido },
+      const esBlackfit = existente.roles.some((r) => r.rol === "alumno" || r.rol === "entrenador");
+      const rol = esBlackfit ? "miembro_kuntur" : "beneficiario";
+      await prisma.usuarioRol.upsert({
+        where: { usuario_rol_unico: { id_usuario, rol } },
+        update: {},
+        create: { id_usuario, rol },
       });
     } else {
-      const supabaseAdmin = createAdminClient();
+      // Cuenta nueva con contraseña ALEATORIA (nunca el DNI): el socio
+      // activa su acceso con un código (ver /kuntur/activar).
       const email = emailSinteticoBeneficiario(fila.dni);
-      const { data, error } = await supabaseAdmin.auth.admin.createUser({
-        email,
-        password: fila.dni,
-        email_confirm: true,
-        user_metadata: { nombre: fila.nombre, apellido: fila.apellido, dni: fila.dni },
-      });
-      if (error || !data.user) {
-        return {
-          tipo: "error",
-          motivo: `${nombreCompleto}: ${error?.message ?? "no se pudo crear la cuenta"}`,
-        };
-      }
-
-      id_usuario = data.user.id;
+      id_usuario = await crearUsuarioAuth(email, { nombre: fila.nombre, apellido: fila.apellido, dni: fila.dni });
       await prisma.usuario.create({
         data: {
           id_usuario,
@@ -745,32 +797,38 @@ export async function importarFilaBeneficiario(
       });
     }
 
-    // Si el usuario ya existía (ej. re-importación), asegura el rol sin
-    // pisar otros roles que ya pudiera tener.
-    await prisma.usuarioRol.upsert({
-      where: { usuario_rol_unico: { id_usuario, rol: "beneficiario" } },
+    await prisma.socioKuntur.upsert({
+      where: { id_usuario },
       update: {},
-      create: { id_usuario, rol: "beneficiario" },
+      create: { id_usuario, fecha_alta_gimnasio: new Date(), cuenta_activada: false },
     });
 
-    await prisma.membresia.create({
-      data: {
-        id_usuario,
-        id_plan_membresia,
-        estado_membresia: "activa",
-        fecha_inicio_membresia: new Date(),
-        fecha_vencimiento_membresia: fila.fecha_vencimiento_membresia,
-      },
+    // Idempotente: si ya tiene una membresía Kuntur que vence ese día (o
+    // después), no se crea otra. Si el archivo trae un vencimiento
+    // posterior, se registra como renovación (el historial queda).
+    const ultima = await prisma.membresia.findFirst({
+      where: { id_usuario, plan_membresia: { organizacion: "kuntur" } },
+      orderBy: { fecha_vencimiento_membresia: "desc" },
     });
-
-    const credencialExistente = await prisma.credencial.findUnique({ where: { id_usuario } });
-    if (!credencialExistente) {
-      await prisma.credencial.create({
-        data: { id_usuario, numero_socio: await generarNumeroSocio() },
+    const yaCubierto =
+      ultima &&
+      ultima.fecha_vencimiento_membresia.getTime() >= fila.fecha_vencimiento_membresia.getTime() - MARGEN_MISMO_DIA_MS;
+    if (!yaCubierto) {
+      await prisma.membresia.create({
+        data: {
+          id_usuario,
+          id_plan_membresia,
+          estado_membresia: "activa",
+          fecha_inicio_membresia: new Date(),
+          fecha_vencimiento_membresia: fila.fecha_vencimiento_membresia,
+        },
       });
     }
 
-    return existente ? { tipo: "actualizado" } : { tipo: "creado" };
+    await asegurarCredencial(id_usuario);
+
+    if (!existente) return { tipo: "creado" };
+    return yaCubierto ? { tipo: "sin_cambios" } : { tipo: "actualizado" };
   } catch (err) {
     return {
       tipo: "error",
@@ -878,10 +936,20 @@ export async function cambiarEstadoComercio(formData: FormData): Promise<void> {
 
   const id_comercio = String(formData.get("id_comercio") ?? "");
   const estado = String(formData.get("estado") ?? "") as EstadoComercio;
+  const motivo = String(formData.get("motivo") ?? "").trim().slice(0, 300) || null;
 
   if (!id_comercio || !ESTADOS_COMERCIO.includes(estado)) return;
 
-  const comercio = await prisma.comercio.update({ where: { id_comercio }, data: { estado } });
+  const anterior = await prisma.comercio.findUnique({ where: { id_comercio }, select: { estado: true } });
+  const comercio = await prisma.comercio.update({
+    where: { id_comercio },
+    data: { estado, motivo_rechazo: estado === "rechazado" ? motivo : null },
+  });
+  if (anterior?.estado === "pendiente" && estado === "activo") {
+    await notificarComercio(id_comercio, "¡Tu comercio fue aprobado!", "Ya podés cargar beneficios para la comunidad Blackfit y Kuntur.", "/comercio");
+  } else if (estado === "rechazado") {
+    await notificarComercio(id_comercio, "Solicitud de adhesión no aprobada", motivo ?? "Contactá a la administración para más información.", "/comercio");
+  }
 
   await registrarAuditoria({
     id_usuario_actor: contexto.usuario.id_usuario,
@@ -896,11 +964,12 @@ export async function cambiarEstadoComercio(formData: FormData): Promise<void> {
       ? `Comercio "${comercio.nombre}" activado.`
       : estado === "inactivo"
         ? `Comercio "${comercio.nombre}" desactivado.`
-        : `Comercio "${comercio.nombre}" marcado como pendiente.`,
+        : estado === "rechazado"
+          ? `Solicitud de "${comercio.nombre}" rechazada.`
+          : `Comercio "${comercio.nombre}" marcado como pendiente.`,
     estado === "activo" ? "exito" : "info"
   );
-  revalidatePath(`/admin/comercios/${id_comercio}`);
-  revalidatePath("/admin/comercios");
+  revalidarCatalogo(id_comercio);
 }
 
 export async function editarComercio(
@@ -950,31 +1019,14 @@ export async function crearBeneficio(
   if (!contexto) return { error: "No autorizado." };
 
   const id_comercio = String(formData.get("id_comercio") ?? "");
-  const titulo = String(formData.get("titulo") ?? "").trim();
-  const descripcion = String(formData.get("descripcion") ?? "").trim() || null;
-  const descuento = String(formData.get("descuento") ?? "").trim() || null;
-  const condiciones = String(formData.get("condiciones") ?? "").trim() || null;
-  const fecha_inicioRaw = String(formData.get("fecha_inicio") ?? "");
-  const fecha_vencimientoRaw = String(formData.get("fecha_vencimiento") ?? "");
-
-  if (!id_comercio || !titulo || !fecha_inicioRaw || !fecha_vencimientoRaw) {
-    return { error: "Completá comercio, título y vigencia del beneficio." };
-  }
-
-  const comercio = await prisma.comercio.findUnique({ where: { id_comercio } });
+  const comercio = id_comercio ? await prisma.comercio.findUnique({ where: { id_comercio } }) : null;
   if (!comercio) return { error: "Comercio inválido." };
 
-  const beneficio = await prisma.beneficio.create({
-    data: {
-      id_comercio,
-      titulo,
-      descripcion,
-      descuento,
-      condiciones,
-      fecha_inicio: new Date(fecha_inicioRaw),
-      fecha_vencimiento: new Date(fecha_vencimientoRaw),
-    },
-  });
+  const datos = leerBeneficio(formData);
+  if ("error" in datos) return datos;
+
+  // Cargado por la administración: ya revisado, se publica directo.
+  const beneficio = await prisma.beneficio.create({ data: { ...datos, id_comercio, estado: "activo" } });
 
   await registrarAuditoria({
     id_usuario_actor: contexto.usuario.id_usuario,
@@ -984,9 +1036,25 @@ export async function crearBeneficio(
     resultado: `creado:${beneficio.titulo}`,
   });
 
-  await avisar(`Beneficio "${beneficio.titulo}" creado.`);
-  revalidatePath(`/admin/comercios/${id_comercio}`);
+  await avisar(`Beneficio "${beneficio.titulo}" publicado.`);
+  revalidarCatalogo(id_comercio);
   redirect(`/admin/comercios/${id_comercio}`);
+}
+
+// El catálogo es único: un cambio se ve en Blackfit, en Kuntur y en el
+// panel del comercio.
+function revalidarCatalogo(id_comercio: string) {
+  revalidatePath(`/admin/comercios/${id_comercio}`);
+  revalidatePath("/admin/comercios");
+  revalidatePath("/panel/beneficios");
+  revalidatePath("/beneficiario", "layout");
+  revalidatePath("/comercio/beneficios");
+}
+
+async function notificarComercio(id_comercio: string, titulo: string, contenido: string, url: string) {
+  const comercio = await prisma.comercio.findUnique({ where: { id_comercio }, select: { id_usuario: true } });
+  if (!comercio) return;
+  await crearNotificacion({ id_usuario: comercio.id_usuario, titulo, contenido, tipo: "comercio", url }).catch(() => {});
 }
 
 export async function cambiarEstadoBeneficio(formData: FormData): Promise<void> {
@@ -995,12 +1063,16 @@ export async function cambiarEstadoBeneficio(formData: FormData): Promise<void> 
 
   const id_beneficio = String(formData.get("id_beneficio") ?? "");
   const estado = String(formData.get("estado") ?? "") as EstadoBeneficio;
+  const motivo = String(formData.get("motivo") ?? "").trim().slice(0, 300) || null;
 
   if (!id_beneficio || !ESTADOS_BENEFICIO.includes(estado)) return;
 
+  const anterior = await prisma.beneficio.findUnique({ where: { id_beneficio }, select: { estado: true } });
+  if (!anterior) return;
+
   const beneficio = await prisma.beneficio.update({
     where: { id_beneficio },
-    data: { estado },
+    data: { estado, motivo_rechazo: estado === "rechazado" ? motivo : null },
   });
 
   await registrarAuditoria({
@@ -1008,16 +1080,30 @@ export async function cambiarEstadoBeneficio(formData: FormData): Promise<void> 
     accion: "cambio_beneficio",
     recurso: "beneficio",
     id_recurso: id_beneficio,
-    resultado: `estado:${estado}`,
+    resultado: `estado:${anterior.estado}->${estado}${motivo ? `:${motivo}` : ""}`,
   });
+
+  const url = `/comercio/beneficios/${id_beneficio}/editar`;
+  if (anterior.estado === "pendiente" && estado === "activo") {
+    await notificarComercio(beneficio.id_comercio, "Beneficio aprobado", `"${beneficio.titulo}" ya está publicado en el catálogo.`, url);
+  } else if (estado === "rechazado") {
+    await notificarComercio(
+      beneficio.id_comercio,
+      "Beneficio no aprobado",
+      `"${beneficio.titulo}"${motivo ? `: ${motivo}` : " no fue aprobado."}`,
+      url
+    );
+  }
 
   await avisar(
     estado === "activo"
-      ? `Beneficio "${beneficio.titulo}" activado.`
-      : `Beneficio "${beneficio.titulo}" marcado como ${estado}.`,
+      ? `Beneficio "${beneficio.titulo}" ${anterior.estado === "pendiente" ? "aprobado y publicado" : "publicado"}.`
+      : estado === "rechazado"
+        ? `Beneficio "${beneficio.titulo}" rechazado.`
+        : `Beneficio "${beneficio.titulo}" marcado como ${estado}.`,
     estado === "activo" ? "exito" : "info"
   );
-  revalidatePath(`/admin/comercios/${beneficio.id_comercio}`);
+  revalidarCatalogo(beneficio.id_comercio);
 }
 
 export async function editarBeneficio(
@@ -1028,28 +1114,11 @@ export async function editarBeneficio(
   if (!contexto) return { error: "No autorizado." };
 
   const id_beneficio = String(formData.get("id_beneficio") ?? "");
-  const titulo = String(formData.get("titulo") ?? "").trim();
-  const descripcion = String(formData.get("descripcion") ?? "").trim() || null;
-  const descuento = String(formData.get("descuento") ?? "").trim() || null;
-  const condiciones = String(formData.get("condiciones") ?? "").trim() || null;
-  const fecha_inicioRaw = String(formData.get("fecha_inicio") ?? "");
-  const fecha_vencimientoRaw = String(formData.get("fecha_vencimiento") ?? "");
+  if (!id_beneficio) return { error: "Beneficio inválido." };
+  const datos = leerBeneficio(formData);
+  if ("error" in datos) return datos;
 
-  if (!id_beneficio || !titulo || !fecha_inicioRaw || !fecha_vencimientoRaw) {
-    return { error: "Completá título y vigencia del beneficio." };
-  }
-
-  const beneficio = await prisma.beneficio.update({
-    where: { id_beneficio },
-    data: {
-      titulo,
-      descripcion,
-      descuento,
-      condiciones,
-      fecha_inicio: new Date(fecha_inicioRaw),
-      fecha_vencimiento: new Date(fecha_vencimientoRaw),
-    },
-  });
+  const beneficio = await prisma.beneficio.update({ where: { id_beneficio }, data: datos });
 
   await registrarAuditoria({
     id_usuario_actor: contexto.usuario.id_usuario,
@@ -1060,58 +1129,8 @@ export async function editarBeneficio(
   });
 
   await avisar(`Beneficio "${beneficio.titulo}" actualizado.`);
-  revalidatePath(`/admin/comercios/${beneficio.id_comercio}`);
+  revalidarCatalogo(beneficio.id_comercio);
   redirect(`/admin/comercios/${beneficio.id_comercio}`);
-}
-
-export async function asignarBeneficioPlan(formData: FormData): Promise<void> {
-  const contexto = await obtenerAdminComerciosActual();
-  if (!contexto) return;
-
-  const id_beneficio = String(formData.get("id_beneficio") ?? "");
-  const id_plan_membresia = String(formData.get("id_plan_membresia") ?? "");
-  const id_comercio = String(formData.get("id_comercio") ?? "");
-  if (!id_beneficio || !id_plan_membresia) return;
-
-  await prisma.beneficioPlan.upsert({
-    where: { id_beneficio_id_plan_membresia: { id_beneficio, id_plan_membresia } },
-    update: {},
-    create: { id_beneficio, id_plan_membresia },
-  });
-
-  await registrarAuditoria({
-    id_usuario_actor: contexto.usuario.id_usuario,
-    accion: "cambio_beneficio",
-    recurso: "beneficio",
-    id_recurso: id_beneficio,
-    resultado: `plan_asignado:${id_plan_membresia}`,
-  });
-
-  await avisar("Plan asignado al beneficio.");
-  if (id_comercio) revalidatePath(`/admin/comercios/${id_comercio}`);
-}
-
-export async function quitarBeneficioPlan(formData: FormData): Promise<void> {
-  const contexto = await obtenerAdminComerciosActual();
-  if (!contexto) return;
-
-  const id_beneficio = String(formData.get("id_beneficio") ?? "");
-  const id_plan_membresia = String(formData.get("id_plan_membresia") ?? "");
-  const id_comercio = String(formData.get("id_comercio") ?? "");
-  if (!id_beneficio || !id_plan_membresia) return;
-
-  await prisma.beneficioPlan.deleteMany({ where: { id_beneficio, id_plan_membresia } });
-
-  await registrarAuditoria({
-    id_usuario_actor: contexto.usuario.id_usuario,
-    accion: "cambio_beneficio",
-    recurso: "beneficio",
-    id_recurso: id_beneficio,
-    resultado: `plan_quitado:${id_plan_membresia}`,
-  });
-
-  await avisar("Plan quitado del beneficio.", "eliminado");
-  if (id_comercio) revalidatePath(`/admin/comercios/${id_comercio}`);
 }
 
 // Borrado definitivo del beneficio. Si algún comercio ya lo usó para

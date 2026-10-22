@@ -33,6 +33,7 @@ import {
   calcularVencimiento30Dias,
   membresiaVigente,
   DIAS_MEMBRESIA_COACH,
+  obtenerPlanBlackfit,
 } from "@/lib/membresia";
 import {
   obtenerOCrearDia,
@@ -280,25 +281,10 @@ export async function activarMembresia30Dias(formData: FormData): Promise<void> 
   if (!relacion || relacion.estado_relacion !== "activa") return;
 
   const id_usuario = relacion.alumno.id_usuario;
-  const membresias = await prisma.membresia.findMany({
-    where: { id_usuario },
-    orderBy: { fecha_vencimiento_membresia: "desc" },
-  });
 
-  // Membresia exige un plan. Se reusa el último del alumno (así no pierde
-  // los beneficios Kuntur asociados a su plan); si nunca tuvo uno, el plan
-  // de 30 días existente, y si tampoco hay, se crea una sola vez.
-  const id_plan_membresia =
-    membresias[0]?.id_plan_membresia ??
-    (
-      (await prisma.planMembresia.findFirst({
-        where: { duracion_dias: DIAS_MEMBRESIA_COACH },
-        orderBy: { fecha_creacion: "asc" },
-      })) ??
-      (await prisma.planMembresia.create({
-        data: { nombre: "Membresía 30 días", precio: 0, duracion_dias: DIAS_MEMBRESIA_COACH },
-      }))
-    ).id_plan_membresia;
+  // Siempre el plan de BLACKFIT: antes se reusaba el primer plan de 30
+  // días, que era "Kuntur Mensual", y las membresías quedaban mezcladas.
+  const { id_plan_membresia } = await obtenerPlanBlackfit();
 
   const ahora = new Date();
   // Una sola renovación por vez y por alumno: el lock serializa pedidos
@@ -308,14 +294,18 @@ export async function activarMembresia30Dias(formData: FormData): Promise<void> 
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`membresia:${id_usuario}`}))`;
 
     const reciente = await tx.membresia.findFirst({
-      where: { id_usuario, fecha_creacion: { gte: new Date(ahora.getTime() - 2 * 60 * 1000) } },
+      where: {
+        id_usuario,
+        plan_membresia: { organizacion: "blackfit" },
+        fecha_creacion: { gte: new Date(ahora.getTime() - 2 * 60 * 1000) },
+      },
       select: { id_membresia: true },
     });
     if (reciente) return { duplicada: true as const };
 
     const vigentes = (
       await tx.membresia.findMany({
-        where: { id_usuario, estado_membresia: "activa" },
+        where: { id_usuario, estado_membresia: "activa", plan_membresia: { organizacion: "blackfit" } },
         select: { estado_membresia: true, fecha_vencimiento_membresia: true },
       })
     ).filter(membresiaVigente);
@@ -333,7 +323,12 @@ export async function activarMembresia30Dias(formData: FormData): Promise<void> 
     // Las que quedaron "activa" con la fecha ya pasada pasan a "vencida",
     // así el historial refleja lo que realmente ocurrió.
     await tx.membresia.updateMany({
-      where: { id_usuario, estado_membresia: "activa", fecha_vencimiento_membresia: { lte: ahora } },
+      where: {
+        id_usuario,
+        estado_membresia: "activa",
+        fecha_vencimiento_membresia: { lte: ahora },
+        plan_membresia: { organizacion: "blackfit" },
+      },
       data: { estado_membresia: "vencida" },
     });
     const membresia = await tx.membresia.create({

@@ -154,19 +154,75 @@ export const obtenerAlumnoActual = cache(
   }
 );
 
-// Un "beneficiario" es Kuntur puro: solo accede a /beneficiario (beneficios
-// + su perfil). No tiene perfil de Alumno/Entrenador ni debe tener otros
-// roles de Black Fit — si los tuviera, esos otros roles mandan y el usuario
-// entra por /panel|/coach|/admin como corresponda.
+// Socio de Kuntur Training Club: "beneficiario" (solo Kuntur) o
+// "miembro_kuntur" (alumno/coach de Blackfit que además es socio). Ambos
+// entran al panel de Kuntur (/beneficiario); el rol lo asigna la
+// administración, nunca el cliente.
+export function esSocioKuntur(usuario: UsuarioActual | null): boolean {
+  return tieneRol(usuario, "beneficiario") || tieneRol(usuario, "miembro_kuntur");
+}
+
 export const obtenerBeneficiarioActual = cache(
   async (): Promise<{ usuario: UsuarioActual } | null> => {
     const usuario = await obtenerUsuarioActual();
-    if (!usuario || !tieneRol(usuario, "beneficiario")) {
-      return null;
-    }
+    if (!usuario || !esSocioKuntur(usuario)) return null;
     return { usuario };
   }
 );
+
+// ------------------------------------------------------------
+// Entornos: una app, tres rutas (Blackfit, Kuntur, Comercios) más la
+// administración. A qué entornos entra cada persona lo deciden SOLO sus
+// roles en la base; la ruta que eligió en el login es una preferencia,
+// nunca un permiso.
+// ------------------------------------------------------------
+export type ClaveEntorno = "alumno" | "coach" | "kuntur" | "comercio" | "admin";
+export type EntornoDisponible = { clave: ClaveEntorno; href: string; etiqueta: string };
+
+export function entornosDisponibles(usuario: UsuarioActual | null): EntornoDisponible[] {
+  if (!usuario) return [];
+  const entornos: EntornoDisponible[] = [];
+  if (tieneRol(usuario, "alumno") && usuario.alumno) {
+    entornos.push({ clave: "alumno", href: "/panel", etiqueta: "Blackfit · Entrenamiento" });
+  }
+  if (tieneRol(usuario, "entrenador") && usuario.entrenador) {
+    entornos.push({ clave: "coach", href: "/coach", etiqueta: "Blackfit · Coach" });
+  }
+  if (esSocioKuntur(usuario)) {
+    entornos.push({ clave: "kuntur", href: "/beneficiario", etiqueta: "Kuntur Training Club" });
+  }
+  if (tieneRol(usuario, "comercio") && usuario.comercio) {
+    entornos.push({ clave: "comercio", href: "/comercio", etiqueta: "Comercio adherido" });
+  }
+  if (tieneAccesoAdmin(usuario)) {
+    entornos.push({ clave: "admin", href: "/admin", etiqueta: "Administración" });
+  }
+  return entornos;
+}
+
+export type RutaLogin = "blackfit" | "kuntur" | "comercio";
+
+/**
+ * Adónde mandar a alguien después de entrar. Si eligió una ruta en el
+ * login y TIENE ese entorno, va ahí; si no, a su entorno principal. Sin
+ * ningún entorno (cuenta sin vincular) → /sin-acceso, nunca a Blackfit
+ * por defecto.
+ */
+export function destinoTrasLogin(usuario: UsuarioActual | null, ruta?: string | null): string {
+  const entornos = entornosDisponibles(usuario);
+  if (entornos.length === 0) return `/sin-acceso${ruta ? `?ruta=${ruta}` : ""}`;
+  const preferidos: Record<RutaLogin, ClaveEntorno[]> = {
+    blackfit: ["alumno", "coach"],
+    kuntur: ["kuntur"],
+    comercio: ["comercio"],
+  };
+  if (ruta && ruta in preferidos) {
+    const elegido = entornos.find((e) => preferidos[ruta as RutaLogin].includes(e.clave));
+    if (elegido) return elegido.href;
+    return `/sin-acceso?ruta=${ruta}`;
+  }
+  return entornos[0].href;
+}
 
 // True si el usuario es beneficiario y NO tiene ningún rol de Black Fit ni
 // operativo: en ese caso su única casa es /beneficiario.

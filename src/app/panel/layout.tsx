@@ -4,11 +4,9 @@ import Link from "next/link";
 import {
   obtenerUsuarioActual,
   tieneRol,
-  tieneAccesoAdmin,
-  soloBeneficiario,
   cuentaActiva,
-  accesoAlumnoBloqueado,
-} from "@/lib/auth";
+  destinoTrasLogin,
+  accesoAlumnoBloqueado, entornosDisponibles } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { OfflineSyncBanner } from "@/components/offline-sync-banner";
 import { ActivarPush } from "@/components/activar-push";
@@ -19,6 +17,7 @@ import { verificarRecordatorioMembresia } from "@/lib/membresia";
 import { registrarVisitaDiaria } from "@/lib/gamificacion";
 import { BottomNav } from "./_components/bottom-nav";
 import { SidebarNav } from "./_components/sidebar-nav";
+import { SelectorEntorno } from "@/components/selector-entorno";
 
 export default async function PanelLayout({
   children,
@@ -41,32 +40,12 @@ export default async function PanelLayout({
   // exigirMembresiaActiva() y cada acción del servidor lo rechaza.
   const membresiaVencida = await accesoAlumnoBloqueado(usuario);
 
-  // Beneficiario puro (Kuntur, sin nada de Black Fit): su única casa es
-  // /beneficiario. Se valida contra UsuarioRol en el servidor.
-  if (soloBeneficiario(usuario)) {
-    redirect("/beneficiario");
-  }
-
-  if (!tieneRol(usuario, "alumno") && tieneRol(usuario, "entrenador")) {
-    redirect("/coach");
-  }
-
-  if (
-    !tieneRol(usuario, "alumno") &&
-    !tieneRol(usuario, "entrenador") &&
-    tieneAccesoAdmin(usuario)
-  ) {
-    redirect("/admin");
-  }
-
-  if (
-    !tieneRol(usuario, "alumno") &&
-    !tieneRol(usuario, "entrenador") &&
-    !tieneAccesoAdmin(usuario) &&
-    tieneRol(usuario, "comercio") &&
-    usuario.comercio
-  ) {
-    redirect("/comercio");
+  // /panel es el entorno del ALUMNO de Blackfit. Cualquier otra persona
+  // (coach, socio de Kuntur, comercio, admin, o una cuenta todavía sin
+  // vincular) va a su propio entorno según sus roles — nunca se queda acá
+  // por defecto. Ver destinoTrasLogin en lib/auth.ts.
+  if (!tieneRol(usuario, "alumno") || !usuario.alumno) {
+    redirect(destinoTrasLogin(usuario));
   }
 
   const noLeidas = await prisma.notificacion.count({
@@ -85,6 +64,8 @@ export default async function PanelLayout({
     after(() => registrarVisitaDiaria(id_usuario, id_alumno));
   }
 
+  const entornos = entornosDisponibles(usuario);
+
   return (
     <div className="bg-background text-on-surface antialiased min-h-dvh flex flex-col pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(5rem+env(safe-area-inset-bottom))] md:pt-0 md:pb-0 font-[family-name:var(--font-inter)]">
       {/* TopAppBar (mobile) */}
@@ -95,6 +76,7 @@ export default async function PanelLayout({
           <span className="font-[family-name:var(--font-sora)] text-primary-container tracking-tighter text-xl font-bold">
             BLACK HUB
           </span>
+          <SelectorEntorno entornos={entornos} actual="alumno" compacto />
         </div>
         <Link
           href="/panel/notificaciones"
@@ -122,6 +104,7 @@ export default async function PanelLayout({
             BLACK HUB
           </span>
         </div>
+        <SelectorEntorno entornos={entornos} actual="alumno" />
         <SidebarNav />
       </aside>
 

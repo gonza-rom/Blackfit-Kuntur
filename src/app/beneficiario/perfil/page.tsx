@@ -2,13 +2,42 @@ import { redirect } from "next/navigation";
 import { obtenerBeneficiarioActual } from "@/lib/auth";
 import { cerrarSesion } from "@/app/actions/auth";
 import { FormInformacionPersonal } from "@/app/panel/perfil/informacion-personal/_components/form-informacion-personal";
+import { resumenSocio, ETIQUETA_ESTADO_SOCIO } from "@/lib/kuntur";
+
+const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+  timeZone: "America/Argentina/Buenos_Aires",
+});
 
 export default async function BeneficiarioPerfilPage() {
   const contexto = await obtenerBeneficiarioActual();
-  if (!contexto) redirect("/panel");
+  if (!contexto) redirect("/sin-acceso?ruta=kuntur");
 
   const { usuario } = contexto;
   const inicial = usuario.nombre.charAt(0).toUpperCase();
+  const r = await resumenSocio(usuario.id_usuario);
+  // Los socios importados tienen un email interno (dni…@beneficiario…): no
+  // es un dato suyo, no se muestra.
+  const emailVisible = usuario.email.endsWith(".blackhub.local") ? "" : usuario.email;
+
+  // Datos del gimnasio: solo lectura (los carga Kuntur). El socio edita
+  // únicamente nombre, teléfono y foto, nunca su rol ni su membresía.
+  const datosSocio: [string, string][] = [
+    ["Socio desde", `${FORMATEADOR_FECHA.format(r.altaGimnasio)} (${r.antiguedad})`],
+    ["Membresía", r.membresia ? r.membresia.plan_membresia.nombre : "—"],
+    ["Estado", ETIQUETA_ESTADO_SOCIO[r.estado]],
+    [
+      r.estado === "vigente" ? "Vence" : "Venció",
+      r.membresia ? FORMATEADOR_FECHA.format(r.membresia.fecha_vencimiento_membresia) : "—",
+    ],
+    ...(r.estado === "vigente" ? ([["Días restantes", String(r.diasRestantes)]] as [string, string][]) : []),
+    ...(r.socio?.fecha_nacimiento
+      ? ([["Nacimiento", `${FORMATEADOR_FECHA.format(r.socio.fecha_nacimiento)} (${r.edad} años)`]] as [string, string][])
+      : []),
+    ...(usuario.dni ? ([["DNI", usuario.dni]] as [string, string][]) : []),
+  ];
 
   return (
     <main className="flex-1 w-full max-w-md mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-6">
@@ -35,12 +64,21 @@ export default async function BeneficiarioPerfilPage() {
         </span>
       </section>
 
+      <dl className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col">
+        {datosSocio.map(([k, v]) => (
+          <div key={k} className="flex justify-between gap-3 border-b border-[#262626] last:border-0 py-2 text-sm">
+            <dt className="text-on-surface-variant">{k}</dt>
+            <dd className="text-on-surface text-right">{v}</dd>
+          </div>
+        ))}
+      </dl>
+
       <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 md:p-6">
         <FormInformacionPersonal
           nombre={usuario.nombre}
           apellido={usuario.apellido}
           telefono={usuario.telefono}
-          email={usuario.email}
+          email={emailVisible}
           fotoActual={usuario.foto_perfil}
         />
       </div>

@@ -65,6 +65,28 @@ export function FormRegistroComercio() {
           </datalist>
         </div>
 
+        <div className="flex flex-col gap-2">
+          <label htmlFor="responsable" className={LABEL}>
+            Nombre del responsable (opcional)
+          </label>
+          <input id="responsable" name="responsable" type="text" className={INPUT} />
+        </div>
+
+        <div className="flex gap-3">
+          <div className="flex flex-1 flex-col gap-2">
+            <label htmlFor="razon_social" className={LABEL}>
+              Razón social (opcional)
+            </label>
+            <input id="razon_social" name="razon_social" type="text" className={INPUT} />
+          </div>
+          <div className="flex flex-1 flex-col gap-2">
+            <label htmlFor="cuit" className={LABEL}>
+              CUIT (opcional)
+            </label>
+            <input id="cuit" name="cuit" inputMode="numeric" placeholder="30-12345678-9" className={INPUT} />
+          </div>
+        </div>
+
         <div className="flex gap-3">
           <div className="flex flex-1 flex-col gap-2">
             <label htmlFor="telefono" className={LABEL}>

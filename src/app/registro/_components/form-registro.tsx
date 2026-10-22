@@ -54,6 +54,26 @@ export function FormRegistro({
         </div>
       </div>
 
+      {tipo === "beneficiario" && (
+        <div className="flex flex-col gap-2">
+          <label htmlFor="dni" className={LABEL}>
+            DNI
+          </label>
+          <input
+            id="dni"
+            name="dni"
+            inputMode="numeric"
+            required
+            placeholder="Sin puntos"
+            className={INPUT}
+          />
+          <p className="text-xs text-on-surface-variant">
+            Si ya sos socio de Kuntur, no te registres de nuevo: activá tu cuenta con el código que te dan
+            en recepción.
+          </p>
+        </div>
+      )}
+
       <div className="flex flex-col gap-2">
         <label htmlFor="email" className={LABEL}>
           Correo electrónico

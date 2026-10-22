@@ -6,5 +6,6 @@ export const NAV_ITEMS_ADMIN = [
   { href: "/admin", label: "Inicio", icon: "home", scope: null },
   { href: "/admin/usuarios", label: "Usuarios", icon: "group", scope: null },
   { href: "/admin/planes", label: "Planes", icon: "card_membership", scope: "blackfit" },
+  { href: "/admin/socios", label: "Socios Kuntur", icon: "badge", scope: "comercios" },
   { href: "/admin/comercios", label: "Comercios", icon: "storefront", scope: "comercios" },
 ] as const;

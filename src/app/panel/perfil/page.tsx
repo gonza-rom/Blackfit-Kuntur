@@ -28,6 +28,7 @@ export default async function PerfilPage() {
         where: { id_usuario: user.id },
         include: {
           membresias: {
+            where: { plan_membresia: { organizacion: "blackfit" } },
             orderBy: { fecha_vencimiento_membresia: "desc" },
             take: 1,
             include: { plan_membresia: true },

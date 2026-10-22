@@ -1,4 +1,5 @@
 import { cache } from "react";
+import type { Organizacion } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { crearNotificacion } from "@/lib/notificaciones";
 
@@ -69,14 +70,37 @@ export function diasMembresiaDe(
 }
 
 // Memoizado por request: el layout (bloqueo) y la página (Inicio/Perfil)
-// comparten la misma consulta.
-export const obtenerDiasMembresia = cache(async (id_usuario: string): Promise<number | null> => {
-  const membresias = await prisma.membresia.findMany({
-    where: { id_usuario },
-    select: { estado_membresia: true, fecha_vencimiento_membresia: true },
-  });
-  return diasMembresiaDe(membresias);
-});
+// comparten la misma consulta. Las membresías de Blackfit y de Kuntur son
+// INDEPENDIENTES: cada una se cuenta solo con los planes de su
+// organización (una membresía de Kuntur nunca habilita el entrenamiento
+// de Blackfit, ni al revés).
+export const obtenerDiasMembresia = cache(
+  async (id_usuario: string, organizacion: Organizacion = "blackfit"): Promise<number | null> => {
+    const membresias = await prisma.membresia.findMany({
+      where: { id_usuario, plan_membresia: { organizacion } },
+      select: { estado_membresia: true, fecha_vencimiento_membresia: true },
+    });
+    return diasMembresiaDe(membresias);
+  }
+);
+
+/** Plan con el que el coach activa los 30 días de Blackfit (se crea una sola vez). */
+export async function obtenerPlanBlackfit() {
+  return (
+    (await prisma.planMembresia.findFirst({
+      where: { organizacion: "blackfit" },
+      orderBy: { fecha_creacion: "asc" },
+    })) ??
+    (await prisma.planMembresia.create({
+      data: {
+        nombre: "Blackfit — Entrenamiento 30 días",
+        precio: 0,
+        duracion_dias: DIAS_MEMBRESIA_COACH,
+        organizacion: "blackfit",
+      },
+    }))
+  );
+}
 
 /**
  * Color del estado, igual en todas las pantallas: más de 7 días verde,
@@ -99,9 +123,10 @@ export function claseColorMembresia(dias: number | null): string {
  * - "vencida": tuvo, pero ya no tiene ninguna vigente → acceso bloqueado.
  */
 export async function estadoAccesoMembresia(
-  id_usuario: string
+  id_usuario: string,
+  organizacion: Organizacion = "blackfit"
 ): Promise<"sin_membresia" | "vigente" | "vencida"> {
-  const dias = await obtenerDiasMembresia(id_usuario);
+  const dias = await obtenerDiasMembresia(id_usuario, organizacion);
   if (dias === null) return "sin_membresia";
   return dias > 0 ? "vigente" : "vencida";
 }
@@ -119,9 +144,12 @@ export async function estadoAccesoMembresia(
  * layout en cada visita autenticada, y usa una notificación existente
  * como "ya avisé esta semana" para no duplicar el aviso en cada request.
  */
-export async function verificarRecordatorioMembresia(id_usuario: string): Promise<void> {
+export async function verificarRecordatorioMembresia(
+  id_usuario: string,
+  organizacion: Organizacion = "blackfit"
+): Promise<void> {
   const membresia = await prisma.membresia.findFirst({
-    where: { id_usuario, estado_membresia: "activa" },
+    where: { id_usuario, estado_membresia: "activa", plan_membresia: { organizacion } },
     orderBy: { fecha_vencimiento_membresia: "desc" },
     include: { plan_membresia: true },
   });
@@ -133,7 +161,7 @@ export async function verificarRecordatorioMembresia(id_usuario: string): Promis
   const avisoReciente = await prisma.notificacion.findFirst({
     where: {
       id_usuario,
-      tipo: "membresia_vencimiento",
+      tipo: `membresia_vencimiento_${organizacion}`,
       fecha_creacion: { gte: new Date(Date.now() - VENTANA_AVISO_DIAS * DIA_MS) },
     },
   });
@@ -149,6 +177,6 @@ export async function verificarRecordatorioMembresia(id_usuario: string): Promis
     titulo: "Tu membresía está por vencer",
     contenido: mensaje,
     tipo: "membresia_vencimiento",
-    url: "/panel/beneficios",
+    url: organizacion === "kuntur" ? "/beneficiario" : "/panel",
   });
 }

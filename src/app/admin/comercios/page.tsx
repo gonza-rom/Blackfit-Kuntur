@@ -5,13 +5,27 @@ const ESTILO_ESTADO: Record<string, string> = {
   activo: "border-primary-container text-primary-container",
   inactivo: "border-outline-variant text-on-surface-variant",
   pendiente: "border-[#eda100] text-[#eda100]",
+  rechazado: "border-[#ffb4ab] text-[#ffb4ab]",
 };
 
 export default async function AdminComerciosPage() {
-  const comercios = await prisma.comercio.findMany({
-    include: { usuario: true, _count: { select: { beneficios: true } } },
-    orderBy: { fecha_creacion: "desc" },
-  });
+  const [comerciosTodos, pendientesPorComercio] = await Promise.all([
+    prisma.comercio.findMany({
+      include: { usuario: true, _count: { select: { beneficios: true } } },
+      orderBy: { fecha_creacion: "desc" },
+    }),
+    prisma.beneficio.groupBy({ by: ["id_comercio"], where: { estado: "pendiente" }, _count: true }),
+  ]);
+  // Lo que espera revisión va primero: solicitudes de adhesión y comercios
+  // con beneficios pendientes de aprobación.
+  const pendientes = new Map(pendientesPorComercio.map((p) => [p.id_comercio, p._count]));
+  const comercios = [...comerciosTodos].sort(
+    (a, b) =>
+      Number(b.estado === "pendiente") - Number(a.estado === "pendiente") ||
+      (pendientes.get(b.id_comercio) ?? 0) - (pendientes.get(a.id_comercio) ?? 0)
+  );
+  const solicitudes = comercios.filter((c) => c.estado === "pendiente").length;
+  const beneficiosPendientes = [...pendientes.values()].reduce((a, b) => a + b, 0);
 
   return (
     <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-6">
@@ -27,6 +41,13 @@ export default async function AdminComerciosPage() {
           Nuevo
         </Link>
       </div>
+
+      {(solicitudes > 0 || beneficiosPendientes > 0) && (
+        <p className="bg-[#eda100]/10 border border-[#eda100]/40 rounded-xl p-3 text-sm text-on-surface">
+          Para revisar: {solicitudes} solicitud{solicitudes === 1 ? "" : "es"} de adhesión y {beneficiosPendientes} beneficio
+          {beneficiosPendientes === 1 ? "" : "s"} pendiente{beneficiosPendientes === 1 ? "" : "s"} de aprobación.
+        </p>
+      )}
 
       {comercios.length === 0 ? (
         <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 text-on-surface-variant text-sm">
@@ -46,6 +67,7 @@ export default async function AdminComerciosPage() {
                 </p>
                 <p className="text-sm text-on-surface-variant">
                   {comercio.usuario.email} · {comercio._count.beneficios} beneficio(s)
+                  {pendientes.get(comercio.id_comercio) ? ` · ${pendientes.get(comercio.id_comercio)} para aprobar` : ""}
                 </p>
               </div>
               <span

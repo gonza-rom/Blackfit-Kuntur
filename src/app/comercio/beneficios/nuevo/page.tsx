@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { crearBeneficioComercio } from "@/app/actions/comercio";
+import { CamposBeneficio } from "@/components/campos-beneficio";
 
 export default function NuevoBeneficioComercioPage() {
   const [state, action, pending] = useActionState(crearBeneficioComercio, undefined);
@@ -78,6 +79,8 @@ export default function NuevoBeneficioComercioPage() {
             />
           </div>
 
+          <CamposBeneficio />
+
           <div className="flex gap-3">
             <div className="flex flex-1 flex-col gap-2">
               <label
@@ -122,7 +125,7 @@ export default function NuevoBeneficioComercioPage() {
             disabled={pending}
             className="w-full bg-primary-container text-black font-[family-name:var(--font-sora)] text-[16px] font-bold h-12 rounded mt-2 hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-60"
           >
-            {pending ? "Creando..." : "Crear beneficio"}
+            {pending ? "Enviando..." : "Enviar a revisión"}
           </button>
         </form>
       </div>

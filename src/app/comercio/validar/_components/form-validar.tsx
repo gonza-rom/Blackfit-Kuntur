@@ -91,14 +91,18 @@ export function FormValidar() {
             </p>
           )}
 
-          {!socioEncontrado.membresia_activa ? (
-            <p className="font-[family-name:var(--font-inter)] text-sm text-[#ffb4ab]">
-              Este socio no tiene una membresía Kuntur activa: no se le puede validar
-              ningún beneficio.
-            </p>
-          ) : socioEncontrado.beneficios.length === 0 ? (
+          {socioEncontrado.no_disponibles.length > 0 && (
+            <ul className="flex flex-col gap-1">
+              {socioEncontrado.no_disponibles.map((b) => (
+                <li key={b.id_beneficio} className="text-xs text-on-surface-variant border border-[#262626] rounded-lg p-2">
+                  <span className="text-on-surface">{b.titulo}</span>: <span className="text-[#ffb4ab]">{b.motivo}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {socioEncontrado.beneficios.length === 0 ? (
             <p className="font-[family-name:var(--font-inter)] text-sm text-on-surface-variant">
-              Este socio no tiene beneficios vigentes de tu comercio para su plan.
+              No tiene beneficios de tu comercio que pueda usar ahora.
             </p>
           ) : (
             <form action={validarAction} className="flex flex-col gap-3">
