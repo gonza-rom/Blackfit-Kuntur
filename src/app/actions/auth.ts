@@ -358,7 +358,10 @@ export async function registrarse(
     }
   }
 
-  if (esComercio && !tieneSesion) {
+  // Comercio y socio de Kuntur: sin depender del mail de confirmación (no
+  // siempre llega). El socio entra directo a sus beneficios; el comercio
+  // igual queda pendiente de revisión.
+  if ((esComercio || esBeneficiario) && !tieneSesion) {
     await intentar(() => confirmarEmailAuth(idAuth), undefined);
     const { error: errorLogin } = await supabase.auth.signInWithPassword({ email, password });
     if (errorLogin) {
@@ -369,7 +372,7 @@ export async function registrarse(
   }
 
   await avisar("¡Cuenta creada! Bienvenido/a.");
-  redirect(esComercio ? "/comercio" : esBeneficiario ? "/beneficiario" : "/panel");
+  redirect(esComercio ? "/comercio" : esBeneficiario ? "/beneficiario/beneficios" : "/panel");
 }
 
 export async function cerrarSesion() {

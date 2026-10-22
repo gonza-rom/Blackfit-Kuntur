@@ -122,6 +122,36 @@ export default function IniciarSesionPage() {
                   </span>
                 </button>
               ))}
+
+              <div className="border-t border-[#262626] pt-4 mt-1 flex flex-col gap-2">
+                <p className="font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.12em] text-on-surface-variant uppercase text-center">
+                  ¿No tenés cuenta?
+                </p>
+                <Link
+                  href="/registro/beneficiario"
+                  className="w-full flex items-center justify-center gap-2 bg-primary-container text-black font-[family-name:var(--font-sora)] text-sm font-bold h-11 rounded"
+                >
+                  <span className="material-symbols-outlined text-[18px]">loyalty</span>
+                  Registrarme en Kuntur (beneficios)
+                </Link>
+                <div className="grid grid-cols-2 gap-2">
+                  <Link
+                    href="/registro"
+                    className="flex items-center justify-center border border-outline-variant text-on-surface text-xs font-bold h-10 rounded hover:border-primary-container/60"
+                  >
+                    Registrarme en Blackfit
+                  </Link>
+                  <Link
+                    href="/registro/comercio"
+                    className="flex items-center justify-center border border-outline-variant text-on-surface text-xs font-bold h-10 rounded hover:border-primary-container/60"
+                  >
+                    Registrar mi comercio
+                  </Link>
+                </div>
+                <Link href="/kuntur/activar" className="text-center text-xs text-primary-container hover:underline underline-offset-4">
+                  Ya soy socio de Kuntur: activar mi cuenta
+                </Link>
+              </div>
             </div>
           ) : (
           <form action={action} className="flex flex-col gap-4">

@@ -19,7 +19,10 @@ export default function RegistroBeneficiarioPage() {
             KUNTUR
           </h1>
           <p className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] leading-4 tracking-[0.2em] text-on-surface-variant uppercase">
-            SOLO BENEFICIOS. SIN ENTRENAMIENTOS NI RUTINAS.
+            TRAINING CLUB · REGISTRO DE SOCIOS
+          </p>
+          <p className="font-[family-name:var(--font-inter)] text-sm text-on-surface-variant mt-3">
+            Creá tu cuenta para ver tu membresía y usar los beneficios de los comercios adheridos.
           </p>
         </div>
 
@@ -29,6 +32,15 @@ export default function RegistroBeneficiarioPage() {
         </div>
 
         <div className="mt-8 text-center flex flex-col gap-2">
+          <p className="font-[family-name:var(--font-inter)] text-sm text-on-surface-variant">
+            ¿Ya sos socio y figurás en Kuntur?{" "}
+            <Link
+              href="/kuntur/activar"
+              className="text-primary-container font-semibold hover:underline underline-offset-4 transition-all"
+            >
+              Activá tu cuenta
+            </Link>
+          </p>
           <p className="font-[family-name:var(--font-inter)] text-base text-on-surface-variant">
             ¿Ya tenés cuenta?{" "}
             <Link
