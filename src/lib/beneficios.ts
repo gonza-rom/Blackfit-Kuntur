@@ -143,8 +143,10 @@ export async function asegurarCredencial(id_usuario: string) {
   const existente = await prisma.credencial.findUnique({ where: { id_usuario } });
   if (existente) return existente;
   for (let intento = 0; intento < 5; intento++) {
+    // '[^0-9]' y no '\D': en un $queryRaw con template, '\\D' llega a
+    // Postgres como barra literal y la conversión a número fallaba.
     const [ultimo] = await prisma.$queryRaw<{ n: number | null }[]>`
-      select max(nullif(regexp_replace(numero_socio, '\\D', '', 'g'), '')::int) as n from credenciales`;
+      select max(nullif(regexp_replace(numero_socio, '[^0-9]', '', 'g'), '')::int) as n from credenciales`;
     const numero_socio = `K-${String((ultimo?.n ?? 0) + 1 + intento).padStart(6, "0")}`;
     try {
       return await prisma.credencial.create({ data: { id_usuario, numero_socio } });
