@@ -17,7 +17,14 @@ export default async function ComercioValidarPage() {
         </p>
       </div>
 
-      <FormValidar />
+      {contexto.usuario.comercio?.estado === "activo" ? (
+        <FormValidar />
+      ) : (
+        <div className="bg-[#1a1a1a] border border-outline-variant rounded-lg p-4 text-sm text-on-surface-variant">
+          Tu comercio todavía no está aprobado por la administración de Kuntur. Cuando lo aprueben vas a poder
+          validar beneficios desde acá (te llega una notificación).
+        </div>
+      )}
     </main>
   );
 }

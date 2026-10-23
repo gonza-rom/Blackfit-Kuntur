@@ -12,6 +12,13 @@ export function EscanerQR({ onEscaneado }: { onEscaneado: (codigo: string) => vo
   const [abierto, setAbierto] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  // El callback llega como función nueva en cada render del padre: si
+  // fuera dependencia del efecto, cada re-render cerraba y reabría la
+  // cámara (y play() interrumpido terminaba en "No se pudo acceder").
+  const onEscaneadoRef = useRef(onEscaneado);
+  useEffect(() => {
+    onEscaneadoRef.current = onEscaneado;
+  }, [onEscaneado]);
 
   useEffect(() => {
     if (!abierto) return;
@@ -34,7 +41,7 @@ export function EscanerQR({ onEscaneado }: { onEscaneado: (codigo: string) => vo
         if (resultado?.data) {
           cancelado = true;
           setAbierto(false);
-          onEscaneado(resultado.data);
+          onEscaneadoRef.current(resultado.data.trim());
           return;
         }
       }
@@ -55,8 +62,13 @@ export function EscanerQR({ onEscaneado }: { onEscaneado: (codigo: string) => vo
           await videoRef.current.play();
         }
         loop();
-      } catch {
-        setError("No se pudo acceder a la cámara. Revisá los permisos del navegador.");
+      } catch (e) {
+        if (cancelado) return;
+        setError(
+          e instanceof DOMException && e.name === "NotAllowedError"
+            ? "Permiso de cámara denegado. Habilitalo en el navegador o ingresá el DNI / número de socio."
+            : "No se pudo abrir la cámara. Ingresá el DNI, email o número de socio a mano."
+        );
       }
     }
 
@@ -67,7 +79,7 @@ export function EscanerQR({ onEscaneado }: { onEscaneado: (codigo: string) => vo
       if (raf) cancelAnimationFrame(raf);
       stream?.getTracks().forEach((t) => t.stop());
     };
-  }, [abierto, onEscaneado]);
+  }, [abierto]);
 
   return (
     <>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import { startTransition, useActionState, useRef, useState } from "react";
 import { buscarSocio, validarBeneficio } from "@/app/actions/comercio";
 import { EscanerQR } from "./escaner-qr";
 
@@ -14,15 +14,36 @@ export function FormValidar() {
   const [busqueda, buscarAction, buscando] = useActionState(buscarSocio, undefined);
   const [resultado, validarAction, validando] = useActionState(validarBeneficio, undefined);
   const [idBeneficioElegido, setIdBeneficioElegido] = useState<string | null>(null);
+  // Cada búsqueda nueva limpia lo anterior: beneficio elegido y el
+  // resultado de la validación previa (era de otra persona).
+  const [nroBusqueda, setNroBusqueda] = useState(0);
+  const [nroResultado, setNroResultado] = useState(-1);
   const formBusquedaRef = useRef<HTMLFormElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const socioEncontrado = busqueda && !("error" in busqueda) ? busqueda : null;
+  const unicoBeneficio = socioEncontrado?.beneficios.length === 1 ? socioEncontrado.beneficios[0].id_beneficio : null;
+  const elegido =
+    idBeneficioElegido && socioEncontrado?.beneficios.some((b) => b.id_beneficio === idBeneficioElegido)
+      ? idBeneficioElegido
+      : unicoBeneficio;
+  const mostrarResultado = resultado && nroResultado === nroBusqueda;
+
+  function buscar(formData: FormData) {
+    setIdBeneficioElegido(null);
+    setNroBusqueda((n) => n + 1);
+    buscarAction(formData);
+  }
+
+  function validar(formData: FormData) {
+    setNroResultado(nroBusqueda);
+    startTransition(() => validarAction(formData));
+  }
 
   return (
     <div className="flex flex-col gap-6">
       {/* Paso 1: buscar socio */}
-      <form ref={formBusquedaRef} action={buscarAction} className="flex flex-col gap-3">
+      <form ref={formBusquedaRef} action={buscar} className="flex flex-col gap-3">
         <label
           htmlFor="identificador"
           className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface uppercase"
@@ -37,7 +58,7 @@ export function FormValidar() {
             type="text"
             required
             autoFocus
-            placeholder="Escaneá el QR o ingresá DNI/email"
+            placeholder="Escaneá el QR o DNI / email / K-000123"
             className="flex-1 bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface font-[family-name:var(--font-inter)] text-base p-3 transition-colors"
           />
           <EscanerQR
@@ -105,14 +126,14 @@ export function FormValidar() {
               No tiene beneficios de tu comercio que pueda usar ahora.
             </p>
           ) : (
-            <form action={validarAction} className="flex flex-col gap-3">
+            <form action={validar} className="flex flex-col gap-3">
               <input type="hidden" name="id_usuario" value={socioEncontrado.id_usuario} />
               <div className="flex flex-col gap-2">
                 {socioEncontrado.beneficios.map((beneficio) => (
                   <label
                     key={beneficio.id_beneficio}
                     className={`flex items-center gap-3 border rounded-lg p-3 cursor-pointer transition-colors ${
-                      idBeneficioElegido === beneficio.id_beneficio
+                      elegido === beneficio.id_beneficio
                         ? "border-primary-container bg-primary-container/10"
                         : "border-outline-variant"
                     }`}
@@ -121,6 +142,7 @@ export function FormValidar() {
                       type="radio"
                       name="id_beneficio"
                       value={beneficio.id_beneficio}
+                      checked={elegido === beneficio.id_beneficio}
                       onChange={() => setIdBeneficioElegido(beneficio.id_beneficio)}
                       required
                       className="accent-[var(--color-primary-container)]"
@@ -136,7 +158,7 @@ export function FormValidar() {
               </div>
               <button
                 type="submit"
-                disabled={validando || !idBeneficioElegido}
+                disabled={validando || !elegido}
                 className="w-full bg-primary-container text-black font-[family-name:var(--font-sora)] text-[16px] font-bold h-12 rounded hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-60"
               >
                 {validando ? "Validando..." : "Validar beneficio"}
@@ -147,12 +169,12 @@ export function FormValidar() {
       )}
 
       {/* Resultado de la validación */}
-      {resultado && "error" in resultado && (
+      {mostrarResultado && "error" in resultado && (
         <p className="font-[family-name:var(--font-inter)] text-sm text-[#ffb4ab]">
           {resultado.error}
         </p>
       )}
-      {resultado && !("error" in resultado) && (
+      {mostrarResultado && !("error" in resultado) && (
         <div
           className={`rounded-lg p-5 flex flex-col items-center gap-2 text-center border ${
             resultado.resultado === "aprobado"

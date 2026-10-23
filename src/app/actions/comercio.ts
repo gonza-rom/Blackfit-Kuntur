@@ -10,7 +10,7 @@ import { registrarAuditoria } from "@/lib/auditoria";
 import { avisar } from "@/lib/aviso";
 import { subirAvatar } from "@/lib/storage";
 import { crearNotificacion } from "@/lib/notificaciones";
-import { contarUsos, evaluarUso, leerBeneficio, membresiasVigentes } from "@/lib/beneficios";
+import { evaluarUso, leerBeneficio, membresiasVigentes } from "@/lib/beneficios";
 
 // ------------------------------------------------------------
 // Nunca se expone al comercio información de entrenamiento, progreso
@@ -107,42 +107,54 @@ export async function buscarSocio(
 
   // El QR contiene el token opaco `codigo_qr_token` (se verifica acá, en
   // el servidor: ver el QR en una pantalla no alcanza). Como respaldo si
-  // falla el escaneo: DNI o email. Solo personas con credencial (socios
-  // de Kuntur o alumnos de Blackfit que entraron a Beneficios), nunca
-  // cualquier usuario de la app.
-  const usuario = await prisma.usuario.findFirst({
-    where: {
-      credencial: { isNot: null },
-      OR: [
-        { email: identificador },
-        { dni: identificador.replace(/\D/g, "") || "—" },
-        { credencial: { codigo_qr_token: identificador } },
-      ],
-    },
-    select: { id_usuario: true, nombre: true, apellido: true },
-  });
-  if (!usuario) return { error: "No se encontró ninguna credencial con ese dato." };
+  // falla el escaneo: DNI, email o número de socio (K-000123) de la
+  // credencial. Solo personas con credencial (socios de Kuntur o alumnos
+  // de Blackfit que entraron a Beneficios), nunca cualquier usuario.
+  const digitos = identificador.replace(/\D/g, "");
+  const numeroSocio = /^k-?\d+$/i.test(identificador) ? `K-${digitos.padStart(6, "0")}` : null;
+  const esToken = identificador.length >= 16 && !identificador.includes("@");
 
-  const [vigentes, beneficiosDelComercio, membresia] = await Promise.all([
-    membresiasVigentes(usuario.id_usuario),
-    prisma.beneficio.findMany({ where: { id_comercio: contexto.id_comercio, estado: "activo" } }),
-    prisma.membresia.findFirst({
-      where: { id_usuario: usuario.id_usuario, estado_membresia: "activa" },
-      orderBy: { fecha_vencimiento_membresia: "desc" },
-      include: { plan_membresia: true },
-    }),
-  ]);
+  try {
+    const usuario = await prisma.usuario.findFirst({
+      where: {
+        credencial: { isNot: null },
+        OR: [
+          ...(identificador.includes("@") ? [{ email: { equals: identificador, mode: "insensitive" as const } }] : []),
+          ...(digitos.length >= 6 && !numeroSocio ? [{ dni: digitos }] : []),
+          ...(numeroSocio ? [{ credencial: { numero_socio: numeroSocio } }] : []),
+          ...(esToken ? [{ credencial: { codigo_qr_token: identificador } }] : []),
+        ],
+      },
+      select: { id_usuario: true, nombre: true, apellido: true },
+    });
+    if (!usuario) return { error: "No se encontró ninguna credencial con ese dato." };
 
-  const beneficios: BeneficioDisponible[] = [];
-  const no_disponibles: (BeneficioDisponible & { motivo: string })[] = [];
-  for (const b of beneficiosDelComercio) {
-    const evaluacion = evaluarUso(b, vigentes, await contarUsos(usuario.id_usuario, b.id_beneficio));
-    const item = { id_beneficio: b.id_beneficio, titulo: b.titulo, descuento: b.descuento };
-    if (evaluacion.ok) beneficios.push(item);
-    else no_disponibles.push({ ...item, motivo: evaluacion.motivo });
-  }
+    const [vigentes, beneficiosDelComercio, membresia, usos] = await Promise.all([
+      membresiasVigentes(usuario.id_usuario),
+      prisma.beneficio.findMany({ where: { id_comercio: contexto.id_comercio, estado: "activo" } }),
+      prisma.membresia.findFirst({
+        where: { id_usuario: usuario.id_usuario, estado_membresia: "activa" },
+        orderBy: { fecha_vencimiento_membresia: "desc" },
+        include: { plan_membresia: true },
+      }),
+      prisma.validacionBeneficio.groupBy({
+        by: ["id_beneficio"],
+        where: { id_usuario: usuario.id_usuario, id_comercio: contexto.id_comercio, resultado: "aprobado" },
+        _count: { _all: true },
+      }),
+    ]);
+    const usosPorBeneficio = new Map(usos.map((u) => [u.id_beneficio, u._count._all]));
 
-  return {
+    const beneficios: BeneficioDisponible[] = [];
+    const no_disponibles: (BeneficioDisponible & { motivo: string })[] = [];
+    for (const b of beneficiosDelComercio) {
+      const evaluacion = evaluarUso(b, vigentes, usosPorBeneficio.get(b.id_beneficio) ?? 0);
+      const item = { id_beneficio: b.id_beneficio, titulo: b.titulo, descuento: b.descuento };
+      if (evaluacion.ok) beneficios.push(item);
+      else no_disponibles.push({ ...item, motivo: evaluacion.motivo });
+    }
+
+    return {
     id_usuario: usuario.id_usuario,
     nombre: usuario.nombre,
     apellido: usuario.apellido,
@@ -151,7 +163,11 @@ export async function buscarSocio(
     fecha_vencimiento: membresia ? membresia.fecha_vencimiento_membresia.toISOString() : null,
     beneficios,
     no_disponibles,
-  };
+    };
+  } catch (e) {
+    console.error("[comercio] buscarSocio:", e);
+    return { error: "No se pudo buscar al socio. Probá de nuevo en unos segundos." };
+  }
 }
 
 export type ResultadoValidacion =
@@ -196,24 +212,37 @@ export async function validarBeneficio(
     return { error: "No podés validar un beneficio para tu propia cuenta." };
   }
 
-  // Lock por persona + beneficio: dos validaciones simultáneas (doble toque,
-  // dos cajas) no pueden pasar ambas el límite de usos.
-  const { evaluacion } = await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`validacion:${id_usuario}:${id_beneficio}`}))`;
+  // Las membresías se consultan ANTES de abrir la transacción: hacerlo
+  // adentro usaba otra conexión del pool mientras la transacción retenía
+  // la suya, y en el hosting eso podía agotar el pool o pasarse del tiempo
+  // límite (error al tocar "Validar beneficio").
+  let evaluacion: ReturnType<typeof evaluarUso>;
+  try {
     const vigentes = await membresiasVigentes(id_usuario);
-    const usos = await tx.validacionBeneficio.count({ where: { id_usuario, id_beneficio, resultado: "aprobado" } });
-    const evaluacion = evaluarUso(beneficio, vigentes, usos);
-    await tx.validacionBeneficio.create({
-      data: {
-        id_comercio: contexto.id_comercio,
-        id_usuario,
-        id_beneficio,
-        resultado: evaluacion.ok ? "aprobado" : "rechazado",
-        motivo: evaluacion.ok ? null : evaluacion.motivo,
+    // Lock por persona + beneficio: dos validaciones simultáneas (doble
+    // toque, dos cajas) no pueden pasar ambas el límite de usos.
+    evaluacion = await prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`validacion:${id_usuario}:${id_beneficio}`}))`;
+        const usos = await tx.validacionBeneficio.count({ where: { id_usuario, id_beneficio, resultado: "aprobado" } });
+        const ev = evaluarUso(beneficio, vigentes, usos);
+        await tx.validacionBeneficio.create({
+          data: {
+            id_comercio: contexto.id_comercio,
+            id_usuario,
+            id_beneficio,
+            resultado: ev.ok ? "aprobado" : "rechazado",
+            motivo: ev.ok ? null : ev.motivo,
+          },
+        });
+        return ev;
       },
-    });
-    return { evaluacion, vigentes };
-  });
+      { maxWait: 10_000, timeout: 15_000 }
+    );
+  } catch (e) {
+    console.error("[comercio] validarBeneficio:", e);
+    return { error: "No se pudo registrar la validación. Probá de nuevo." };
+  }
 
   const resultado = evaluacion.ok ? "aprobado" : "rechazado";
   await registrarAuditoria({
@@ -265,10 +294,11 @@ function esErrorDeIntegridadReferencial(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003";
 }
 
+// Solo la administración de comercios de Kuntur revisa beneficios.
 async function avisarAdminsBeneficioPendiente(titulo: string, comercio: string, id_beneficio: string, id_comercio: string) {
   try {
     const admins = await prisma.usuario.findMany({
-      where: { roles: { some: { rol: { in: ["administrador", "admin_comercios"] } } } },
+      where: { roles: { some: { rol: "admin_comercios" } } },
       select: { id_usuario: true },
     });
     await Promise.all(

@@ -334,12 +334,13 @@ export async function registrarse(
     await otorgarLogrosManualesIniciales(nuevoUsuario.alumno.id_alumno);
   }
 
-  // Avisa a los admins que hay un comercio nuevo esperando revisión.
-  // Best-effort: nunca bloquea el alta si falla.
+  // Avisa a la administración de comercios de Kuntur (y SOLO a ella: no al
+  // administrador general ni a los coaches) que hay un comercio esperando
+  // revisión. Best-effort: nunca bloquea el alta si falla.
   if (nuevoUsuario.comercio) {
     try {
       const admins = await prisma.usuario.findMany({
-        where: { roles: { some: { rol: { in: ["administrador", "admin_comercios"] } } } },
+        where: { roles: { some: { rol: "admin_comercios" } } },
         select: { id_usuario: true },
       });
       await Promise.all(
