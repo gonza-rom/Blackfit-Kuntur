@@ -3,9 +3,17 @@ import { MAX_DIAS_SESION } from "@/lib/secuencia";
 import {
   detectarLevantamiento,
   normalizarAproximaciones,
+  normalizarPorcentajes,
+  normalizarCargasFijas,
+  semanasSinPorcentaje,
+  progresionHabilitada,
+  INTENSIDAD_SEMANA,
   SEMANAS,
   type Semana,
 } from "@/lib/progresion-fuerza";
+
+/** Error de validación del plan con un mensaje para mostrarle al coach. */
+export class ErrorPlan extends Error {}
 
 // Helpers de servidor para el contenido de un día de la planificación
 // (ejercicios individuales + bloques). Todos reciben el cliente de la
@@ -36,6 +44,9 @@ export type EjercicioDiaEntrada = {
   progresion_fuerza?: boolean;
   aproximaciones?: unknown;
   alumno_edita_aproximaciones?: boolean;
+  // { "1": "92.5", ... } y { "2": "60" } (ver EjercicioPrograma).
+  porcentajes_semana?: unknown;
+  cargas_fijas?: unknown;
 };
 
 export type GrupoDiaEntrada = {
@@ -127,8 +138,10 @@ export async function guardarContenidoDia(tx: Tx, id_bloque: string, items: Item
   // nombre de cada ejercicio (solo los 3 levantamientos pueden usarla).
   const bloque = await tx.bloqueEntrenamiento.findUnique({
     where: { id_bloque },
-    select: { semana_inicio: true, semana_fin: true },
+    select: { semana_inicio: true, semana_fin: true, programa: { select: { tipo_planificacion: true } } },
   });
+  // "Rutina fija": nunca cargas por 1RM.
+  const conProgresion = progresionHabilitada(bloque?.programa.tipo_planificacion ?? "fija");
   const semanasDelDia = SEMANAS.filter(
     (s) => s >= (bloque?.semana_inicio ?? 1) && s <= (bloque?.semana_fin ?? 4)
   ) as Semana[];
@@ -161,16 +174,35 @@ export async function guardarContenidoDia(tx: Tx, id_bloque: string, items: Item
     comun: { series: number; descanso: string | null; tempo: string | null; nota: string | null; id_grupo: string | null }
   ) {
     const progresion =
+      conProgresion &&
       Boolean(e.progresion_fuerza) &&
       comun.id_grupo === null &&
       detectarLevantamiento(nombres.get(e.id_ejercicio) ?? "") !== null;
+    if (progresion) {
+      // Nunca se inventa un %: sin el de cada semana del día, no se publica.
+      const faltante = semanasSinPorcentaje(e.porcentajes_semana, semanasDelDia)[0];
+      if (faltante !== undefined) {
+        const [min, max] = INTENSIDAD_SEMANA[faltante];
+        throw new ErrorPlan(
+          `${nombres.get(e.id_ejercicio) ?? "Ejercicio"}: completá el % de la semana ${faltante} (entre ${min} y ${max}) antes de guardar.`
+        );
+      }
+    }
     const data = {
       id_ejercicio: e.id_ejercicio,
-      // En progresión hay UNA serie efectiva (las aproximaciones van aparte).
-      series: progresion ? 1 : comun.series,
+      // En progresión, `series` = series efectivas (las aproximaciones van aparte).
+      series: comun.series,
+      // En "Rutina fija" (o en un ejercicio sin 1RM de referencia) queda
+      // como un ejercicio común, con las cargas que ponga el coach.
       progresion_fuerza: progresion,
       aproximaciones: progresion
         ? (normalizarAproximaciones(e.aproximaciones, semanasDelDia) as Prisma.InputJsonValue)
+        : Prisma.DbNull,
+      porcentajes_semana: progresion
+        ? (normalizarPorcentajes(e.porcentajes_semana, semanasDelDia) as Prisma.InputJsonValue)
+        : Prisma.DbNull,
+      cargas_fijas: progresion
+        ? (normalizarCargasFijas(e.cargas_fijas, semanasDelDia) as Prisma.InputJsonValue)
         : Prisma.DbNull,
       alumno_edita_aproximaciones: e.alumno_edita_aproximaciones !== false,
       repeticiones: e.repeticiones.trim(),
@@ -299,6 +331,8 @@ type EjercicioClonable = {
   progresion_fuerza: boolean;
   aproximaciones: Prisma.JsonValue;
   alumno_edita_aproximaciones: boolean;
+  porcentajes_semana: Prisma.JsonValue;
+  cargas_fijas: Prisma.JsonValue;
 };
 
 type GrupoClonable = {
@@ -326,6 +360,9 @@ function datosEjercicio(ep: EjercicioClonable) {
     aproximaciones:
       ep.aproximaciones === null ? Prisma.DbNull : (ep.aproximaciones as Prisma.InputJsonValue),
     alumno_edita_aproximaciones: ep.alumno_edita_aproximaciones,
+    porcentajes_semana:
+      ep.porcentajes_semana === null ? Prisma.DbNull : (ep.porcentajes_semana as Prisma.InputJsonValue),
+    cargas_fijas: ep.cargas_fijas === null ? Prisma.DbNull : (ep.cargas_fijas as Prisma.InputJsonValue),
   };
 }
 

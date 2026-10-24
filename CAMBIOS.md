@@ -1,3 +1,55 @@
+# Membresías del coach, bloqueo total y progresión semanal por 1RM
+
+Migración: `prisma/migrations/20261025000000_membresias_coach_y_fuerza_rm/`
+(solo agrega columnas nulas o con default; no reescribe ni borra datos).
+Aplicarla con `npx prisma migrate deploy` después de respaldar la base.
+
+## Membresías (Blackfit)
+- El coach elige de 1 a 30 días (30 sugerido) en "Activar membresía" /
+  "Renovar membresía" (`activar-membresia.tsx`): ve nombre, duración,
+  inicio y vencimiento antes de "Confirmar activación". Duración exacta
+  N × 24 h con la hora del servidor (`calcularPeriodoMembresia`).
+- Renovación anticipada: los días se suman al vencimiento vigente. Vencida
+  o suspendida: empieza ahora. Cada operación crea una membresía nueva con
+  `dias_contratados`, `tipo_operacion`, `id_usuario_operador`; la
+  `clave_operacion` única evita sumar días dos veces.
+- Suspender / Reanudar desde la ficha del alumno (estado `suspendida`,
+  con fecha, autor y motivo). El vencimiento no se corre.
+- Columna "Membresía": días reales, Sin membresía, Vencida, Suspendida. En
+  móvil la lista pasa a tarjetas (sin columnas cortadas). Historial de
+  activaciones en la ficha.
+
+## Bloqueo del entrenamiento
+- Regla única `resumenMembresiaBlackfit` / `estadoAccesoEntrenamiento`:
+  solo "activa y vigente" entrena. Sin membresía, vencida o suspendida →
+  solo perfil personal (editable). Sin excepciones por rol.
+- Bloqueados también historial, progreso, logros y estadísticas
+  (`exigirMembresiaActiva` en cada página; `obtenerAlumnoActual` rechaza
+  toda acción; `/api/entrenamiento` responde 403 y la sesión offline queda
+  en cola sin perderse).
+- `/membresia-vencida` muestra el mensaje de cada caso.
+- `VigilanteMembresia` refresca la app al vencer, al volver del segundo
+  plano y cada 60 s.
+- El catálogo de beneficios ya no depende de la membresía de
+  entrenamiento (el uso lo sigue decidiendo `evaluarUso`). Kuntur sin cambios.
+
+## Progresión semanal (fuerza por 1RM)
+- Rangos: S1 Pesada 90–95, S2 Deload 60–65, S3 Intermedia 70–75,
+  S4 Preparación 80–85. El coach fija el % exacto por ejercicio y semana
+  (`porcentajes_semana`); sin % no se guarda el día (cliente y servidor).
+- Carga = 1RM vigente × %, redondeada según `Entrenador.redondeo_carga_kg`
+  (Coach → Perfil). Carga fija opcional por semana (`cargas_fijas`), que
+  no se recalcula. Series efectivas configurables.
+- Semana por calendario desde `fecha_inicio_ciclo` (se registra al
+  publicar); después de la 4 vuelve a la 1. Pausar / Reanudar / Reiniciar
+  en la pestaña Planificación (auditado). Renovar la membresía no lo toca.
+- "Rutina fija" nunca calcula cargas por 1RM; "Personalizada" solo en los
+  ejercicios donde el coach la activa.
+- 1RM: fuente (medido/estimado), valor anterior, estado. El alumno puede
+  proponer (Entrenar → Mis 1RM); rige solo si el coach lo valida. Al
+  actualizar, el coach ve qué cargas cambian y confirma el recálculo.
+  Entrenamientos hechos y cargas reales nunca cambian.
+
 # Cambios de esta entrega
 
 ## 1. Gamificación — objetivos, puntos diarios y logros

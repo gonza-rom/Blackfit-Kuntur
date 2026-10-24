@@ -2,7 +2,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { estadoAccesoMembresia } from "@/lib/membresia";
+import { obtenerMembresiaBlackfit, type EstadoMembresiaBlackfit } from "@/lib/membresia";
 import type {
   RolUsuario,
   Usuario,
@@ -99,25 +99,38 @@ export const obtenerEntrenadorActual = cache(
   }
 );
 
-// Alumno con la membresía vencida: conserva su cuenta y todos sus datos,
-// pero pierde el acceso funcional — /panel lo manda a /membresia-vencida
-// y obtenerAlumnoActual() le devuelve null, así toda server action / API
-// de alumno lo rechaza aunque la llame directo. Coaches y admins que
-// además sean alumnos no se bloquean (necesitan la app para trabajar).
+// Acceso al ENTRENAMIENTO de Blackfit: solo con una membresía activa,
+// vigente y no suspendida. Aplica a TODOS los alumnos, sin excepciones
+// (un coach o admin que además es alumno tampoco entrena sin membresía:
+// su panel de trabajo vive en /coach y /admin, que no se bloquean).
+// Sin acceso, el alumno conserva su cuenta, su perfil personal y todos sus
+// datos — /panel lo manda a /membresia-vencida y obtenerAlumnoActual() le
+// devuelve null, así toda server action / API de entrenamiento lo rechaza
+// aunque la llame directo. Se evalúa en cada request (nunca se cachea
+// entre requests), así el vencimiento corta el acceso en el momento.
+export type EstadoAccesoEntrenamiento = "permitido" | Exclude<EstadoMembresiaBlackfit, "activa">;
+
+export const estadoAccesoEntrenamiento = cache(
+  async (usuario: UsuarioActual): Promise<EstadoAccesoEntrenamiento> => {
+    if (!tieneRol(usuario, "alumno") || !usuario.alumno) return "permitido";
+    const { estado } = await obtenerMembresiaBlackfit(usuario.id_usuario);
+    return estado === "activa" ? "permitido" : estado;
+  }
+);
+
 export const accesoAlumnoBloqueado = cache(
   async (usuario: UsuarioActual): Promise<boolean> => {
-    if (!tieneRol(usuario, "alumno") || !usuario.alumno) return false;
-    if (tieneRol(usuario, "entrenador") || tieneAccesoAdmin(usuario)) return false;
-    return (await estadoAccesoMembresia(usuario.id_usuario)) === "vencida";
+    return (await estadoAccesoEntrenamiento(usuario)) !== "permitido";
   }
 );
 
 /**
  * Pantallas de ENTRENAMIENTO (Inicio, Entrenar, sesión, planificación,
- * mensajes, hábitos...): con la membresía vencida, al aviso de
- * renovación. Se llama en cada página (no solo en el layout: en Next los
- * layouts no se vuelven a ejecutar al navegar dentro de la app, así que
- * un link guardado o una pantalla ya cargada podría saltear el bloqueo).
+ * historial, progreso, logros, hábitos...): sin membresía vigente, a la
+ * pantalla de bloqueo. Se llama en cada página (no solo en el layout: en
+ * Next los layouts no se vuelven a ejecutar al navegar dentro de la app,
+ * así que un link guardado o una pantalla ya cargada podría saltear el
+ * bloqueo).
  */
 export async function exigirMembresiaActiva(): Promise<void> {
   const usuario = await obtenerUsuarioActual();
@@ -125,11 +138,10 @@ export async function exigirMembresiaActiva(): Promise<void> {
 }
 
 /**
- * Consultas de SOLO LECTURA que siguen disponibles con la membresía
- * vencida (perfil, logros, historial de entrenamientos, progreso y
- * fotos). Devuelve el alumno aunque esté bloqueado, con `bloqueado` para
- * que la pantalla oculte toda acción de edición. Las acciones del
- * servidor siguen usando obtenerAlumnoActual(), que lo rechaza.
+ * Alumno aunque no tenga acceso al entrenamiento, con `bloqueado` para que
+ * la pantalla (solo el PERFIL personal) oculte todo dato de entrenamiento.
+ * Las acciones de entrenamiento siguen usando obtenerAlumnoActual(), que
+ * lo rechaza.
  */
 export const obtenerAlumnoLectura = cache(
   async (): Promise<{ usuario: UsuarioActual; id_alumno: string; bloqueado: boolean } | null> => {

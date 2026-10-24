@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { obtenerAlumnoActual } from "@/lib/auth";
+import { obtenerAlumnoActual, obtenerUsuarioActual, accesoAlumnoBloqueado } from "@/lib/auth";
 import { avisar } from "@/lib/aviso";
 import { guardarSesionEntrenamiento, type SerieRegistrada } from "@/lib/alumno";
 
@@ -11,6 +11,13 @@ import { guardarSesionEntrenamiento, type SerieRegistrada } from "@/lib/alumno";
 export async function POST(request: Request) {
   const contexto = await obtenerAlumnoActual();
   if (!contexto) {
+    // Sin sesión → 401. Con sesión pero sin membresía vigente → 403: la
+    // sesión queda en la cola del teléfono (no se pierde) y se sincroniza
+    // cuando el coach active o renueve la membresía.
+    const usuario = await obtenerUsuarioActual();
+    if (usuario && (await accesoAlumnoBloqueado(usuario))) {
+      return NextResponse.json({ error: "Tu membresía de entrenamiento no está activa." }, { status: 403 });
+    }
     return NextResponse.json({ error: "No autorizado." }, { status: 401 });
   }
 

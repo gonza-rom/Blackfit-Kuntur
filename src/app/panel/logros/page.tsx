@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { obtenerAlumnoLectura } from "@/lib/auth";
+import { obtenerAlumnoLectura, exigirMembresiaActiva } from "@/lib/auth";
 import { evaluarLogros } from "@/lib/gamificacion";
 
 const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
@@ -25,6 +25,9 @@ const ETIQUETA_TIPO_OBJETIVO: Record<string, string> = {
 
 export default async function LogrosPage() {
   // Disponible con la membresía vencida (solo consulta).
+  // Historial, progreso y logros son parte del servicio de entrenamiento:
+  // sin membresía vigente, a la pantalla de bloqueo (solo queda el perfil).
+  await exigirMembresiaActiva();
   const contexto = await obtenerAlumnoLectura();
 
   if (!contexto) {

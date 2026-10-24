@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { establecerTipoPlanificacion, crearGrupoSemanas } from "@/app/actions/coach";
+import { establecerTipoPlanificacion, crearGrupoSemanas, controlarCicloFuerza } from "@/app/actions/coach";
+import { ConfirmForm } from "@/components/confirm-form";
 import { BotonEliminarGrupo } from "./boton-eliminar-grupo";
 import { MAX_DIAS_SESION, nombrePropioSesion } from "@/lib/secuencia";
 
@@ -17,14 +18,27 @@ export type FilaSeguimiento = {
 };
 
 const TIPOS: { valor: string; etiqueta: string; ayuda: string }[] = [
-  { valor: "fija", etiqueta: "Rutina fija", ayuda: "1 semana se repite en las 4" },
-  { valor: "semanal", etiqueta: "Progresión semanal", ayuda: "las 4 semanas son distintas" },
+  { valor: "fija", etiqueta: "Rutina fija", ayuda: "1 semana se repite en las 4 · cargas que ponés vos" },
+  {
+    valor: "semanal",
+    etiqueta: "Progresión semanal",
+    ayuda: "bloque de fuerza de 4 semanas que se repite · cargas automáticas con el 1RM",
+  },
   {
     valor: "personalizada",
     etiqueta: "Personalizada",
     ayuda: "agrupá las semanas como quieras (2+2, 3+1, ...)",
   },
 ];
+
+// Estado del ciclo de 4 semanas (solo Progresión semanal).
+export type InfoCiclo = {
+  inicioLabel: string;
+  semana: number;
+  nombreSemana: string;
+  ciclo: number;
+  pausado: boolean;
+};
 
 type Bloque = {
   id_bloque: string;
@@ -43,6 +57,7 @@ export function PlanificacionTab({
   bloques,
   seguimiento,
   completadas,
+  ciclo,
 }: {
   idAlumno: string;
   idPrograma: string;
@@ -51,6 +66,7 @@ export function PlanificacionTab({
   bloques: Bloque[];
   seguimiento: FilaSeguimiento[];
   completadas: number;
+  ciclo: InfoCiclo;
 }) {
   // Sesiones numeradas (Día 1, Día 2, ...). Los bloques sin número son de
   // la planificación vieja por tramos y se ven en la pantalla del programa.
@@ -141,6 +157,59 @@ export function PlanificacionTab({
           ))}
         </div>
       </section>
+
+      {tipoPlanificacion === "semanal" && (
+        <section className="bg-[#1A1A1A] border border-primary-container/40 rounded-xl p-4 flex flex-col gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="flex flex-col gap-0.5">
+              <span className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] text-on-surface-variant uppercase">
+                Ciclo de fuerza
+              </span>
+              <span className="font-[family-name:var(--font-sora)] text-base font-bold text-on-surface">
+                Semana {ciclo.semana} de 4 · {ciclo.nombreSemana}
+                <span className="text-on-surface-variant font-normal"> · ciclo {ciclo.ciclo}</span>
+              </span>
+              <span className="text-xs text-on-surface-variant">
+                Inicio del ciclo: {ciclo.inicioLabel}
+                {ciclo.pausado ? " · en pausa (la semana no avanza)" : ""}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <form action={controlarCicloFuerza}>
+                <input type="hidden" name="id_programa" value={idPrograma} />
+                <input type="hidden" name="accion" value={ciclo.pausado ? "reanudar" : "pausar"} />
+                <button
+                  type="submit"
+                  className="font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] uppercase px-3 py-2 rounded-full border border-outline-variant text-on-surface"
+                >
+                  {ciclo.pausado ? "Reanudar" : "Pausar"}
+                </button>
+              </form>
+              <ConfirmForm
+                action={controlarCicloFuerza}
+                titulo="Reiniciar ciclo"
+                mensaje="¿Reiniciar el ciclo? Hoy pasa a ser la semana 1. Los entrenamientos ya hechos no cambian."
+                confirmLabel="Reiniciar"
+              >
+                <input type="hidden" name="id_programa" value={idPrograma} />
+                <input type="hidden" name="accion" value="reiniciar" />
+                <button
+                  type="submit"
+                  className="font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] uppercase px-3 py-2 rounded-full border border-outline-variant text-on-surface"
+                >
+                  Reiniciar
+                </button>
+              </ConfirmForm>
+            </div>
+          </div>
+          <p className="text-[11px] text-on-surface-variant">
+            Semana 1 Pesada (90–95 %) · Semana 2 Deload (60–65 %) · Semana 3 Intermedia (70–75 %) · Semana 4
+            Preparación (80–85 %). Cada 7 días avanza una semana y después de la 4 vuelve a la 1. En cada
+            sentadilla, press de banca o peso muerto activá &quot;Carga automática por 1RM&quot; y fijá el % exacto de
+            cada semana.
+          </p>
+        </section>
+      )}
 
       {grupos.length === 0 ? (
         <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 text-on-surface-variant text-sm">

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { obtenerAlumnoLectura } from "@/lib/auth";
+import { obtenerAlumnoLectura, exigirMembresiaActiva } from "@/lib/auth";
 import { urlesFirmadasFotos } from "@/lib/storage";
 import { FormProgresoFisico } from "./_components/form-progreso-fisico";
 import { FormMedidaCorporal } from "./_components/form-medida-corporal";
@@ -32,6 +32,9 @@ const CAMPOS_EXTRA: { campo: string; label: string; unit: string }[] = [
 
 export default async function ProgresoFisicoPage() {
   // Disponible con la membresía vencida, pero solo para consultar.
+  // Historial, progreso y logros son parte del servicio de entrenamiento:
+  // sin membresía vigente, a la pantalla de bloqueo (solo queda el perfil).
+  await exigirMembresiaActiva();
   const contexto = await obtenerAlumnoLectura();
   if (!contexto) redirect("/panel");
 

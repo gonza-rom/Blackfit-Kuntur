@@ -13,7 +13,17 @@ import {
   type RmPorLevantamiento,
 } from "./_components/form-dia-plan";
 import { normalizarAproximaciones } from "@/lib/progresion-fuerza";
-import { obtenerRmVigentes } from "@/lib/rm-referencia";
+import { obtenerRmVigentes, obtenerPasoRedondeo } from "@/lib/rm-referencia";
+
+// % / cargas guardados ({ "1": 92.5 }) → texto para los inputs del editor.
+function valoresATexto(crudo: unknown): Record<string, string> {
+  if (!crudo || typeof crudo !== "object") return {};
+  return Object.fromEntries(
+    Object.entries(crudo as Record<string, unknown>)
+      .filter(([, v]) => v !== null && v !== undefined && v !== "")
+      .map(([k, v]) => [k, String(v)])
+  );
+}
 
 // Links viejos (?dia=lunes): se traducen al número de sesión que les tocó
 // en la migración a sesiones secuenciales.
@@ -89,7 +99,10 @@ export default async function DiaPlanPage(
   });
   if (!alumno) notFound();
 
-  const vigentes = await obtenerRmVigentes(id_alumno);
+  const [vigentes, pasoRedondeo] = await Promise.all([
+    obtenerRmVigentes(id_alumno),
+    obtenerPasoRedondeo(contexto.id_entrenador),
+  ]);
   const rmVigentes: RmPorLevantamiento = Object.fromEntries(
     Object.entries(vigentes).flatMap(([l, rm]) => (rm ? [[l, rm.valor]] : []))
   );
@@ -137,6 +150,8 @@ export default async function DiaPlanPage(
       ])
     ),
     alumno_edita_aproximaciones: ep.alumno_edita_aproximaciones,
+    porcentajes_semana: valoresATexto(ep.porcentajes_semana),
+    cargas_fijas: valoresATexto(ep.cargas_fijas),
   });
 
   const itemsIniciales: ItemInicial[] = diaExistente
@@ -180,6 +195,8 @@ export default async function DiaPlanPage(
         itemsIniciales={itemsIniciales}
         opcionesSemanas={opcionesSemanas}
         rmVigentes={rmVigentes}
+        tipoPlanificacion={programa.tipo_planificacion}
+        pasoRedondeo={pasoRedondeo}
       />
     </main>
   );

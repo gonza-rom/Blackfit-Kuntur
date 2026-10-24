@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { etiquetaSesion } from "@/lib/secuencia";
 import { prisma } from "@/lib/prisma";
-import { obtenerAlumnoLectura } from "@/lib/auth";
+import { obtenerAlumnoLectura, exigirMembresiaActiva } from "@/lib/auth";
 import { BotonEliminarEntrenamiento } from "./_components/boton-eliminar-entrenamiento";
 
 const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
@@ -14,6 +14,9 @@ const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
 
 export default async function HistorialPage() {
   // Disponible con la membresía vencida, pero solo para consultar.
+  // Historial, progreso y logros son parte del servicio de entrenamiento:
+  // sin membresía vigente, a la pantalla de bloqueo (solo queda el perfil).
+  await exigirMembresiaActiva();
   const contexto = await obtenerAlumnoLectura();
   if (!contexto) redirect("/panel");
 

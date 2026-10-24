@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath, updateTag } from "next/cache";
 import { Prisma } from "@prisma/client";
 import type {
+  Membresia,
   EstadoPrograma,
   TipoObjetivo,
   EstadoObjetivo,
@@ -27,12 +28,13 @@ import { subirFotoProgreso } from "@/lib/storage";
 import { extraerComposicionDeTexto, extraerFechaDeTexto } from "@/lib/parseo-composicion-corporal";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { urlSegura } from "@/lib/video";
-import { NOMBRE_LEVANTAMIENTO, type Levantamiento } from "@/lib/progresion-fuerza";
-import { obtenerRmVigentes } from "@/lib/rm-referencia";
+import { NOMBRE_LEVANTAMIENTO, PASOS_REDONDEO, type Levantamiento } from "@/lib/progresion-fuerza";
+import { obtenerRmVigentes, cargasAfectadasPorRm } from "@/lib/rm-referencia";
 import {
-  calcularVencimiento30Dias,
-  membresiaVigente,
-  DIAS_MEMBRESIA_COACH,
+  calcularPeriodoMembresia,
+  diasMembresiaValidos,
+  DIAS_MEMBRESIA_MIN,
+  DIAS_MEMBRESIA_MAX,
   obtenerPlanBlackfit,
 } from "@/lib/membresia";
 import {
@@ -40,6 +42,7 @@ import {
   numeroDiaValido,
   guardarContenidoDia,
   clonarEjerciciosEnDia,
+  ErrorPlan,
   INCLUDE_DIA_CLONABLE,
   type ItemDiaEntrada,
 } from "@/lib/plan-dia-server";
@@ -75,11 +78,26 @@ export async function actualizarPerfilEntrenador(
   const biografia = String(formData.get("biografia") ?? "").trim() || null;
   const alias_pago = String(formData.get("alias_pago") ?? "").trim() || null;
   const mensaje_membresia = String(formData.get("mensaje_membresia") ?? "").trim() || null;
+  // Redondeo de las cargas calculadas con el 1RM (según los discos del gimnasio).
+  const redondeoCrudo = Number(String(formData.get("redondeo_carga_kg") ?? "").replace(",", "."));
+  const redondeo_carga_kg = (PASOS_REDONDEO as readonly number[]).includes(redondeoCrudo)
+    ? redondeoCrudo
+    : undefined;
 
   await prisma.entrenador.update({
     where: { id_entrenador: contexto.id_entrenador },
-    data: { especialidad, biografia, alias_pago, mensaje_membresia },
+    data: {
+      especialidad,
+      biografia,
+      alias_pago,
+      mensaje_membresia,
+      ...(redondeo_carga_kg !== undefined ? { redondeo_carga_kg } : {}),
+    },
   });
+  if (redondeo_carga_kg !== undefined) {
+    // Las cargas se calculan al mostrar el plan: cambian en las próximas sesiones.
+    revalidatePath("/panel/entrenamientos");
+  }
 
   await avisar("Perfil actualizado.");
   revalidatePath("/coach/perfil");
@@ -260,125 +278,266 @@ export async function desvincularAlumno(formData: FormData): Promise<void> {
   redirect("/coach/alumnos");
 }
 
-// "Me pagó → activo 30 días → listo." El pago es por fuera de la
-// plataforma; el coach solo confirma y el sistema calcula todo: inicio =
-// ahora, vencimiento = 30 días corridos (ver calcularVencimiento30Dias).
-// Crea una membresía NUEVA en vez de pisar la anterior, así queda el
-// historial completo de renovaciones.
-export async function activarMembresia30Dias(formData: FormData): Promise<void> {
-  const contexto = await obtenerEntrenadorActual();
-  if (!contexto) return;
+// ------------------------------------------------------------
+// MEMBRESÍAS DE BLACKFIT (desde el panel del coach)
+// El pago es por fuera de la plataforma; el coach elige de 1 a 30 días y
+// confirma, y el sistema calcula todo con la hora del servidor. Cada
+// activación/renovación crea una membresía NUEVA (nunca pisa la anterior),
+// así queda el historial completo con quién la hizo y por cuántos días.
+// ------------------------------------------------------------
 
-  const id_alumno = String(formData.get("id_alumno") ?? "");
-  if (!id_alumno) return;
+export type EstadoMembresiaCoach = { error?: string; message?: string; ok?: boolean } | undefined;
 
+/** Relación activa coach↔alumno con el usuario del alumno, o null. */
+async function relacionActivaConAlumno(id_entrenador: string, id_alumno: string) {
   const relacion = await prisma.relacionEntrenadorAlumno.findUnique({
-    where: {
-      id_entrenador_id_alumno: { id_entrenador: contexto.id_entrenador, id_alumno },
-    },
+    where: { id_entrenador_id_alumno: { id_entrenador, id_alumno } },
     include: { alumno: { include: { usuario: true } } },
   });
-  if (!relacion || relacion.estado_relacion !== "activa") return;
+  return relacion?.estado_relacion === "activa" ? relacion : null;
+}
 
+function revalidarMembresia(id_alumno: string) {
+  revalidatePath("/coach/alumnos");
+  revalidatePath(`/coach/alumnos/${id_alumno}`);
+  // El alumno recupera (o pierde) el acceso en su próxima carga: sus
+  // pantallas leen el estado real de la membresía en cada request.
+  revalidatePath("/panel", "layout");
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Activa o renueva la membresía de Blackfit por 1 a 30 días.
+ * - Vigente: los días se suman a su vencimiento (no se pierde ninguno).
+ * - Vencida, suspendida o sin membresía: el período empieza ahora.
+ */
+export async function activarMembresiaBlackfit(
+  _prev: EstadoMembresiaCoach,
+  formData: FormData
+): Promise<EstadoMembresiaCoach> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const id_alumno = String(formData.get("id_alumno") ?? "");
+  const dias = diasMembresiaValidos(formData.get("dias"));
+  const claveCruda = String(formData.get("clave_operacion") ?? "");
+  const clave_operacion = UUID.test(claveCruda) ? claveCruda : null;
+  if (!id_alumno) return { error: "Datos inválidos." };
+  if (dias === null) {
+    return { error: `Elegí una duración entre ${DIAS_MEMBRESIA_MIN} y ${DIAS_MEMBRESIA_MAX} días.` };
+  }
+
+  const relacion = await relacionActivaConAlumno(contexto.id_entrenador, id_alumno);
+  if (!relacion) return { error: "Ese alumno no está vinculado a tu cartera." };
   const id_usuario = relacion.alumno.id_usuario;
 
-  // Siempre el plan de BLACKFIT: antes se reusaba el primer plan de 30
-  // días, que era "Kuntur Mensual", y las membresías quedaban mezcladas.
+  // Siempre el plan de BLACKFIT: nunca se mezcla con las membresías de Kuntur.
   const { id_plan_membresia } = await obtenerPlanBlackfit();
 
-  const ahora = new Date();
-  // Una sola renovación por vez y por alumno: el lock serializa pedidos
-  // simultáneos (doble clic, dos pestañas) y la ventana de 2 minutos
-  // descarta el pedido repetido. Así nunca se suman 60 días por error.
-  const resultado = await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`membresia:${id_usuario}`}))`;
+  let resultado: { repetida: true } | { repetida: false; membresia: Membresia; renovacion: boolean };
+  try {
+    // Una operación por vez y por alumno: el lock serializa pedidos
+    // simultáneos (doble clic, dos pestañas) y clave_operacion (única)
+    // descarta el mismo pedido repetido. Así nunca se suman días de más.
+    resultado = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`membresia:${id_usuario}`}))`;
 
-    const reciente = await tx.membresia.findFirst({
-      where: {
-        id_usuario,
-        plan_membresia: { organizacion: "blackfit" },
-        fecha_creacion: { gte: new Date(ahora.getTime() - 2 * 60 * 1000) },
-      },
-      select: { id_membresia: true },
+      if (clave_operacion) {
+        const ya = await tx.membresia.findUnique({ where: { clave_operacion }, select: { id_membresia: true } });
+        if (ya) return { repetida: true as const };
+      }
+
+      const ahora = new Date();
+      const vigentes = await tx.membresia.findMany({
+        where: {
+          id_usuario,
+          estado_membresia: "activa",
+          fecha_vencimiento_membresia: { gt: ahora },
+          plan_membresia: { organizacion: "blackfit" },
+        },
+        select: { fecha_vencimiento_membresia: true },
+      });
+      const vencimientoVigente = vigentes.length
+        ? new Date(Math.max(...vigentes.map((m) => m.fecha_vencimiento_membresia.getTime())))
+        : null;
+      const periodo = calcularPeriodoMembresia(dias, vencimientoVigente, ahora);
+
+      // Las que quedaron "activa" con la fecha ya pasada pasan a "vencida",
+      // así el historial refleja lo que realmente ocurrió.
+      await tx.membresia.updateMany({
+        where: {
+          id_usuario,
+          estado_membresia: "activa",
+          fecha_vencimiento_membresia: { lte: ahora },
+          plan_membresia: { organizacion: "blackfit" },
+        },
+        data: { estado_membresia: "vencida" },
+      });
+      const membresia = await tx.membresia.create({
+        data: {
+          id_usuario,
+          id_plan_membresia,
+          estado_membresia: "activa",
+          fecha_inicio_membresia: periodo.inicio,
+          fecha_vencimiento_membresia: periodo.vencimiento,
+          dias_contratados: dias,
+          tipo_operacion: periodo.renovacion ? "renovacion" : "activacion",
+          id_usuario_operador: contexto.usuario.id_usuario,
+          clave_operacion,
+        },
+      });
+      return { repetida: false as const, membresia, renovacion: periodo.renovacion };
     });
-    if (reciente) return { duplicada: true as const };
-
-    const vigentes = (
-      await tx.membresia.findMany({
-        where: { id_usuario, estado_membresia: "activa", plan_membresia: { organizacion: "blackfit" } },
-        select: { estado_membresia: true, fecha_vencimiento_membresia: true },
-      })
-    ).filter(membresiaVigente);
-    // Vencida (o nunca tuvo): 30 días desde AHORA. Todavía activa
-    // (renovación anticipada): los 30 días empiezan cuando termina el
-    // período actual, así no pierde ningún día de lo que ya pagó.
-    const finActual = vigentes.length
-      ? new Date(Math.max(...vigentes.map((m) => m.fecha_vencimiento_membresia.getTime())))
-      : null;
-    const inicio = finActual ?? ahora;
-    const vencimiento = finActual
-      ? new Date(finActual.getTime() + DIAS_MEMBRESIA_COACH * 24 * 60 * 60 * 1000)
-      : calcularVencimiento30Dias(ahora);
-
-    // Las que quedaron "activa" con la fecha ya pasada pasan a "vencida",
-    // así el historial refleja lo que realmente ocurrió.
-    await tx.membresia.updateMany({
-      where: {
-        id_usuario,
-        estado_membresia: "activa",
-        fecha_vencimiento_membresia: { lte: ahora },
-        plan_membresia: { organizacion: "blackfit" },
-      },
-      data: { estado_membresia: "vencida" },
-    });
-    const membresia = await tx.membresia.create({
-      data: {
-        id_usuario,
-        id_plan_membresia,
-        estado_membresia: "activa",
-        fecha_inicio_membresia: inicio,
-        fecha_vencimiento_membresia: vencimiento,
-      },
-    });
-    return { duplicada: false as const, membresia, renovacionAnticipada: finActual !== null };
-  });
-
-  if (resultado.duplicada) {
-    await avisar("La membresía ya se renovó recién. No se sumaron días de nuevo.", "info");
-    revalidatePath("/coach/alumnos");
-    revalidatePath(`/coach/alumnos/${id_alumno}`);
-    return;
+  } catch (e) {
+    // Dos envíos simultáneos con la misma clave: el segundo choca con el
+    // índice único. El primero ya la guardó.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      resultado = { repetida: true };
+    } else {
+      console.error("[coach] activarMembresiaBlackfit:", e);
+      return { error: "No se pudo guardar la membresía. Probá de nuevo." };
+    }
   }
-  const { membresia } = resultado;
+
+  if (resultado.repetida) {
+    revalidarMembresia(id_alumno);
+    return { ok: true, message: "Esa operación ya se había registrado. No se sumaron días de nuevo." };
+  }
+  const { membresia, renovacion } = resultado;
+  const textoDias = `${dias} día${dias === 1 ? "" : "s"}`;
 
   await registrarAuditoria({
     id_usuario_actor: contexto.usuario.id_usuario,
     accion: "cambio_membresia",
     recurso: "membresia",
     id_recurso: membresia.id_membresia,
-    resultado: resultado.renovacionAnticipada ? "renovada_30_dias_anticipada" : "activada_30_dias_por_coach",
-  });
+    resultado: `${renovacion ? "renovada" : "activada"}_${dias}_dias_por_coach`,
+  }).catch(() => {});
 
   await crearNotificacion({
     id_usuario,
-    titulo: resultado.renovacionAnticipada ? "Membresía renovada" : "Membresía activada",
-    contenido: resultado.renovacionAnticipada
-      ? `Tu coach renovó tu membresía: ${DIAS_MEMBRESIA_COACH} días más al terminar tu período actual.`
-      : `Tu coach activó ${DIAS_MEMBRESIA_COACH} días de acceso. ¡A entrenar!`,
+    titulo: renovacion ? "Membresía renovada" : "Membresía activada",
+    contenido: renovacion
+      ? `Tu coach renovó tu membresía: ${textoDias} más al terminar tu período actual.`
+      : `Tu coach activó ${textoDias} de acceso a tu entrenamiento. ¡A entrenar!`,
     tipo: "membresia_activada",
     url: "/panel",
   }).catch(() => {});
 
-  await avisar(
-    resultado.renovacionAnticipada
-      ? `Membresía renovada: ${DIAS_MEMBRESIA_COACH} días más para ${relacion.alumno.usuario.nombre}.`
-      : `Membresía activada: ${DIAS_MEMBRESIA_COACH} días para ${relacion.alumno.usuario.nombre}.`
-  );
-  revalidatePath("/coach/alumnos");
-  revalidatePath(`/coach/alumnos/${id_alumno}`);
-  // El alumno recupera el acceso en su próxima carga: sus pantallas leen
-  // el estado real de la membresía en cada request.
-  revalidatePath("/panel", "layout");
+  const mensaje = renovacion
+    ? `Membresía renovada: ${textoDias} más para ${relacion.alumno.usuario.nombre}.`
+    : `Membresía activada: ${textoDias} para ${relacion.alumno.usuario.nombre}.`;
+  await avisar(mensaje);
+  revalidarMembresia(id_alumno);
+  return { ok: true, message: mensaje };
+}
+
+/**
+ * Suspensión manual: bloquea el entrenamiento sin borrar nada (perfil,
+ * planificación e historial quedan intactos). Se distingue del vencimiento
+ * automático por el estado "suspendida" y la fecha/autor de la suspensión.
+ * El vencimiento no se corre: si se reanuda dentro del período, sigue
+ * hasta la misma fecha.
+ */
+export async function suspenderMembresiaBlackfit(formData: FormData): Promise<void> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return;
+  const id_alumno = String(formData.get("id_alumno") ?? "");
+  const motivo = String(formData.get("motivo") ?? "").trim().slice(0, 200) || null;
+  const relacion = id_alumno ? await relacionActivaConAlumno(contexto.id_entrenador, id_alumno) : null;
+  if (!relacion) return;
+
+  const ahora = new Date();
+  const vigentes = await prisma.membresia.findMany({
+    where: {
+      id_usuario: relacion.alumno.id_usuario,
+      estado_membresia: "activa",
+      fecha_vencimiento_membresia: { gt: ahora },
+      plan_membresia: { organizacion: "blackfit" },
+    },
+    select: { id_membresia: true },
+  });
+  if (vigentes.length === 0) {
+    await avisar("No tiene una membresía activa para suspender.", "info");
+    return;
+  }
+  await prisma.membresia.updateMany({
+    where: { id_membresia: { in: vigentes.map((m) => m.id_membresia) } },
+    data: {
+      estado_membresia: "suspendida",
+      fecha_suspension: ahora,
+      motivo_suspension: motivo,
+      id_usuario_suspension: contexto.usuario.id_usuario,
+    },
+  });
+
+  await registrarAuditoria({
+    id_usuario_actor: contexto.usuario.id_usuario,
+    accion: "cambio_membresia",
+    recurso: "membresia",
+    id_recurso: vigentes[0].id_membresia,
+    resultado: "suspendida_por_coach",
+  }).catch(() => {});
+
+  await crearNotificacion({
+    id_usuario: relacion.alumno.id_usuario,
+    titulo: "Membresía suspendida",
+    contenido: "Tu servicio de entrenamiento está suspendido. Contactá a tu entrenador para consultar el estado de tu membresía.",
+    tipo: "membresia_suspendida",
+    url: "/membresia-vencida",
+  }).catch(() => {});
+
+  await avisar(`Membresía de ${relacion.alumno.usuario.nombre} suspendida.`, "info");
+  revalidarMembresia(id_alumno);
+}
+
+/** Levanta la suspensión manual si el período todavía no terminó. */
+export async function reanudarMembresiaBlackfit(formData: FormData): Promise<void> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return;
+  const id_alumno = String(formData.get("id_alumno") ?? "");
+  const relacion = id_alumno ? await relacionActivaConAlumno(contexto.id_entrenador, id_alumno) : null;
+  if (!relacion) return;
+
+  const ahora = new Date();
+  const suspendidas = await prisma.membresia.findMany({
+    where: {
+      id_usuario: relacion.alumno.id_usuario,
+      estado_membresia: "suspendida",
+      fecha_vencimiento_membresia: { gt: ahora },
+      plan_membresia: { organizacion: "blackfit" },
+    },
+    select: { id_membresia: true },
+  });
+  if (suspendidas.length === 0) {
+    await avisar("El período ya terminó: renová la membresía para habilitar el acceso.", "info");
+    revalidarMembresia(id_alumno);
+    return;
+  }
+  await prisma.membresia.updateMany({
+    where: { id_membresia: { in: suspendidas.map((m) => m.id_membresia) } },
+    data: { estado_membresia: "activa" },
+  });
+
+  await registrarAuditoria({
+    id_usuario_actor: contexto.usuario.id_usuario,
+    accion: "cambio_membresia",
+    recurso: "membresia",
+    id_recurso: suspendidas[0].id_membresia,
+    resultado: "reanudada_por_coach",
+  }).catch(() => {});
+
+  await crearNotificacion({
+    id_usuario: relacion.alumno.id_usuario,
+    titulo: "Membresía reactivada",
+    contenido: "Tu coach levantó la suspensión: ya podés volver a entrenar.",
+    tipo: "membresia_activada",
+    url: "/panel",
+  }).catch(() => {});
+
+  await avisar(`Membresía de ${relacion.alumno.usuario.nombre} reactivada.`);
+  revalidarMembresia(id_alumno);
 }
 
 export async function crearEjercicio(
@@ -991,11 +1150,79 @@ export async function establecerTipoPlanificacion(formData: FormData): Promise<v
 
   await prisma.programaEntrenamiento.update({
     where: { id_programa },
-    data: { tipo_planificacion: tipo },
+    data: {
+      tipo_planificacion: tipo,
+      // Progresión semanal: el ciclo de 4 semanas empieza a contar desde
+      // que se elige (si nunca tuvo uno). Cambiar de tipo no lo reinicia.
+      ...(tipo === "semanal" && !programa.fecha_inicio_ciclo ? { fecha_inicio_ciclo: new Date() } : {}),
+    },
   });
+
+  await registrarAuditoria({
+    id_usuario_actor: contexto.usuario.id_usuario,
+    accion: "cambio_tipo_planificacion",
+    recurso: "programa",
+    id_recurso: id_programa,
+    resultado: `${programa.tipo_planificacion}->${tipo}`,
+  }).catch(() => {});
 
   await avisar("Tipo de planificación actualizado.");
   revalidatePath(`/coach/alumnos/${programa.id_alumno}`);
+  revalidatePath("/panel");
+  revalidatePath("/panel/entrenamientos");
+}
+
+/**
+ * Control explícito del ciclo de 4 semanas de la Progresión semanal:
+ * - pausar: la semana deja de avanzar (el plan sigue visible).
+ * - reanudar: sigue desde la misma semana (se corre el inicio lo que duró
+ *   la pausa).
+ * - reiniciar: vuelve a la semana 1 desde hoy.
+ * Nunca toca entrenamientos hechos ni cargas reales. Renovar la membresía
+ * tampoco reinicia el ciclo: solo esto lo hace. Queda en la auditoría.
+ */
+export async function controlarCicloFuerza(formData: FormData): Promise<void> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return;
+
+  const id_programa = String(formData.get("id_programa") ?? "");
+  const accion = String(formData.get("accion") ?? "");
+  if (!id_programa || !["pausar", "reanudar", "reiniciar"].includes(accion)) return;
+
+  const programa = await prisma.programaEntrenamiento.findUnique({ where: { id_programa } });
+  if (!programa || programa.id_entrenador !== contexto.id_entrenador || programa.es_plantilla) return;
+
+  const ahora = new Date();
+  const inicio = programa.fecha_inicio_ciclo ?? programa.fecha_inicio;
+  let data: Prisma.ProgramaEntrenamientoUpdateInput;
+  let mensaje: string;
+  if (accion === "pausar") {
+    if (programa.fecha_pausa) return;
+    data = { fecha_pausa: ahora, fecha_inicio_ciclo: inicio };
+    mensaje = "Ciclo pausado: la semana no avanza hasta que lo reanudes.";
+  } else if (accion === "reanudar") {
+    if (!programa.fecha_pausa) return;
+    const pausa = ahora.getTime() - programa.fecha_pausa.getTime();
+    data = { fecha_pausa: null, fecha_inicio_ciclo: new Date(inicio.getTime() + Math.max(0, pausa)) };
+    mensaje = "Ciclo reanudado desde la misma semana.";
+  } else {
+    data = { fecha_pausa: null, fecha_inicio_ciclo: ahora };
+    mensaje = "Ciclo reiniciado: hoy empieza la semana 1.";
+  }
+
+  await prisma.programaEntrenamiento.update({ where: { id_programa }, data });
+  await registrarAuditoria({
+    id_usuario_actor: contexto.usuario.id_usuario,
+    accion: "ciclo_fuerza",
+    recurso: "programa",
+    id_recurso: id_programa,
+    resultado: accion,
+  }).catch(() => {});
+
+  await avisar(mensaje);
+  revalidatePath(`/coach/alumnos/${programa.id_alumno}`);
+  revalidatePath("/panel");
+  revalidatePath("/panel/entrenamientos");
 }
 
 // Crea (si no existen todavía) los 7 bloques vacíos — uno por día — para
@@ -1148,14 +1375,28 @@ export async function guardarDiaPlan(
     return { error: "Hay un bloque sin ejercicios. Agregale al menos uno o quitalo." };
   }
 
-  await prisma.$transaction(async (tx) => {
-    const dia = await obtenerOCrearDia(tx, id_programa, semana_inicio, semana_fin, numero_dia);
-    await tx.bloqueEntrenamiento.update({
-      where: { id_bloque: dia.id_bloque },
-      data: { nombre: nombre_sesion || `Día ${numero_dia}` },
+  try {
+    await prisma.$transaction(async (tx) => {
+      const dia = await obtenerOCrearDia(tx, id_programa, semana_inicio, semana_fin, numero_dia);
+      await tx.bloqueEntrenamiento.update({
+        where: { id_bloque: dia.id_bloque },
+        data: { nombre: nombre_sesion || `Día ${numero_dia}` },
+      });
+      await guardarContenidoDia(tx, dia.id_bloque, items);
+      // Progresión semanal: al publicar el bloque de fuerza queda registrada
+      // la fecha de inicio del ciclo (si todavía no tenía una).
+      if (programa.tipo_planificacion === "semanal" && !programa.fecha_inicio_ciclo) {
+        await tx.programaEntrenamiento.update({
+          where: { id_programa },
+          data: { fecha_inicio_ciclo: new Date() },
+        });
+      }
     });
-    await guardarContenidoDia(tx, dia.id_bloque, items);
-  });
+  } catch (e) {
+    // Validación del plan (ej. falta el % de una semana): no se guardó nada.
+    if (e instanceof ErrorPlan) return { error: e.message };
+    throw e;
+  }
 
   await avisar("Día guardado. El alumno ya ve los cambios.");
   revalidatePath(`/coach/alumnos/${id_alumno}`);
@@ -1603,14 +1844,21 @@ async function alumnoDelEntrenador(id_alumno: string, id_entrenador: string) {
 // ------------------------------------------------------------
 // 1RM DE REFERENCIA (progresión de fuerza) — actualización autorizada:
 // solo el coach del alumno. Agrega una fila nueva por levantamiento que
-// cambió (historial intacto); las cargas futuras se recalculan solas porque
-// se calculan al mostrar el plan, y lo ya entrenado no cambia.
+// cambió (historial intacto, con el valor anterior y la fuente); las
+// cargas futuras se recalculan solas porque se calculan al mostrar el
+// plan, y lo ya entrenado no cambia (cada serie guardó su objetivo). Las
+// cargas fijadas a mano por el coach tampoco cambian.
+// Actualizar un 1RM NO toca la membresía: no activa ni desbloquea nada.
 // ------------------------------------------------------------
 const CAMPOS_RM: { campo: string; levantamiento: Levantamiento }[] = [
   { campo: "rm_sentadilla", levantamiento: "sentadilla" },
   { campo: "rm_press_banca", levantamiento: "press_banca" },
   { campo: "rm_peso_muerto", levantamiento: "peso_muerto" },
 ];
+
+function fuenteRm(valor: FormDataEntryValue | null): "medido" | "estimado" {
+  return String(valor ?? "") === "estimado" ? "estimado" : "medido";
+}
 
 export async function actualizarRmReferencia(
   _prev: EstadoCoach,
@@ -1625,7 +1873,7 @@ export async function actualizarRmReferencia(
   }
 
   const vigentes = await obtenerRmVigentes(id_alumno);
-  const cambios: { levantamiento: Levantamiento; valor: number }[] = [];
+  const cambios: { levantamiento: Levantamiento; valor: number; fuente: "medido" | "estimado" }[] = [];
   for (const { campo, levantamiento } of CAMPOS_RM) {
     const crudo = String(formData.get(campo) ?? "").trim().replace(",", ".");
     if (!crudo) continue;
@@ -1634,9 +1882,21 @@ export async function actualizarRmReferencia(
       return { error: `Revisá el 1RM de ${NOMBRE_LEVANTAMIENTO[levantamiento]}: entre 1 y 500 kg.` };
     }
     const redondeado = Math.round(valor * 100) / 100;
-    if (vigentes[levantamiento]?.valor !== redondeado) cambios.push({ levantamiento, valor: redondeado });
+    if (vigentes[levantamiento]?.valor !== redondeado) {
+      cambios.push({ levantamiento, valor: redondeado, fuente: fuenteRm(formData.get(`fuente_${campo}`)) });
+    }
   }
   if (cambios.length === 0) return { message: "No hubo cambios en el 1RM." };
+
+  // Si el bloque publicado tiene cargas que dependen de estos 1RM, el
+  // coach tiene que haber visto el cambio y confirmarlo.
+  const afectadas = await cargasAfectadasPorRm(id_alumno);
+  const hayAfectadas = cambios.some((c) =>
+    afectadas[c.levantamiento].some((a) => a.semanas.some((s) => s.cargaFija === null && s.porcentaje !== null))
+  );
+  if (hayAfectadas && formData.get("confirmar_recalculo") !== "on") {
+    return { error: "Revisá las cargas que van a cambiar y confirmá el recálculo." };
+  }
 
   try {
     await prisma.rmReferencia.createMany({
@@ -1644,7 +1904,11 @@ export async function actualizarRmReferencia(
         id_alumno,
         levantamiento: c.levantamiento,
         valor_kg: String(c.valor),
+        valor_anterior: vigentes[c.levantamiento] ? String(vigentes[c.levantamiento]!.valor) : null,
+        fuente: c.fuente,
+        estado: "validado",
         id_usuario_autor: contexto.usuario.id_usuario,
+        id_usuario_validador: contexto.usuario.id_usuario,
       })),
     });
   } catch (e) {
@@ -1657,7 +1921,9 @@ export async function actualizarRmReferencia(
     accion: "cambio_rm_referencia",
     recurso: "alumno",
     id_recurso: id_alumno,
-    resultado: cambios.map((c) => `${c.levantamiento}:${c.valor}`).join(","),
+    resultado: cambios
+      .map((c) => `${c.levantamiento}:${vigentes[c.levantamiento]?.valor ?? "-"}->${c.valor}(${c.fuente})`)
+      .join(","),
   }).catch(() => {});
 
   const alumno = await prisma.alumno.findUnique({ where: { id_alumno }, select: { id_usuario: true } });
@@ -1678,6 +1944,70 @@ export async function actualizarRmReferencia(
   revalidatePath("/panel/entrenamientos");
   return { message: "1RM actualizado." };
 }
+
+/**
+ * El coach valida (pasa a regir y recalcula las cargas futuras) o rechaza
+ * un 1RM que propuso el alumno. Nunca se toma solo una carga registrada en
+ * un entrenamiento como 1RM nuevo.
+ */
+export async function resolverPropuestaRm(formData: FormData): Promise<void> {
+  const contexto = await obtenerEntrenadorActual();
+  if (!contexto) return;
+  const id_rm = String(formData.get("id_rm") ?? "");
+  const decision = String(formData.get("decision") ?? "");
+  if (!id_rm || !["validar", "rechazar"].includes(decision)) return;
+
+  const propuesta = await prisma.rmReferencia.findUnique({ where: { id_rm } });
+  if (!propuesta || propuesta.estado !== "propuesto") return;
+  if (!(await alumnoDelEntrenador(propuesta.id_alumno, contexto.id_entrenador))) return;
+
+  const vigentes = await obtenerRmVigentes(propuesta.id_alumno);
+  const ahora = new Date();
+  await prisma.rmReferencia.update({
+    where: { id_rm },
+    data:
+      decision === "validar"
+        ? {
+            estado: "validado",
+            // Rige desde que se valida (así queda como el más reciente).
+            fecha: ahora,
+            valor_anterior: vigentes[propuesta.levantamiento]
+              ? String(vigentes[propuesta.levantamiento]!.valor)
+              : null,
+            id_usuario_validador: contexto.usuario.id_usuario,
+          }
+        : { estado: "rechazado", id_usuario_validador: contexto.usuario.id_usuario },
+  });
+
+  await registrarAuditoria({
+    id_usuario_actor: contexto.usuario.id_usuario,
+    accion: "propuesta_rm",
+    recurso: "rm_referencia",
+    id_recurso: id_rm,
+    resultado: decision,
+  }).catch(() => {});
+
+  const alumno = await prisma.alumno.findUnique({
+    where: { id_alumno: propuesta.id_alumno },
+    select: { id_usuario: true },
+  });
+  if (alumno) {
+    await crearNotificacion({
+      id_usuario: alumno.id_usuario,
+      titulo: decision === "validar" ? "Tu coach validó tu 1RM" : "Tu coach no aceptó el 1RM propuesto",
+      contenido: `${NOMBRE_LEVANTAMIENTO[propuesta.levantamiento]}: ${Number(propuesta.valor_kg)} kg.${
+        decision === "validar" ? " Tus próximas cargas ya están recalculadas." : ""
+      }`,
+      tipo: "progresion",
+      url: "/panel/entrenamientos",
+    }).catch(() => {});
+  }
+
+  await avisar(decision === "validar" ? "1RM validado. Las cargas futuras se recalcularon." : "Propuesta rechazada.");
+  revalidatePath(`/coach/alumnos/${propuesta.id_alumno}`);
+  revalidatePath("/panel/entrenamientos");
+}
+
 
 // Datos básicos del alumno que hoy solo se mostraban en la ficha y nunca
 // se editaban desde ningún lado: el objetivo (texto libre) y la fecha de

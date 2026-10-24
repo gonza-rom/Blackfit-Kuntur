@@ -3,9 +3,13 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
 import { detectarAlertas, type Alerta } from "@/lib/alertas";
-import { diasMembresiaDe, claseColorMembresia } from "@/lib/membresia";
-import { activarMembresia30Dias } from "@/app/actions/coach";
-import { ConfirmForm } from "@/components/confirm-form";
+import {
+  resumenMembresiaBlackfit,
+  claseEstadoMembresia,
+  textoEstadoMembresia,
+  type ResumenMembresiaBlackfit,
+} from "@/lib/membresia";
+import { ActivarMembresia } from "./_components/activar-membresia";
 
 const DIA_MS = 1000 * 60 * 60 * 24;
 
@@ -43,13 +47,30 @@ function chipAdherencia(total: number, completados: number) {
   return { texto: `${pct}%`, clase };
 }
 
-// null = nunca tuvo membresía. 0 = vencida. Si no, días de acceso que le
-// quedan contando hoy (30 el día de activación, 1 el último día).
-function chipMembresia(dias: number | null): { texto: string; clase: string; activable: boolean } {
-  const clase = claseColorMembresia(dias);
-  if (dias === null) return { texto: "Sin membresía", clase, activable: true };
-  if (dias <= 0) return { texto: "Vencida", clase, activable: true };
-  return { texto: `${dias} día${dias === 1 ? "" : "s"}`, clase, activable: false };
+// Estado real de la membresía de Blackfit (misma regla que el bloqueo del
+// servidor) y qué botón corresponde: activar si nunca tuvo, renovar si
+// está vigente o vencida. Suspendida se reanuda desde la ficha del alumno.
+function chipMembresia(r: ResumenMembresiaBlackfit) {
+  return {
+    texto: textoEstadoMembresia(r),
+    clase: claseEstadoMembresia(r),
+    boton:
+      r.estado === "sin_membresia"
+        ? "Activar membresía"
+        : r.estado === "suspendida"
+          ? null
+          : "Renovar membresía",
+    vencimientoVigente: r.estado === "activa" && r.vencimiento ? r.vencimiento.getTime() : null,
+  };
+}
+
+// Orden: primero a quien se le vence antes (o ya venció / está
+// suspendido), al final los que nunca tuvieron membresía.
+function prioridadMembresia(r: ResumenMembresiaBlackfit): number {
+  if (r.estado === "vencida") return -2;
+  if (r.estado === "suspendida") return -1;
+  if (r.estado === "activa") return r.dias;
+  return Infinity;
 }
 
 export default async function CoachAlumnosPage() {
@@ -116,7 +137,12 @@ export default async function CoachAlumnosPage() {
           // está, figura como vencida.
           prisma.membresia.findMany({
             where: { id_usuario: { in: idsUsuarios }, plan_membresia: { organizacion: "blackfit" } },
-            select: { id_usuario: true, estado_membresia: true, fecha_vencimiento_membresia: true },
+            select: {
+              id_usuario: true,
+              estado_membresia: true,
+              fecha_vencimiento_membresia: true,
+              fecha_creacion: true,
+            },
           }),
         ]);
 
@@ -145,7 +171,7 @@ export default async function CoachAlumnosPage() {
       const id_alumno = relacion.alumno.id_alumno;
       const conteo = conteoPorAlumno.get(id_alumno) ?? { total: 0, completados: 0 };
       const feedbackRespuesta = mapaFeedback.has(id_alumno) ? mapaFeedback.get(id_alumno) : undefined;
-      const diasMembresia = diasMembresiaDe(
+      const estadoMembresia = resumenMembresiaBlackfit(
         membresiasPorUsuario.get(relacion.alumno.usuario.id_usuario) ?? []
       );
 
@@ -165,13 +191,13 @@ export default async function CoachAlumnosPage() {
               ? { texto: "Pendiente", clase: "text-[#eda100]" }
               : { texto: "Respondido", clase: "text-primary-container" },
         puntos: relacion.alumno.puntos_totales,
-        diasMembresia,
-        membresia: chipMembresia(diasMembresia),
+        prioridad: prioridadMembresia(estadoMembresia),
+        membresia: chipMembresia(estadoMembresia),
       };
     })
     // Al que se le vence antes (o ya venció) aparece primero, así el coach
     // ve de entrada a quién tiene que avisarle. Sin membresía queda al final.
-    .sort((a, b) => (a.diasMembresia ?? Infinity) - (b.diasMembresia ?? Infinity));
+    .sort((a, b) => a.prioridad - b.prioridad);
 
   return (
     <main className="flex-1 w-full max-w-md sm:max-w-2xl md:max-w-4xl lg:max-w-6xl mx-auto px-4 sm:px-6 md:px-10 py-8 flex flex-col gap-6">
@@ -206,7 +232,60 @@ export default async function CoachAlumnosPage() {
           Todavía no vinculaste ningún alumno.
         </div>
       ) : (
-        <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl overflow-x-auto">
+        <>
+        {/* Móvil: una tarjeta por alumno, con la membresía y su botón siempre visibles. */}
+        <ul className="md:hidden flex flex-col gap-2">
+          {filas.map((fila) => (
+            <li
+              key={fila.id_alumno}
+              className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-3 flex flex-col gap-2"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <Link
+                    href={`/coach/alumnos/${fila.id_alumno}`}
+                    className="font-[family-name:var(--font-sora)] font-semibold text-on-surface hover:text-primary-container break-words"
+                  >
+                    {fila.nombre}
+                  </Link>
+                  <p className="text-xs text-on-surface-variant truncate">
+                    {fila.programa ? fila.programa.nombre : "Sin programa"} · {fila.ultimoEntrenamiento}
+                  </p>
+                </div>
+                <span
+                  className={`shrink-0 font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.06em] uppercase ${fila.alertas.clase}`}
+                >
+                  {fila.alertas.texto}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span
+                  className={`inline-flex items-center gap-1.5 font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.06em] uppercase tabular-nums ${fila.membresia.clase}`}
+                >
+                  <span aria-hidden className="w-2 h-2 rounded-full bg-current" />
+                  {fila.membresia.texto}
+                </span>
+                {fila.membresia.boton ? (
+                  <ActivarMembresia
+                    idAlumno={fila.id_alumno}
+                    nombreAlumno={fila.nombre}
+                    vencimientoVigente={fila.membresia.vencimientoVigente}
+                    etiqueta={fila.membresia.boton}
+                    compacto
+                  />
+                ) : (
+                  <Link
+                    href={`/coach/alumnos/${fila.id_alumno}`}
+                    className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.06em] uppercase px-2.5 py-1 rounded-full border border-outline-variant text-on-surface"
+                  >
+                    Gestionar
+                  </Link>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+        <div className="hidden md:block bg-[#1A1A1A] border border-[#262626] rounded-xl overflow-x-auto">
           <table className="w-full text-sm border-collapse min-w-[860px]">
             <thead>
               <tr className="border-b border-[#262626]">
@@ -253,22 +332,14 @@ export default async function CoachAlumnosPage() {
                         <span aria-hidden className="w-2 h-2 rounded-full bg-current" />
                         {fila.membresia.texto}
                       </span>
-                      {fila.membresia.activable && (
-                        <ConfirmForm
-                          action={activarMembresia30Dias}
-                          titulo="Activar membresía"
-                          mensaje={`¿Activar 30 días para ${fila.nombre}?`}
-                          confirmLabel="Activar"
-                          variante="positiva"
-                        >
-                          <input type="hidden" name="id_alumno" value={fila.id_alumno} />
-                          <button
-                            type="submit"
-                            className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.06em] uppercase px-2.5 py-1 rounded-full bg-primary-container text-black font-bold hover:opacity-90 active:scale-95 transition-all"
-                          >
-                            Activar 30 días
-                          </button>
-                        </ConfirmForm>
+                      {fila.membresia.boton && (
+                        <ActivarMembresia
+                          idAlumno={fila.id_alumno}
+                          nombreAlumno={fila.nombre}
+                          vencimientoVigente={fila.membresia.vencimientoVigente}
+                          etiqueta={fila.membresia.boton}
+                          compacto
+                        />
                       )}
                     </div>
                   </td>
@@ -307,6 +378,7 @@ export default async function CoachAlumnosPage() {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </main>
   );

@@ -9,8 +9,20 @@ import {
   tipoDeBloque,
 } from "@/lib/plan-dia";
 import { SelectorEjercicio, type EjercicioCatalogo } from "./selector-ejercicio";
-import { ConfigProgresionFuerza, type AproximacionesEditor } from "./config-progresion-fuerza";
-import { SEMANAS, detectarLevantamiento, type Levantamiento, type Semana } from "@/lib/progresion-fuerza";
+import {
+  ConfigProgresionFuerza,
+  porcentajeValido,
+  type AproximacionesEditor,
+  type ValoresPorSemanaEditor,
+} from "./config-progresion-fuerza";
+import {
+  SEMANAS,
+  INTENSIDAD_SEMANA,
+  detectarLevantamiento,
+  progresionHabilitada,
+  type Levantamiento,
+  type Semana,
+} from "@/lib/progresion-fuerza";
 import { MAX_DIAS_SESION } from "@/lib/secuencia";
 
 // ------------------------------------------------------------
@@ -33,6 +45,8 @@ type Fila = {
   progresion_fuerza?: boolean;
   aproximaciones?: AproximacionesEditor;
   alumno_edita_aproximaciones?: boolean;
+  porcentajes_semana?: ValoresPorSemanaEditor;
+  cargas_fijas?: ValoresPorSemanaEditor;
 };
 
 export type RmPorLevantamiento = Partial<Record<Levantamiento, number>>;
@@ -127,6 +141,8 @@ export function FormDiaPlan({
   itemsIniciales,
   opcionesSemanas,
   rmVigentes,
+  tipoPlanificacion,
+  pasoRedondeo,
 }: {
   idPrograma: string;
   idAlumno: string;
@@ -138,8 +154,12 @@ export function FormDiaPlan({
   itemsIniciales: ItemInicial[];
   opcionesSemanas: OpcionSemanas[];
   rmVigentes: RmPorLevantamiento;
+  tipoPlanificacion: string;
+  pasoRedondeo: number;
 }) {
   const semanasDelDia = SEMANAS.filter((s) => s >= semanaInicio && s <= semanaFin) as Semana[];
+  // "Rutina fija" no usa cargas por 1RM: la opción ni se ofrece.
+  const conProgresion = progresionHabilitada(tipoPlanificacion);
   const [state, action, pending] = useActionState(guardarDiaPlan, undefined);
   const [items, setItems] = useState<ItemEditor[]>(() =>
     itemsIniciales.map((item) =>
@@ -306,6 +326,24 @@ export function FormDiaPlan({
     if (bloqueVacio) {
       e.preventDefault();
       setErrorLocal("Hay un bloque sin ejercicios. Agregale ejercicios o eliminalo.");
+      return;
+    }
+    // Progresión semanal: no se publica con un % faltante (nunca se inventa).
+    if (conProgresion) {
+      for (const item of items) {
+        if (item.tipo !== "ejercicio") continue;
+        const f = item.ejercicio;
+        if (!f.progresion_fuerza || !detectarLevantamiento(f.nombre)) continue;
+        const falta = semanasDelDia.find((s) => !porcentajeValido(f.porcentajes_semana, s));
+        if (falta !== undefined) {
+          e.preventDefault();
+          const [min, max] = INTENSIDAD_SEMANA[falta];
+          setErrorLocal(
+            `${f.nombre}: completá el % de la semana ${falta} (entre ${min} y ${max}) antes de guardar.`
+          );
+          return;
+        }
+      }
     }
   }
 
@@ -373,6 +411,8 @@ export function FormDiaPlan({
                   catalogo={catalogo}
                   rmVigentes={rmVigentes}
                   semanas={semanasDelDia}
+                  conProgresion={conProgresion}
+                  pasoRedondeo={pasoRedondeo}
                   autoFocus={claveEnfocar === item.ejercicio.clave}
                   onCambiar={(cambios) => actualizarEjercicioSuelto(item.clave, cambios)}
                   onElegir={(ej) =>
@@ -554,6 +594,8 @@ function TarjetaEjercicioIndividual({
   catalogo,
   rmVigentes,
   semanas,
+  conProgresion,
+  pasoRedondeo,
   autoFocus,
   onCambiar,
   onElegir,
@@ -563,13 +605,15 @@ function TarjetaEjercicioIndividual({
   catalogo: EjercicioCatalogo[];
   rmVigentes: RmPorLevantamiento;
   semanas: Semana[];
+  conProgresion: boolean;
+  pasoRedondeo: number;
   autoFocus: boolean;
   onCambiar: (cambios: Partial<Fila>) => void;
   onElegir: (ejercicio: EjercicioCatalogo) => void;
 }) {
   // Solo sentadilla con barra, press de banca plano y peso muerto
   // convencional pueden usar la progresión de fuerza.
-  const levantamiento = fila.nombre ? detectarLevantamiento(fila.nombre) : null;
+  const levantamiento = conProgresion && fila.nombre ? detectarLevantamiento(fila.nombre) : null;
   const enProgresion = Boolean(levantamiento && fila.progresion_fuerza);
 
   return (
@@ -604,13 +648,14 @@ function TarjetaEjercicioIndividual({
             onChange={(e) => onCambiar({ progresion_fuerza: e.target.checked })}
             className="accent-[var(--color-primary-container)]"
           />
-          Progresión de fuerza (bloque de 4 semanas con 1RM)
+          Carga automática por 1RM (ciclo de 4 semanas)
         </label>
       )}
 
       {enProgresion && levantamiento ? (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            <input type="number" min={1} required value={fila.series} onChange={(e) => onCambiar({ series: e.target.value })} placeholder="Series efectivas" aria-label="Series efectivas" className={inputClase} />
             <input type="text" required value={fila.repeticiones} onChange={(e) => onCambiar({ repeticiones: e.target.value })} placeholder="Reps serie efectiva" aria-label="Repeticiones de la serie efectiva" className={inputClase} />
             <input type="text" value={fila.descanso} onChange={(e) => onCambiar({ descanso: e.target.value })} placeholder="Descanso (ej. 3min)" aria-label="Descanso" className={inputClase} />
             <input type="text" value={fila.tempo} onChange={(e) => onCambiar({ tempo: e.target.value })} placeholder="Tempo (opcional)" aria-label="Tempo" className={inputClase} />
@@ -619,8 +664,14 @@ function TarjetaEjercicioIndividual({
           <ConfigProgresionFuerza
             levantamiento={levantamiento}
             rm={rmVigentes[levantamiento] ?? null}
+            paso={pasoRedondeo}
             semanas={semanas}
+            seriesEfectiva={fila.series}
             repeticionesEfectiva={fila.repeticiones}
+            porcentajes={fila.porcentajes_semana ?? {}}
+            cargasFijas={fila.cargas_fijas ?? {}}
+            onCambiarPorcentajes={(porcentajes_semana) => onCambiar({ porcentajes_semana })}
+            onCambiarCargasFijas={(cargas_fijas) => onCambiar({ cargas_fijas })}
             aproximaciones={fila.aproximaciones ?? {}}
             alumnoEdita={fila.alumno_edita_aproximaciones !== false}
             onCambiarAproximaciones={(aproximaciones) => onCambiar({ aproximaciones })}

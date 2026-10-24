@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { encolarSesion, sincronizarPendientes } from "@/lib/offline-queue";
 import { ModalVideoEjercicio, type EjercicioDetalle } from "./modal-video-ejercicio";
 import { BloqueRondas, claveCheck, type GrupoPlan } from "./bloque-rondas";
-import { TarjetaFuerza, type DatosFuerza } from "./tarjeta-fuerza";
+import { TarjetaFuerza, sufijoEfectiva, type DatosFuerza } from "./tarjeta-fuerza";
 import { agruparItemsDia } from "@/lib/plan-dia";
 import {
   leerBorrador,
@@ -249,8 +249,10 @@ export function FormRegistrarEntrenamiento({
 
     let volumen = 0;
     for (const ep of ejercicios) {
-      const sufijos: (number | "ef")[] = Array.from({ length: filasDe(ep) }, (_, i) => i + 1);
-      if (ep.fuerza) sufijos.push("ef");
+      const sufijos: (number | string)[] = Array.from({ length: filasDe(ep) }, (_, i) => i + 1);
+      if (ep.fuerza) {
+        for (let k = 1; k <= ep.fuerza.efectiva.series; k++) sufijos.push(sufijoEfectiva(k));
+      }
       for (const n of sufijos) {
         const peso = Number(formData.get(`peso_${ep.id_ejercicio_programa}_${n}`)) || 0;
         const reps = Number(formData.get(`reps_${ep.id_ejercicio_programa}_${n}`)) || 0;
@@ -285,7 +287,7 @@ export function FormRegistrarEntrenamiento({
         const descanso_real = numeroOpcional(formData.get(`descanso_${ep.id_ejercicio_programa}`));
         const tiempo_bajo_tension = numeroOpcional(formData.get(`tut_${ep.id_ejercicio_programa}`));
         const comentarios = textoOpcional(formData.get(`comentario_${ep.id_ejercicio_programa}`));
-        const serie = (n: number, sufijo: number | "ef", tipo_serie: "aproximacion" | "efectiva" | null) => ({
+        const serie = (n: number, sufijo: number | string, tipo_serie: "aproximacion" | "efectiva" | null) => ({
           id_ejercicio_programa: ep.id_ejercicio_programa,
           numero_serie: n,
           numero_ronda: ep.id_grupo && grupoPorId.has(ep.id_grupo) ? n : null,
@@ -303,7 +305,9 @@ export function FormRegistrarEntrenamiento({
         if (ep.fuerza) {
           return [
             ...Array.from({ length: filas }, (_, i) => serie(i + 1, i + 1, "aproximacion")),
-            serie(filas + 1, "ef", "efectiva"),
+            ...Array.from({ length: ep.fuerza.efectiva.series }, (_, k) =>
+              serie(filas + 1 + k, sufijoEfectiva(k + 1), "efectiva")
+            ),
           ];
         }
         return Array.from({ length: filas }, (_, i) => serie(i + 1, i + 1, null));

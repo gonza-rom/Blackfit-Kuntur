@@ -1,12 +1,14 @@
 import { redirect } from "next/navigation";
-import { exigirMembresiaActiva, obtenerUsuarioActual } from "@/lib/auth";
+import { obtenerUsuarioActual } from "@/lib/auth";
 import { CatalogoBeneficios } from "@/components/catalogo-beneficios";
 
 // Beneficios en Blackfit: el MISMO catálogo que ven los socios de Kuntur
 // (los beneficios para "Blackfit" o "ambos"), ver lib/beneficios.ts.
 export default async function BeneficiosPage(props: PageProps<"/panel/beneficios">) {
-  // Con la membresía vencida solo queda el perfil: acá, aviso de renovación.
-  await exigirMembresiaActiva();
+  // El catálogo de beneficios es independiente de la membresía de
+  // ENTRENAMIENTO: no se bloquea acá. Quién puede USAR cada beneficio lo
+  // decide evaluarUso() (lib/beneficios.ts) según la audiencia y la
+  // membresía vigente de cada organización.
 
   const usuario = await obtenerUsuarioActual();
   if (!usuario) redirect("/iniciar-sesion");

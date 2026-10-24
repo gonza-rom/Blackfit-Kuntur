@@ -6,14 +6,17 @@ import {
   tieneRol,
   cuentaActiva,
   destinoTrasLogin,
-  accesoAlumnoBloqueado, entornosDisponibles } from "@/lib/auth";
+  estadoAccesoEntrenamiento,
+  entornosDisponibles,
+} from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { OfflineSyncBanner } from "@/components/offline-sync-banner";
 import { ActivarPush } from "@/components/activar-push";
 import { InstalarApp } from "@/components/instalar-app";
 import { LogoMarcaPanel } from "@/components/logo-marca-panel";
 import { BotonVolver } from "@/components/boton-volver";
-import { verificarRecordatorioMembresia } from "@/lib/membresia";
+import { verificarRecordatorioMembresia, obtenerMembresiaBlackfit } from "@/lib/membresia";
+import { VigilanteMembresia } from "@/components/vigilante-membresia";
 import { registrarVisitaDiaria } from "@/lib/gamificacion";
 import { BottomNav } from "./_components/bottom-nav";
 import { SidebarNav } from "./_components/sidebar-nav";
@@ -34,11 +37,13 @@ export default async function PanelLayout({
     redirect("/cuenta-inactiva");
   }
 
-  // Membresía vencida: la cuenta y todo su historial siguen intactos. Solo
-  // quedan el perfil y las consultas de historial (solo lectura); cada
-  // pantalla de entrenamiento lo valida por su cuenta con
-  // exigirMembresiaActiva() y cada acción del servidor lo rechaza.
-  const membresiaVencida = await accesoAlumnoBloqueado(usuario);
+  // Sin membresía vigente (nunca activada, vencida o suspendida): la cuenta
+  // y todo su historial siguen intactos, pero solo queda el perfil
+  // personal; cada pantalla de entrenamiento lo valida por su cuenta con
+  // exigirMembresiaActiva() y cada acción / API del servidor lo rechaza.
+  const estadoAcceso = await estadoAccesoEntrenamiento(usuario);
+  const membresiaVencida = estadoAcceso !== "permitido";
+  const { vencimiento } = await obtenerMembresiaBlackfit(usuario.id_usuario);
 
   // /panel es el entorno del ALUMNO de Blackfit. Cualquier otra persona
   // (coach, socio de Kuntur, comercio, admin, o una cuenta todavía sin
@@ -117,12 +122,20 @@ export default async function PanelLayout({
             >
               <span className="flex items-center gap-2 text-sm text-on-surface">
                 <span className="material-symbols-outlined text-[#ffb4ab] text-[20px]">lock</span>
-                Tu membresía venció: solo podés consultar tu perfil e historial.
+                {estadoAcceso === "sin_membresia"
+                  ? "Tu servicio de entrenamiento todavía no está activado: solo podés ver tu perfil."
+                  : estadoAcceso === "suspendida"
+                    ? "Tu servicio de entrenamiento está suspendido: solo podés ver tu perfil."
+                    : "Tu membresía venció: solo podés ver tu perfil."}
               </span>
-              <span className="text-sm font-bold text-[#ffb4ab] shrink-0">Renovar</span>
+              <span className="text-sm font-bold text-[#ffb4ab] shrink-0">Ver más</span>
             </Link>
           </div>
         )}
+        <VigilanteMembresia
+          estadoInicial={estadoAcceso}
+          vencimiento={vencimiento && estadoAcceso === "permitido" ? vencimiento.getTime() : null}
+        />
         <OfflineSyncBanner />
         <div className="w-full max-w-md sm:max-w-2xl md:max-w-md sm:max-w-2xl md:max-w-3xl mx-auto px-4 sm:px-6 md:px-10 pt-4 flex flex-col gap-3">
           <InstalarApp />

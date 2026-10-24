@@ -9,12 +9,19 @@ import {
   obtenerProgramaActivo,
   calcularSemanaYDiasActivos,
 } from "@/lib/alumno";
-import { obtenerDiasMembresia, claseColorMembresia } from "@/lib/membresia";
+import {
+  obtenerMembresiaBlackfit,
+  claseEstadoMembresia,
+  textoEstadoMembresia,
+} from "@/lib/membresia";
 
-const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
+const FORMATEADOR_FECHA_HORA = new Intl.DateTimeFormat("es-AR", {
   day: "2-digit",
   month: "short",
   year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "America/Argentina/Buenos_Aires",
 });
 
 export default async function PerfilPage() {
@@ -52,14 +59,18 @@ export default async function PerfilPage() {
   const membresia = usuario?.membresias[0];
   const inicial = nombreCompleto.charAt(0).toUpperCase();
 
+  // Sin membresía vigente el perfil personal sigue disponible, pero nada
+  // del servicio de entrenamiento (estadísticas, evaluaciones, plan).
+  const bloqueado = (await obtenerAlumnoLectura())?.bloqueado ?? false;
+
   const estadisticas =
-    usuario?.alumno && (await calcularEstadisticasAlumno(usuario.alumno.id_alumno));
+    !bloqueado && usuario?.alumno && (await calcularEstadisticasAlumno(usuario.alumno.id_alumno));
 
   // Cada tarjeta muestra el valor más reciente DE ESE indicador: si la
   // última medición no trae, por ejemplo, % músculo, se sigue viendo el
   // último % músculo cargado en vez de "—" (un dato faltante nunca pisa
   // uno válido). Las evaluaciones anteriores quedan todas guardadas.
-  const mediciones = usuario?.alumno
+  const mediciones = !bloqueado && usuario?.alumno
     ? await prisma.progresoFisico.findMany({
         where: { id_alumno: usuario.alumno.id_alumno },
         orderBy: { fecha: "desc" },
@@ -83,14 +94,16 @@ export default async function PerfilPage() {
     porcentaje_musculo: ultimo("porcentaje_musculo"),
   };
 
-  const diasMembresia = usuario ? await obtenerDiasMembresia(usuario.id_usuario) : null;
-  // Membresía vencida: el perfil queda disponible solo para consultar; lo
-  // que es entrenamiento o edición no se muestra.
-  const bloqueado = (await obtenerAlumnoLectura())?.bloqueado ?? false;
+  // Mismo estado que Coach → Alumnos y que el bloqueo del servidor.
+  const estadoMembresia = usuario
+    ? await obtenerMembresiaBlackfit(usuario.id_usuario)
+    : { estado: "sin_membresia" as const, dias: 0, vencimiento: null };
+  const diasMembresia = estadoMembresia.estado === "activa" ? estadoMembresia.dias : null;
 
-  const programaActivo = usuario?.alumno ? await obtenerProgramaActivo(usuario.alumno.id_alumno) : null;
+  const programaActivo =
+    !bloqueado && usuario?.alumno ? await obtenerProgramaActivo(usuario.alumno.id_alumno) : null;
   const { semanaActual, diasActivos } = programaActivo
-    ? calcularSemanaYDiasActivos(programaActivo.fecha_inicio)
+    ? calcularSemanaYDiasActivos(programaActivo.fecha_inicio_ciclo ?? programaActivo.fecha_inicio)
     : { semanaActual: null, diasActivos: null };
 
   const membresiaVigente = Boolean(
@@ -136,7 +149,7 @@ export default async function PerfilPage() {
       {/* + membresía como 6ta tarjeta (mismo dato que Inicio). % músculo es
           el porcentaje que extrae la IA de la bioimpedancia (porcentaje_musculo),
           no la masa muscular en kg. */}
-      {usuario?.alumno && (
+      {usuario?.alumno && !bloqueado && (
           <section className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-6">
             {[
               { valor: ultimaComposicion.peso_corporal, label: "Peso (kg)", clase: "text-on-surface" },
@@ -153,16 +166,9 @@ export default async function PerfilPage() {
                 clase: "text-on-surface",
               },
               {
-                valor: diasMembresia === null ? null : diasMembresia <= 0 ? "Vencida" : diasMembresia,
-                label:
-                  diasMembresia === null
-                    ? "Membresía"
-                    : diasMembresia <= 0
-                      ? "Membresía"
-                      : diasMembresia === 1
-                        ? "Día activo"
-                        : "Días activos",
-                clase: diasMembresia === null ? "text-on-surface" : claseColorMembresia(diasMembresia),
+                valor: diasMembresia,
+                label: diasMembresia === 1 ? "Día activo" : "Días activos",
+                clase: claseEstadoMembresia(estadoMembresia),
               },
             ].map((item) => (
               <div
@@ -200,7 +206,8 @@ export default async function PerfilPage() {
         </section>
       )}
 
-      {/* Fila de estadísticas */}
+      {/* Fila de estadísticas (parte del servicio de entrenamiento) */}
+      {!bloqueado && (
       <section className="grid grid-cols-3 gap-4 mb-8">
         <div className="bg-[#1f1f1f] border border-[#262626] rounded-xl p-4 flex flex-col items-center justify-center relative overflow-hidden group">
           <span className="font-[family-name:var(--font-sora)] text-[clamp(1.375rem,6vw,2rem)] leading-tight tabular-nums font-bold text-on-surface mb-1 group-hover:text-primary-container transition-colors">
@@ -227,6 +234,7 @@ export default async function PerfilPage() {
           </span>
         </div>
       </section>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
         {/* Columna izquierda: acciones */}
@@ -235,13 +243,13 @@ export default async function PerfilPage() {
             Gestión de Cuenta
           </h2>
           {[
-            { icon: "badge", label: "Información Personal", href: "/panel/perfil/informacion-personal", soloActiva: true },
-            { icon: "credit_card", label: "Plan de Membresía", href: "/panel/beneficios", soloActiva: true },
-            { icon: "monitor_heart", label: "Mi progreso", href: "/panel/seguimiento/progreso" },
-            { icon: "emoji_events", label: "Mis logros", href: "/panel/logros" },
-            { icon: "history", label: "Mis evaluaciones", href: "/panel/entrenamientos/historial" },
+            { icon: "badge", label: "Información Personal", href: "/panel/perfil/informacion-personal" },
+            { icon: "credit_card", label: "Beneficios", href: "/panel/beneficios" },
+            { icon: "monitor_heart", label: "Mi progreso", href: "/panel/seguimiento/progreso", entrenamiento: true },
+            { icon: "emoji_events", label: "Mis logros", href: "/panel/logros", entrenamiento: true },
+            { icon: "history", label: "Mis evaluaciones", href: "/panel/entrenamientos/historial", entrenamiento: true },
           ]
-            .filter((item) => !bloqueado || !item.soloActiva)
+            .filter((item) => !bloqueado || !item.entrenamiento)
             .map((item) => (
             <Link
               key={item.label}
@@ -280,37 +288,27 @@ export default async function PerfilPage() {
             </h3>
             <div className="flex items-end gap-3 mb-2">
               <span
-                className={`w-3 h-3 rounded-full mb-2 ${
-                  diasMembresia !== null && diasMembresia > 0
-                    ? "bg-primary-container shadow-[0_0_10px_#61EDDA]"
-                    : diasMembresia === 0
-                      ? "bg-[#ffb4ab]"
-                      : "bg-on-surface-variant"
-                }`}
+                className={`w-3 h-3 rounded-full mb-2 bg-current ${claseEstadoMembresia(estadoMembresia)}`}
               />
-              {/* Mismo dato que Inicio y Coach → Alumnos (días por fecha real),
-                  no el estado guardado, que puede seguir "activa" ya vencida. */}
+              {/* Mismo dato que Inicio y Coach → Alumnos (por fecha y hora
+                  real), no el estado guardado, que puede seguir "activa" ya vencida. */}
               <span className="font-[family-name:var(--font-sora)] text-[24px] leading-8 font-semibold text-on-surface">
-                {diasMembresia === null
-                  ? "Sin membresía"
-                  : diasMembresia > 0
-                    ? `Activa · ${diasMembresia} día${diasMembresia === 1 ? "" : "s"}`
-                    : "Vencida"}
+                {estadoMembresia.estado === "activa"
+                  ? `Activa · ${textoEstadoMembresia(estadoMembresia)}`
+                  : textoEstadoMembresia(estadoMembresia)}
               </span>
             </div>
             <p className="font-[family-name:var(--font-inter)] text-sm text-on-surface-variant">
-              {membresia
-                ? `${membresia.plan_membresia.nombre} · ${
-                    diasMembresia !== null && diasMembresia > 0 ? "Vence el" : "Venció el"
-                  } ${FORMATEADOR_FECHA.format(membresia.fecha_vencimiento_membresia)}`
-                : "Todavía no tenés un plan activo."}
+              {estadoMembresia.vencimiento
+                ? `${estadoMembresia.estado === "activa" ? "Vence el" : estadoMembresia.estado === "suspendida" ? "Suspendida · período hasta el" : "Venció el"} ${FORMATEADOR_FECHA_HORA.format(estadoMembresia.vencimiento)}`
+                : "Tu entrenador todavía no activó tu membresía de entrenamiento."}
             </p>
             {bloqueado ? (
               <Link
                 href="/membresia-vencida"
                 className="mt-6 w-full py-3 px-4 bg-transparent border border-[#ffb4ab] text-[#ffb4ab] font-[family-name:var(--font-sora)] text-sm rounded-lg hover:bg-[#ffb4ab]/10 transition-colors uppercase tracking-wider flex items-center justify-center"
               >
-                Renovar membresía
+                {estadoMembresia.estado === "sin_membresia" ? "Ver cómo activarla" : "Renovar membresía"}
               </Link>
             ) : (
               <Link
