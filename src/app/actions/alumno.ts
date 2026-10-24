@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoActual } from "@/lib/auth";
 import { avisar } from "@/lib/aviso";
 import { registrarActividad, PUNTOS, claveDia } from "@/lib/gamificacion";
+import { crearNotificacion } from "@/lib/notificaciones";
+import { NOMBRE_LEVANTAMIENTO, type Levantamiento } from "@/lib/progresion-fuerza";
 import {
   subirFotoProgreso,
   borrarFotoProgreso,
@@ -437,4 +439,57 @@ export async function eliminarMedidaCorporal(formData: FormData): Promise<void> 
   await prisma.medidaCorporal.delete({ where: { id_medida } });
   await avisar("Medida eliminada.", "eliminado");
   revalidatePath("/panel/seguimiento/progreso");
+}
+
+// El alumno puede PROPONER su 1RM (medido o estimado); no rige hasta que
+// su coach lo valida (ver resolverPropuestaRm en actions/coach.ts). Solo
+// con membresía vigente: obtenerAlumnoActual() rechaza al resto.
+const LEVANTAMIENTOS_RM: Levantamiento[] = ["sentadilla", "press_banca", "peso_muerto"];
+
+export async function proponerRm(_prev: EstadoAlumno, formData: FormData): Promise<EstadoAlumno> {
+  const contexto = await obtenerAlumnoActual();
+  if (!contexto) return { error: "No autorizado." };
+
+  const levantamiento = String(formData.get("levantamiento") ?? "") as Levantamiento;
+  if (!LEVANTAMIENTOS_RM.includes(levantamiento)) return { error: "Elegí el levantamiento." };
+  const valor = Number(String(formData.get("valor_kg") ?? "").trim().replace(",", "."));
+  if (!Number.isFinite(valor) || valor <= 0 || valor > 500) {
+    return { error: "El 1RM tiene que estar entre 1 y 500 kg." };
+  }
+  const fuente = String(formData.get("fuente") ?? "") === "estimado" ? "estimado" : "medido";
+
+  // Una propuesta pendiente por levantamiento: la nueva reemplaza a la anterior.
+  await prisma.$transaction([
+    prisma.rmReferencia.updateMany({
+      where: { id_alumno: contexto.id_alumno, levantamiento, estado: "propuesto" },
+      data: { estado: "rechazado" },
+    }),
+    prisma.rmReferencia.create({
+      data: {
+        id_alumno: contexto.id_alumno,
+        levantamiento,
+        valor_kg: String(Math.round(valor * 100) / 100),
+        fuente,
+        estado: "propuesto",
+        id_usuario_autor: contexto.usuario.id_usuario,
+      },
+    }),
+  ]);
+
+  const relacion = await prisma.relacionEntrenadorAlumno.findFirst({
+    where: { id_alumno: contexto.id_alumno, estado_relacion: "activa" },
+    select: { entrenador: { select: { id_usuario: true } } },
+  });
+  if (relacion) {
+    await crearNotificacion({
+      id_usuario: relacion.entrenador.id_usuario,
+      titulo: "Propuesta de 1RM",
+      contenido: `${contexto.usuario.nombre} ${contexto.usuario.apellido} propuso ${NOMBRE_LEVANTAMIENTO[levantamiento]}: ${valor} kg (${fuente}).`,
+      tipo: "progresion",
+      url: `/coach/alumnos/${contexto.id_alumno}?tab=planificacion`,
+    }).catch(() => {});
+  }
+
+  revalidatePath("/panel/entrenamientos");
+  return { message: "Propuesta enviada. Tu coach la va a revisar." };
 }

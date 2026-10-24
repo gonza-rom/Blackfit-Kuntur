@@ -17,6 +17,13 @@ const SENSACION_EMOJI: Record<number, string> = {
   5: "🤩",
 };
 
+const FORMATEADOR_PROXIMA_SEMANA = new Intl.DateTimeFormat("es-AR", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  timeZone: "America/Argentina/Buenos_Aires",
+});
+
 export default async function PanelPage() {
   // Con la membresía vencida solo queda el perfil: acá, aviso de renovación.
   await exigirMembresiaActiva();
@@ -177,6 +184,13 @@ export default async function PanelPage() {
                 COMENZAR SESIÓN
               </Link>
             </div>
+          </div>
+        ) : siguiente.tipo === "semana_completa" ? (
+          <div className="bg-[#1A1A1A] border border-primary-container/40 rounded-xl p-4 text-sm">
+            <p className="text-on-surface font-semibold">¡Completaste las sesiones de la semana {siguiente.semana}! 💪</p>
+            <p className="text-on-surface-variant mt-1">
+              La próxima semana del ciclo arranca el {FORMATEADOR_PROXIMA_SEMANA.format(siguiente.proximaSemana)}.
+            </p>
           </div>
         ) : siguiente.tipo === "bloque_completo" ? (
           <div className="bg-[#1A1A1A] border border-primary-container/40 rounded-xl p-4 text-sm">

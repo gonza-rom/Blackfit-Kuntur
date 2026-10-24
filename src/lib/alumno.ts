@@ -7,13 +7,16 @@ import {
   aproximacionesDeSemana,
   cargaDe1RM,
   objetivoEfectiva,
+  posicionCiclo,
+  progresionHabilitada,
   semanaDelPrograma,
 } from "@/lib/progresion-fuerza";
-import { obtenerRmVigentes } from "@/lib/rm-referencia";
+import { obtenerRmVigentes, obtenerPasoRedondeo } from "@/lib/rm-referencia";
 import {
   esPlanSecuencial,
   posicionSecuencia,
   semanaParaSesion,
+  sesionesDeSemana,
   type DiaPlan,
 } from "@/lib/secuencia";
 import type { Semana } from "@/lib/progresion-fuerza";
@@ -36,24 +39,35 @@ export type ProgramaActivo = Prisma.ProgramaEntrenamientoGetPayload<{
   include: typeof PROGRAMA_ACTIVO_INCLUDE;
 }>;
 
-const MS_POR_SEMANA_PLAN = 7 * 24 * 60 * 60 * 1000;
 const MS_POR_DIA_PLAN = 24 * 60 * 60 * 1000;
 
-/** Semana actual (1-4, clampeada) y días transcurridos desde que arrancó el plan mensual. */
-export function calcularSemanaYDiasActivos(fechaInicio: Date): {
+/**
+ * Semana actual del ciclo de 4 (después de la 4 vuelve a la 1), número de
+ * ciclo y días transcurridos desde que arrancó el plan.
+ */
+export function calcularSemanaYDiasActivos(
+  fechaInicio: Date,
+  fechaPausa: Date | null = null
+): {
   semanaActual: number;
+  ciclo: number;
   diasActivos: number;
 } {
-  const transcurrido = Date.now() - fechaInicio.getTime();
+  const { semana, ciclo } = posicionCiclo(fechaInicio, new Date(), fechaPausa);
+  const transcurrido = (fechaPausa ?? new Date()).getTime() - fechaInicio.getTime();
   return {
-    semanaActual: Math.min(4, Math.max(1, Math.floor(transcurrido / MS_POR_SEMANA_PLAN) + 1)),
+    semanaActual: semana,
+    ciclo,
     diasActivos: Math.max(0, Math.floor(transcurrido / MS_POR_DIA_PLAN)),
   };
 }
 
-export type BloqueActual = ProgramaActivo["bloques"][number];
+/** Desde cuándo cuenta el ciclo de 4 semanas del programa. */
+export function inicioCicloPrograma(programa: { fecha_inicio: Date; fecha_inicio_ciclo: Date | null }): Date {
+  return programa.fecha_inicio_ciclo ?? programa.fecha_inicio;
+}
 
-const MS_POR_SEMANA = 7 * 24 * 60 * 60 * 1000;
+export type BloqueActual = ProgramaActivo["bloques"][number];
 
 export async function obtenerProgramaActivo(
   id_alumno: string
@@ -86,14 +100,52 @@ function comoDiaPlan<B extends { id_bloque: string; numero_dia: number | null; s
 export type SiguienteSesion =
   | { tipo: "sesion"; bloque: BloqueActual; numeroDia: number | null; semana: Semana | null; completadas: number }
   | { tipo: "bloque_completo"; completadas: number }
+  | { tipo: "semana_completa"; semana: Semana; proximaSemana: Date }
   | { tipo: "sin_plan" };
 
 /**
- * Qué le toca entrenar al alumno. Plan secuencial: la siguiente sesión
- * pendiente según su historial real (nunca según el día de la semana).
- * Plan viejo por tramos: se sigue eligiendo por semana como siempre.
+ * Qué le toca entrenar al alumno.
+ * - Progresión semanal: la semana sale del CALENDARIO (períodos de 7 días
+ *   desde el inicio del ciclo, que se repite cada 4) y, dentro de esa
+ *   semana, la siguiente sesión que todavía no hizo en este período.
+ * - Resto de planes secuenciales: la siguiente sesión pendiente según su
+ *   historial real (nunca según el día de la semana).
+ * - Plan viejo por tramos: se sigue eligiendo por semana como siempre.
  */
 export async function obtenerSiguienteSesion(programa: ProgramaActivo): Promise<SiguienteSesion> {
+  if (programa.tipo_planificacion === "semanal" && esPlanSecuencial(programa.bloques)) {
+    const dias = programa.bloques.map((b) => comoDiaPlan(b, b.ejercicios_programa.length));
+    const { semana, inicioSemana, finSemana } = posicionCiclo(
+      inicioCicloPrograma(programa),
+      new Date(),
+      programa.fecha_pausa
+    );
+    const sesiones = sesionesDeSemana(dias, semana);
+    if (sesiones.length === 0) {
+      return dias.some((d) => d.cantidadEjercicios > 0 && d.numero_dia != null)
+        ? { tipo: "semana_completa", semana, proximaSemana: finSemana }
+        : { tipo: "sin_plan" };
+    }
+    const hechas = await prisma.entrenamiento.findMany({
+      where: {
+        id_programa: programa.id_programa,
+        estado: "completado",
+        id_bloque: { in: sesiones.map((s) => s.id_bloque) },
+        fecha: { gte: inicioSemana },
+      },
+      select: { id_bloque: true },
+    });
+    const idsHechos = new Set(hechas.map((h) => h.id_bloque));
+    const siguiente = sesiones.find((s) => !idsHechos.has(s.id_bloque));
+    if (!siguiente) return { tipo: "semana_completa", semana, proximaSemana: finSemana };
+    return {
+      tipo: "sesion",
+      bloque: siguiente,
+      numeroDia: siguiente.numero_dia,
+      semana,
+      completadas: idsHechos.size,
+    };
+  }
   if (!esPlanSecuencial(programa.bloques)) {
     const bloque = calcularBloqueActual(programa);
     return bloque
@@ -112,15 +164,31 @@ export async function obtenerSiguienteSesion(programa: ProgramaActivo): Promise<
 }
 
 /**
- * Semana del bloque de 4 para hacer (o guardar) una sesión. En un plan
- * secuencial sale de las sesiones completadas — retrasarse no adelanta la
- * semana. En un plan viejo, por calendario como hasta ahora.
+ * Semana del bloque de 4 para hacer (o guardar) una sesión.
+ * - Progresión semanal: por calendario desde el inicio del ciclo (cíclica).
+ * - Otro plan secuencial: sale de las sesiones completadas — retrasarse no
+ *   adelanta la semana.
+ * - Plan viejo: por calendario como hasta ahora.
  */
 export async function semanaDeLaSesion(
-  programa: { id_programa: string; fecha_inicio: Date },
+  programa: {
+    id_programa: string;
+    fecha_inicio: Date;
+    fecha_inicio_ciclo: Date | null;
+    fecha_pausa: Date | null;
+    tipo_planificacion: string;
+  },
   bloque: { id_bloque: string; numero_dia: number | null; semana_inicio: number | null; semana_fin: number | null },
   bloquesDelPrograma: (DiaPlan & { id_bloque: string })[]
 ): Promise<Semana> {
+  if (programa.tipo_planificacion === "semanal") {
+    const semana = posicionCiclo(inicioCicloPrograma(programa), new Date(), programa.fecha_pausa).semana;
+    // Si abrió una sesión de otra semana, se usa la semana de ESA sesión
+    // (sus % están configurados para sus semanas, no para la actual).
+    const desde = Math.max(1, Math.min(4, bloque.semana_inicio ?? 1));
+    const hasta = Math.max(desde, Math.min(4, bloque.semana_fin ?? 4));
+    return (semana >= desde && semana <= hasta ? semana : desde) as Semana;
+  }
   if (bloque.numero_dia == null) return semanaDelPrograma(programa.fecha_inicio);
   const completadas = await contarSesionesCompletadas(programa.id_programa);
   const propio = bloquesDelPrograma.find((b) => b.id_bloque === bloque.id_bloque) ?? comoDiaPlan(bloque, 1);
@@ -138,8 +206,8 @@ export function calcularBloqueActual(programa: ProgramaActivo): BloqueActual | n
   const bloques = programa.bloques.filter((b) => b.dia_semana == null);
   if (bloques.length === 0) return null;
 
-  const semanaActual =
-    Math.floor((Date.now() - programa.fecha_inicio.getTime()) / MS_POR_SEMANA) + 1;
+  // Cíclica: después de la semana 4 vuelve a la 1.
+  const semanaActual = semanaDelPrograma(programa.fecha_inicio);
 
   const bloquePorSemana = bloques.find(
     (b) =>
@@ -342,35 +410,44 @@ export async function guardarSesionEntrenamiento(
   }
 
   // Progresión de fuerza: el objetivo de cada serie (plan del coach para la
-  // semana, % fijo de la efectiva y carga con el 1RM vigente) se calcula
-  // ACÁ y se copia en la serie. Nunca se confía en lo que mande el
+  // semana, % programado de la efectiva y carga con el 1RM vigente) se
+  // calcula ACÁ y se copia en la serie. Nunca se confía en lo que mande el
   // teléfono, y así lo ya entrenado no cambia si después cambia el 1RM.
-  // Semana del bloque: en un plan secuencial, según las sesiones ya
-  // completadas (calculada ANTES de guardar esta), nunca por calendario.
+  // Semana: en Progresión semanal por calendario (ciclo de 4 que se
+  // repite); en otro plan secuencial, según las sesiones ya completadas
+  // (calculada ANTES de guardar esta).
   const semana = await semanaDeLaSesion(
     bloque.programa,
     bloque,
     bloque.programa.bloques.map((b) => ({ ...b, cantidadEjercicios: b._count.ejercicios_programa }))
   );
   const epPorIdPlan = new Map(bloque.ejercicios_programa.map((ep) => [ep.id_ejercicio_programa, ep]));
-  const hayProgresion = bloque.ejercicios_programa.some((ep) => ep.progresion_fuerza);
+  // En "Rutina fija" nunca se calculan cargas por 1RM.
+  const conProgresion = progresionHabilitada(bloque.programa.tipo_planificacion);
+  const hayProgresion = conProgresion && bloque.ejercicios_programa.some((ep) => ep.progresion_fuerza);
   const rmVigentes = hayProgresion ? await obtenerRmVigentes(id_alumno) : null;
+  const paso = hayProgresion ? await obtenerPasoRedondeo(bloque.programa.id_entrenador) : undefined;
 
   function objetivoDe(s: SerieRegistrada) {
     const ep = epPorIdPlan.get(s.id_ejercicio_programa);
-    if (!ep?.progresion_fuerza) return { omitir: false, datos: { tipo_serie: null } };
+    if (!conProgresion || !ep?.progresion_fuerza || ep.id_grupo) return { omitir: false, datos: { tipo_serie: null } };
     const levantamiento = detectarLevantamiento(ep.ejercicio.nombre);
     const rm = levantamiento ? (rmVigentes?.[levantamiento]?.valor ?? null) : null;
     const plan = aproximacionesDeSemana(ep.aproximaciones, semana);
 
     if (s.tipo_serie === "efectiva") {
-      const objetivo = objetivoEfectiva(semana, rm);
+      const objetivo = objetivoEfectiva(
+        semana,
+        rm,
+        { porcentajes: ep.porcentajes_semana, cargasFijas: ep.cargas_fijas },
+        paso
+      );
       return {
         omitir: false,
         datos: {
           tipo_serie: "efectiva",
-          porcentaje_objetivo: objetivo.porcentaje,
-          peso_objetivo: objetivo.peso,
+          porcentaje_objetivo: objetivo.porcentaje !== null ? String(objetivo.porcentaje) : null,
+          peso_objetivo: objetivo.peso !== null ? String(objetivo.peso) : null,
           repeticiones_objetivo: ep.repeticiones,
           aproximaciones_plan: plan.length,
         },
@@ -386,7 +463,7 @@ export async function guardarSesionEntrenamiento(
       datos: {
         tipo_serie: "aproximacion",
         porcentaje_objetivo: delPlan?.porcentaje != null ? String(delPlan.porcentaje) : null,
-        peso_objetivo: delPlan?.porcentaje != null && rm ? String(cargaDe1RM(rm, delPlan.porcentaje)) : null,
+        peso_objetivo: delPlan?.porcentaje != null && rm ? String(cargaDe1RM(rm, delPlan.porcentaje, paso)) : null,
         repeticiones_objetivo: delPlan?.reps || null,
         agregada_por_alumno: !delPlan,
       },

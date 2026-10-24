@@ -249,6 +249,9 @@ model Entrenador {
   // cargados, no se muestran.
   alias_pago        String?
   mensaje_membresia String?
+  // Redondeo de las cargas calculadas con el 1RM, según los discos que hay
+  // en el gimnasio (0.5, 1, 1.25, 2.5, 5 kg...). Ver redondearCarga().
+  redondeo_carga_kg Decimal  @default(0.5) @db.Decimal(4, 2)
   fecha_alta        DateTime @default(now())
 
   relaciones RelacionEntrenadorAlumno[]
@@ -310,6 +313,20 @@ model Membresia {
   fecha_creacion              DateTime        @default(now())
   fecha_actualizacion         DateTime        @updatedAt
 
+  // Membresías de Blackfit que activa el coach (1 a 30 días): qué se
+  // contrató, quién lo hizo y si fue alta o renovación. Nulos en las
+  // membresías anteriores a este cambio y en las de Kuntur.
+  dias_contratados       Int?
+  tipo_operacion         String? // "activacion" | "renovacion"
+  id_usuario_operador    String?
+  // Id que genera la pantalla al abrir el formulario de activación: el
+  // mismo pedido repetido (doble clic, reintento) nunca suma días dos veces.
+  clave_operacion        String?   @unique
+  // Suspensión manual (distinta del vencimiento automático por fecha).
+  fecha_suspension       DateTime?
+  motivo_suspension      String?
+  id_usuario_suspension  String?
+
   usuario        Usuario       @relation(fields: [id_usuario], references: [id_usuario], onDelete: Cascade)
   plan_membresia PlanMembresia @relation(fields: [id_plan_membresia], references: [id_plan_membresia])
 
@@ -336,6 +353,13 @@ model ProgramaEntrenamiento {
   estado_programa    EstadoPrograma    @default(activo)
   es_plantilla       Boolean           @default(false)
   tipo_planificacion TipoPlanificacion @default(fija)
+  // Progresión semanal (bloque de fuerza cíclico de 4 semanas): desde
+  // cuándo cuenta el ciclo. Semana = períodos de 7 días desde acá, y
+  // después de la 4 vuelve a la 1. Nulo = se usa fecha_inicio.
+  fecha_inicio_ciclo DateTime?
+  // Mientras el programa está pausado el ciclo no avanza: al reanudar se
+  // corre fecha_inicio_ciclo lo que duró la pausa.
+  fecha_pausa        DateTime?
 
   alumno         Alumno?               @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
   entrenador     Entrenador            @relation(fields: [id_entrenador], references: [id_entrenador])
@@ -457,6 +481,12 @@ model EjercicioPrograma {
   progresion_fuerza           Boolean @default(false)
   aproximaciones              Json?
   alumno_edita_aproximaciones Boolean @default(true)
+  // % del 1RM de la serie efectiva que fija el coach por semana, dentro del
+  // rango de la semana: { "1": 92.5, "2": 62, "3": 72.5, "4": 82.5 }.
+  porcentajes_semana          Json?
+  // Carga fijada a mano por el coach para una semana (kg). Pisa al cálculo
+  // con el 1RM y no se recalcula cuando cambia el 1RM: { "2": 60 }.
+  cargas_fijas                Json?
 
   bloque             BloqueEntrenamiento  @relation(fields: [id_bloque], references: [id_bloque], onDelete: Cascade)
   ejercicio          Ejercicio            @relation(fields: [id_ejercicio], references: [id_ejercicio])
@@ -950,9 +980,20 @@ model RmReferencia {
   id_alumno        String
   levantamiento    Levantamiento
   valor_kg         Decimal       @db.Decimal(6, 2)
+  // Desde cuándo rige (para un valor propuesto por el alumno, la fecha en
+  // que el coach lo validó).
   fecha            DateTime      @default(now())
   id_usuario_autor String?
   nota             String?
+  // "medido" (test real) | "estimado" (fórmula / RPE).
+  fuente           String        @default("medido")
+  // "validado" = cuenta para las cargas. "propuesto" = lo cargó el alumno y
+  // espera revisión del coach. "rechazado" = el coach no lo aceptó.
+  estado           String        @default("validado")
+  // 1RM vigente al momento de este registro (para el historial).
+  valor_anterior   Decimal?      @db.Decimal(6, 2)
+  fecha_registro   DateTime      @default(now())
+  id_usuario_validador String?
 
   alumno Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
 

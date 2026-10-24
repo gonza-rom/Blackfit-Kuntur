@@ -42,6 +42,7 @@ export default async function CoachPerfilPage() {
             biografia={usuario.entrenador?.biografia ?? null}
             aliasPago={usuario.entrenador?.alias_pago ?? null}
             mensajeMembresia={usuario.entrenador?.mensaje_membresia ?? null}
+            redondeoCarga={usuario.entrenador ? Number(usuario.entrenador.redondeo_carga_kg) : 0.5}
           />
         </div>
       </div>

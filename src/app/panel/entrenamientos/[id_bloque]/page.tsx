@@ -7,10 +7,12 @@ import {
   cargaDe1RM,
   detectarLevantamiento,
   objetivoEfectiva,
+  progresionHabilitada,
+  NOMBRE_SEMANA,
 } from "@/lib/progresion-fuerza";
 import { semanaDeLaSesion } from "@/lib/alumno";
 import { etiquetaSesion } from "@/lib/secuencia";
-import { obtenerRmVigentes } from "@/lib/rm-referencia";
+import { obtenerRmVigentes, obtenerPasoRedondeo } from "@/lib/rm-referencia";
 
 export default async function RegistrarEntrenamientoPage(
   props: PageProps<"/panel/entrenamientos/[id_bloque]">
@@ -52,33 +54,52 @@ export default async function RegistrarEntrenamientoPage(
     notFound();
   }
 
-  // Progresión de fuerza: semana actual del bloque de 4 y 1RM vigente. El
-  // servidor vuelve a calcular todo esto al guardar (no confía en el cliente).
-  // Semana del bloque: en un plan por sesiones, según las completadas
-  // (retrasarse no adelanta la semana); en un plan viejo, por calendario.
+  // Progresión de fuerza: semana del ciclo y 1RM vigente. El servidor
+  // vuelve a calcular todo esto al guardar (no confía en el cliente).
+  // Semana: en Progresión semanal por calendario (ciclo de 4 que se
+  // repite); en otro plan por sesiones, según las completadas.
   const semana = await semanaDeLaSesion(
     bloque.programa,
     bloque,
     bloque.programa.bloques.map((b) => ({ ...b, cantidadEjercicios: b._count.ejercicios_programa }))
   );
-  const rmVigentes = bloque.ejercicios_programa.some((ep) => ep.progresion_fuerza)
-    ? await obtenerRmVigentes(contexto.id_alumno)
-    : null;
+  // "Rutina fija" nunca calcula cargas por 1RM.
+  const conProgresion =
+    progresionHabilitada(bloque.programa.tipo_planificacion) &&
+    bloque.ejercicios_programa.some((ep) => ep.progresion_fuerza);
+  const [rmVigentes, paso] = conProgresion
+    ? await Promise.all([obtenerRmVigentes(contexto.id_alumno), obtenerPasoRedondeo(bloque.programa.id_entrenador)])
+    : [null, undefined];
 
   function datosFuerza(ep: NonNullable<typeof bloque>["ejercicios_programa"][number]) {
-    if (!ep.progresion_fuerza || ep.id_grupo) return null;
+    if (!conProgresion || !ep.progresion_fuerza || ep.id_grupo) return null;
     const levantamiento = detectarLevantamiento(ep.ejercicio.nombre);
     if (!levantamiento) return null;
+    // Cada levantamiento con SU 1RM.
     const rm = rmVigentes?.[levantamiento]?.valor ?? null;
-    const efectiva = objetivoEfectiva(semana, rm);
-    return {
+    const efectiva = objetivoEfectiva(
       semana,
       rm,
-      efectiva: { porcentaje: efectiva.porcentaje, peso: efectiva.peso, reps: ep.repeticiones },
+      { porcentajes: ep.porcentajes_semana, cargasFijas: ep.cargas_fijas },
+      paso
+    );
+    return {
+      semana,
+      nombreSemana: NOMBRE_SEMANA[semana],
+      rm,
+      efectiva: {
+        porcentaje: efectiva.porcentaje,
+        peso: efectiva.peso,
+        fija: efectiva.fija,
+        reps: ep.repeticiones,
+        series: Math.max(1, ep.series),
+      },
+      descanso: ep.descanso,
+      tempo: ep.tempo,
       aproximaciones: aproximacionesDeSemana(ep.aproximaciones, semana).map((a) => ({
         reps: a.reps,
         porcentaje: a.porcentaje,
-        peso: a.porcentaje != null && rm ? cargaDe1RM(rm, a.porcentaje) : null,
+        peso: a.porcentaje != null && rm ? cargaDe1RM(rm, a.porcentaje, paso) : null,
       })),
       alumnoEdita: ep.alumno_edita_aproximaciones,
     };
@@ -127,7 +148,9 @@ export default async function RegistrarEntrenamientoPage(
         </h1>
         <p className="text-sm text-on-surface-variant">
           {bloque.programa.nombre}
-          {bloque.numero_dia != null ? ` · Semana ${semana} del bloque` : ""}
+          {bloque.numero_dia != null
+            ? ` · Semana ${semana} de 4${bloque.programa.tipo_planificacion === "semanal" ? ` (${NOMBRE_SEMANA[semana]})` : ""}`
+            : ""}
         </p>
       </div>
 

@@ -2,17 +2,20 @@
 
 import { useActionState } from "react";
 import { actualizarPerfilEntrenador } from "@/app/actions/coach";
+import { PASOS_REDONDEO } from "@/lib/progresion-fuerza";
 
 export function FormPerfilEntrenador({
   especialidad,
   biografia,
   aliasPago,
   mensajeMembresia,
+  redondeoCarga,
 }: {
   especialidad: string | null;
   biografia: string | null;
   aliasPago: string | null;
   mensajeMembresia: string | null;
+  redondeoCarga: number;
 }) {
   const [state, action, pending] = useActionState(actualizarPerfilEntrenador, undefined);
 
@@ -93,6 +96,30 @@ export function FormPerfilEntrenador({
           placeholder="Consultá con tu Coach para renovar tu membresía."
           className="w-full bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface font-[family-name:var(--font-inter)] text-base p-3 transition-colors"
         />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <label
+          htmlFor="redondeo_carga_kg"
+          className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase"
+        >
+          Redondeo de cargas por 1RM
+        </label>
+        <select
+          id="redondeo_carga_kg"
+          name="redondeo_carga_kg"
+          defaultValue={String(redondeoCarga)}
+          className="w-full bg-[#262626] border border-transparent focus:border-primary-container focus:ring-0 focus:outline-none rounded text-on-surface font-[family-name:var(--font-inter)] text-base p-3"
+        >
+          {PASOS_REDONDEO.map((p) => (
+            <option key={p} value={String(p)}>
+              Múltiplos de {String(p).replace(".", ",")} kg
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-on-surface-variant">
+          Según los discos del gimnasio. Se aplica a las cargas calculadas de la Progresión semanal.
+        </p>
       </div>
 
       {state?.error && (

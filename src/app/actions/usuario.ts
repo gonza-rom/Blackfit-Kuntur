@@ -2,7 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { obtenerUsuarioActual, accesoAlumnoBloqueado } from "@/lib/auth";
+import {
+  obtenerUsuarioActual,
+  estadoAccesoEntrenamiento,
+  type EstadoAccesoEntrenamiento,
+} from "@/lib/auth";
+import { obtenerMembresiaBlackfit } from "@/lib/membresia";
 import { subirAvatar } from "@/lib/storage";
 import { avisar } from "@/lib/aviso";
 
@@ -13,7 +18,8 @@ export async function actualizarInformacionPersonal(
   formData: FormData
 ): Promise<EstadoUsuario> {
   const usuario = await obtenerUsuarioActual();
-  if (!usuario || (await accesoAlumnoBloqueado(usuario))) return { error: "No autorizado." };
+  // Datos personales: disponibles en cualquier estado de la membresía.
+  if (!usuario) return { error: "No autorizado." };
 
   const nombre = String(formData.get("nombre") ?? "").trim();
   const apellido = String(formData.get("apellido") ?? "").trim();
@@ -44,4 +50,21 @@ export async function actualizarInformacionPersonal(
   revalidatePath("/coach/perfil");
   revalidatePath("/beneficiario/perfil");
   return { message: "Tus datos se actualizaron." };
+}
+
+/**
+ * Estado actual del acceso al entrenamiento, para que la app abierta se
+ * entere sin recargar (al volver del segundo plano, o cada tanto) y
+ * bloquee/desbloquee la pantalla. Solo informa: el bloqueo real lo hace el
+ * servidor en cada página, acción y API.
+ */
+export async function consultarAccesoEntrenamiento(): Promise<{
+  estado: EstadoAccesoEntrenamiento;
+  vencimiento: number | null;
+} | null> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return null;
+  const estado = await estadoAccesoEntrenamiento(usuario);
+  const { vencimiento } = await obtenerMembresiaBlackfit(usuario.id_usuario);
+  return { estado, vencimiento: estado === "permitido" && vencimiento ? vencimiento.getTime() : null };
 }

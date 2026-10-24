@@ -1,9 +1,36 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { obtenerUsuarioActual, cuentaActiva, accesoAlumnoBloqueado } from "@/lib/auth";
+import {
+  obtenerUsuarioActual,
+  cuentaActiva,
+  estadoAccesoEntrenamiento,
+  entornosDisponibles,
+} from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { linkWhatsapp } from "@/lib/telefono";
 import { cerrarSesion } from "@/app/actions/auth";
+
+// Un mensaje por motivo de bloqueo (sin errores técnicos ni pantallas vacías).
+const MENSAJES = {
+  sin_membresia: {
+    titulo: "Tu servicio de entrenamiento todavía no está activado.",
+    texto: "Tu entrenador debe habilitar tu membresía para que puedas acceder a tus rutinas y planificación.",
+    whatsapp: "quiero activar mi membresía de entrenamiento de Black Hub.",
+    boton: "Escribir a mi coach",
+  },
+  vencida: {
+    titulo: "Tu membresía de entrenamiento ha vencido.",
+    texto: "Contactá a tu entrenador para renovar el servicio y recuperar el acceso a tu planificación.",
+    whatsapp: "quiero renovar mi membresía de Black Hub.",
+    boton: "Renovar por WhatsApp",
+  },
+  suspendida: {
+    titulo: "Tu servicio de entrenamiento está suspendido.",
+    texto: "Contactá a tu entrenador para consultar el estado de tu membresía.",
+    whatsapp: "quiero consultar el estado de mi membresía de Black Hub.",
+    boton: "Escribir a mi coach",
+  },
+} as const;
 
 export default async function MembresiaVencidaPage() {
   const usuario = await obtenerUsuarioActual();
@@ -12,7 +39,12 @@ export default async function MembresiaVencidaPage() {
   // renovada por el coach: no hay nada que mostrar acá.
   if (!usuario) redirect("/iniciar-sesion");
   if (!cuentaActiva(usuario)) redirect("/cuenta-inactiva");
-  if (!(await accesoAlumnoBloqueado(usuario))) redirect("/panel");
+  const estado = await estadoAccesoEntrenamiento(usuario);
+  if (estado === "permitido") redirect("/panel");
+  const mensaje = MENSAJES[estado];
+  // Coach / admin / socio de Kuntur que además es alumno: sus otros
+  // entornos no dependen de la membresía de entrenamiento.
+  const otrosEntornos = entornosDisponibles(usuario).filter((e) => e.clave !== "alumno");
 
   // Solo el coach con la relación ACTIVA con este alumno.
   const relacion = usuario.alumno
@@ -26,7 +58,7 @@ export default async function MembresiaVencidaPage() {
   const wa = entrenador
     ? linkWhatsapp(
         entrenador.usuario.telefono,
-        `Hola ${entrenador.usuario.nombre}, quiero renovar mi membresía de Black Hub.`
+        `Hola ${entrenador.usuario.nombre}, ${mensaje.whatsapp}`
       )
     : null;
 
@@ -36,14 +68,13 @@ export default async function MembresiaVencidaPage() {
         <span className="flex items-center justify-center w-16 h-16 rounded-full bg-[#ffb4ab]/10 text-[#ffb4ab]">
           <span className="material-symbols-outlined text-4xl">lock</span>
         </span>
-        <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface uppercase">
-          Tu membresía ha vencido
+        <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">
+          {mensaje.titulo}
         </h1>
         <p className="font-[family-name:var(--font-inter)] text-sm text-on-surface-variant">
-          Tu período de acceso a los entrenamientos ha finalizado.
+          {mensaje.texto}
           <br />
-          Para volver a utilizar tu planificación y continuar entrenando, contactá a tu Coach para
-          renovar tu membresía.
+          Tus datos, rutinas e historial siguen guardados.
         </p>
 
         {wa ? (
@@ -54,13 +85,13 @@ export default async function MembresiaVencidaPage() {
             className="w-full flex items-center justify-center gap-2 bg-primary-container text-black font-[family-name:var(--font-sora)] text-[15px] font-bold h-12 rounded mt-2 hover:opacity-90 active:scale-[0.98] transition-all uppercase"
           >
             <span className="material-symbols-outlined text-[20px]">chat</span>
-            Renovar por WhatsApp
+            {mensaje.boton}
           </a>
         ) : (
           // Sin teléfono del coach configurado: un aviso, nunca un link roto.
           <p className="w-full bg-[#1A1A1A] border border-[#262626] rounded-xl p-3 text-sm text-on-surface-variant">
             Tu coach todavía no configuró su WhatsApp. Escribile por el medio que usen
-            habitualmente para renovar.
+            habitualmente.
           </p>
         )}
 
@@ -89,6 +120,20 @@ export default async function MembresiaVencidaPage() {
                 {entrenador.mensaje_membresia}
               </p>
             )}
+          </div>
+        )}
+
+        {otrosEntornos.length > 0 && (
+          <div className="w-full flex flex-col gap-2">
+            {otrosEntornos.map((e) => (
+              <Link
+                key={e.clave}
+                href={e.href}
+                className="w-full flex items-center justify-center gap-2 border border-outline-variant text-on-surface font-[family-name:var(--font-sora)] text-sm font-bold h-11 rounded hover:bg-surface-variant/20 transition-all"
+              >
+                Ir a {e.etiqueta}
+              </Link>
+            ))}
           </div>
         )}
 

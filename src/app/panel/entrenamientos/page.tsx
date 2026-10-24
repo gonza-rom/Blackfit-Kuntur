@@ -6,6 +6,8 @@ import { obtenerProgramaActivo, obtenerSiguienteSesion } from "@/lib/alumno";
 import { esPlanSecuencial, etiquetaSesion } from "@/lib/secuencia";
 import { FilterChips } from "./_components/filter-chips";
 import { resumenDia } from "@/lib/plan-dia";
+import { obtenerRmVigentes, LEVANTAMIENTOS } from "@/lib/rm-referencia";
+import { MisRm, type MiRm } from "./_components/mis-rm";
 
 type EntrenamientoItem = {
   id_entrenamiento: string;
@@ -22,6 +24,13 @@ type ProgramaItem = {
   entrenador: { usuario: { nombre: string; apellido: string } } | null;
   entrenamientos: EntrenamientoItem[];
 };
+
+const FORMATEADOR_PROXIMA_SEMANA = new Intl.DateTimeFormat("es-AR", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  timeZone: "America/Argentina/Buenos_Aires",
+});
 
 export default async function EntrenamientosPage() {
   // Con la membresía vencida solo queda el perfil: acá, aviso de renovación.
@@ -61,6 +70,27 @@ export default async function EntrenamientosPage() {
     ? await obtenerSiguienteSesion(programaActivo)
     : ({ tipo: "sin_plan" } as const);
   const bloqueActual = siguiente.tipo === "sesion" ? siguiente.bloque : null;
+
+  // 1RM vigentes (validados por el coach) y propuestas pendientes.
+  const misRm: MiRm[] | null = contexto
+    ? await (async () => {
+        const [vigentes, pendientes] = await Promise.all([
+          obtenerRmVigentes(contexto.id_alumno),
+          prisma.rmReferencia.findMany({
+            where: { id_alumno: contexto.id_alumno, estado: "propuesto" },
+            select: { levantamiento: true, valor_kg: true },
+          }),
+        ]);
+        return LEVANTAMIENTOS.map((l) => ({
+          levantamiento: l,
+          vigente: vigentes[l]?.valor ?? null,
+          propuesto: (() => {
+            const p = pendientes.find((x) => x.levantamiento === l);
+            return p ? Number(p.valor_kg) : null;
+          })(),
+        }));
+      })()
+    : null;
   // Plan por sesiones: solo los Día N con ejercicios, en orden (semana y número).
   const sesionesDelPrograma = programaActivo
     ? esPlanSecuencial(programaActivo.bloques)
@@ -141,6 +171,15 @@ export default async function EntrenamientosPage() {
               </div>
             </div>
           </div>
+        ) : siguiente.tipo === "semana_completa" ? (
+          <div className="rounded-xl border border-primary-container/40 bg-surface-container p-6 text-center">
+            <p className="font-[family-name:var(--font-sora)] font-semibold text-on-surface">
+              ¡Completaste las sesiones de la semana {siguiente.semana}! 💪
+            </p>
+            <p className="font-[family-name:var(--font-inter)] text-sm text-on-surface-variant mt-1">
+              La próxima semana del ciclo arranca el {FORMATEADOR_PROXIMA_SEMANA.format(siguiente.proximaSemana)}.
+            </p>
+          </div>
         ) : siguiente.tipo === "bloque_completo" ? (
           <div className="rounded-xl border border-primary-container/40 bg-surface-container p-6 text-center">
             <p className="font-[family-name:var(--font-sora)] font-semibold text-on-surface">
@@ -158,6 +197,8 @@ export default async function EntrenamientosPage() {
           </div>
         )}
       </section>
+
+      {misRm && <MisRm rms={misRm} />}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Columna izquierda: programas */}

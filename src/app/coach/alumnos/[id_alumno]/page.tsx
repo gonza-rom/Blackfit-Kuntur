@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
 import { detectarAlertas, calcularEstadoSemaforo, ETIQUETA_ESTADO_SEMAFORO } from "@/lib/alertas";
 import { urlesFirmadasFotos } from "@/lib/storage";
-import { calcularSemanaYDiasActivos } from "@/lib/alumno";
+import { calcularSemanaYDiasActivos, inicioCicloPrograma } from "@/lib/alumno";
+import { posicionCiclo, NOMBRE_SEMANA } from "@/lib/progresion-fuerza";
 import { obtenerOCrearProgramaActivo } from "@/app/actions/coach";
 import { ObjetivosAlumno, type ObjetivoSerializado } from "./_components/objetivos-alumno";
 import { BotonDesvincular } from "./_components/boton-desvincular";
@@ -22,14 +23,33 @@ import {
 import { TabsAlumno } from "./_components/tabs-alumno";
 import { PlanificacionTab } from "./_components/planificacion-tab";
 import { FotosTab, type FotoSerializada } from "./_components/fotos-tab";
-import { RmReferenciaCoach, type RmSerializado } from "./_components/rm-referencia-coach";
-import { obtenerHistorialRm, obtenerRmVigentes } from "@/lib/rm-referencia";
+import { RmReferenciaCoach, type RmSerializado, type PropuestaRm } from "./_components/rm-referencia-coach";
+import {
+  obtenerHistorialRm,
+  obtenerRmVigentes,
+  cargasAfectadasPorRm,
+  obtenerPasoRedondeo,
+} from "@/lib/rm-referencia";
 import type { Levantamiento } from "@/lib/progresion-fuerza";
 import { etiquetaSesion, posicionSecuencia, sesionesDeSemana } from "@/lib/secuencia";
-import { obtenerDiasMembresia, claseColorMembresia, DIAS_MEMBRESIA_COACH } from "@/lib/membresia";
-import { activarMembresia30Dias } from "@/app/actions/coach";
+import {
+  obtenerMembresiaBlackfit,
+  claseEstadoMembresia,
+  textoEstadoMembresia,
+} from "@/lib/membresia";
+import { suspenderMembresiaBlackfit, reanudarMembresiaBlackfit } from "@/app/actions/coach";
 import { ConfirmForm } from "@/components/confirm-form";
+import { ActivarMembresia } from "../_components/activar-membresia";
 import type { FilaSeguimiento } from "./_components/planificacion-tab";
+
+const FORMATEADOR_FECHA_HORA = new Intl.DateTimeFormat("es-AR", {
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "America/Argentina/Buenos_Aires",
+});
 
 // "jueves 22 de octubre": la fecha real en que entrenó, aparte del Día N.
 const FORMATEADOR_FECHA_SESION = new Intl.DateTimeFormat("es-AR", {
@@ -156,22 +176,42 @@ export default async function AlumnoDetallePage(
 
   const programaActivo = await obtenerOCrearProgramaActivo(id_alumno, contexto.id_entrenador);
 
-  const [rmVigentes, historialRm] = await Promise.all([
+  const [rmVigentes, historialRm, cargasAfectadas, pasoRedondeo] = await Promise.all([
     obtenerRmVigentes(id_alumno),
     obtenerHistorialRm(id_alumno),
+    cargasAfectadasPorRm(id_alumno),
+    obtenerPasoRedondeo(contexto.id_entrenador),
   ]);
   const rmsSerializados: RmSerializado[] = (["sentadilla", "press_banca", "peso_muerto"] as Levantamiento[]).map(
     (levantamiento) => {
       const vigente = rmVigentes[levantamiento];
       return {
         levantamiento,
-        vigente: vigente ? { valor: vigente.valor, fechaLabel: FORMATEADOR_FECHA.format(vigente.fecha) } : null,
+        vigente: vigente
+          ? { valor: vigente.valor, fechaLabel: FORMATEADOR_FECHA.format(vigente.fecha), fuente: vigente.fuente }
+          : null,
         historial: historialRm
           .filter((h) => h.levantamiento === levantamiento)
-          .map((h) => ({ id_rm: h.id_rm, valor: h.valor_kg, fechaLabel: FORMATEADOR_FECHA.format(h.fecha) })),
+          .map((h) => ({
+            id_rm: h.id_rm,
+            valor: h.valor_kg,
+            anterior: h.valor_anterior,
+            fuente: h.fuente,
+            estado: h.estado,
+            fechaLabel: FORMATEADOR_FECHA.format(h.estado === "validado" ? h.fecha : h.fecha_registro),
+          })),
       };
     }
   );
+  const propuestasRm: PropuestaRm[] = historialRm
+    .filter((h) => h.estado === "propuesto")
+    .map((h) => ({
+      id_rm: h.id_rm,
+      levantamiento: h.levantamiento,
+      valor: h.valor_kg,
+      fuente: h.fuente,
+      fechaLabel: FORMATEADOR_FECHA.format(h.fecha_registro),
+    }));
 
   const [
     ultimaSesion,
@@ -332,8 +372,26 @@ export default async function AlumnoDetallePage(
   ]);
 
   const { usuario } = relacion.alumno;
-  // Mismo dato que Coach → Alumnos e Inicio/Perfil del alumno.
-  const diasMembresia = await obtenerDiasMembresia(usuario.id_usuario);
+  // Mismo estado que Coach → Alumnos, el perfil del alumno y el bloqueo del servidor.
+  const estadoMembresia = await obtenerMembresiaBlackfit(usuario.id_usuario);
+  const historialMembresias = await prisma.membresia.findMany({
+    where: { id_usuario: usuario.id_usuario, plan_membresia: { organizacion: "blackfit" } },
+    orderBy: { fecha_creacion: "desc" },
+    take: 20,
+  });
+  const idsOperadores = [
+    ...new Set(
+      historialMembresias.flatMap((m) => [m.id_usuario_operador, m.id_usuario_suspension]).filter((x): x is string => !!x)
+    ),
+  ];
+  const operadores = new Map(
+    (
+      await prisma.usuario.findMany({
+        where: { id_usuario: { in: idsOperadores } },
+        select: { id_usuario: true, nombre: true, apellido: true },
+      })
+    ).map((u) => [u.id_usuario, `${u.nombre} ${u.apellido}`])
+  );
 
   const urlesFotos = await urlesFirmadasFotos(medidas.map((m) => m.foto_url));
   const urlesFotosAngulo = await urlesFirmadasFotos(fotosAngulo.map((m) => m.foto_url));
@@ -413,25 +471,35 @@ export default async function AlumnoDetallePage(
     ...b,
     cantidadEjercicios: b._count.ejercicios_programa,
   }));
+  // Progresión semanal: el ciclo avanza por calendario y se repite, así que
+  // el seguimiento muestra solo el ciclo EN CURSO (los anteriores quedan en
+  // el historial de Ejecución).
+  const esSemanal = programaActivo.tipo_planificacion === "semanal";
+  const ciclo = posicionCiclo(inicioCicloPrograma(programaActivo), new Date(), programaActivo.fecha_pausa);
+  const inicioCicloActual = new Date(ciclo.inicioSemana.getTime() - (ciclo.semana - 1) * 7 * 24 * 60 * 60 * 1000);
+  const sesionesSeguimiento = esSemanal
+    ? sesionesDelPlan.filter((e) => e.fecha >= inicioCicloActual)
+    : sesionesDelPlan;
   const posicionActual = posicionSecuencia(diasPlan, sesionesDelPlan.length);
   const usadas = new Set<number>();
   const seguimiento: FilaSeguimiento[] = [1, 2, 3, 4]
     .map((semana) => ({
       semana,
       sesiones: sesionesDeSemana(diasPlan, semana).map((dia) => {
-        const idx = sesionesDelPlan.findIndex(
+        const idx = sesionesSeguimiento.findIndex(
           (e, k) =>
             !usadas.has(k) &&
             e.semana_programa === semana &&
             (e.id_bloque === dia.id_bloque || (e.id_bloque == null && e.numero_dia === dia.numero_dia))
         );
         if (idx >= 0) usadas.add(idx);
-        const hecha = idx >= 0 ? sesionesDelPlan[idx] : null;
-        const esSiguiente =
-          !hecha &&
-          !posicionActual.completo &&
-          posicionActual.semana === semana &&
-          posicionActual.bloque.id_bloque === dia.id_bloque;
+        const hecha = idx >= 0 ? sesionesSeguimiento[idx] : null;
+        const esSiguiente = esSemanal
+          ? !hecha && semana === ciclo.semana
+          : !hecha &&
+            !posicionActual.completo &&
+            posicionActual.semana === semana &&
+            posicionActual.bloque.id_bloque === dia.id_bloque;
         return {
           id_bloque: dia.id_bloque,
           numero_dia: dia.numero_dia ?? 0,
@@ -535,7 +603,10 @@ export default async function AlumnoDetallePage(
   const estadoSemaforo = calcularEstadoSemaforo(alertas);
   const edad = calcularEdad(relacion.alumno.fecha_nacimiento);
   const pesoActual = progresos[0]?.peso_corporal ? Number(progresos[0].peso_corporal) : null;
-  const { semanaActual, diasActivos } = calcularSemanaYDiasActivos(programaActivo.fecha_inicio);
+  const { semanaActual, diasActivos } = calcularSemanaYDiasActivos(
+    inicioCicloPrograma(programaActivo),
+    programaActivo.fecha_pausa
+  );
 
   const panelResumen = (
     <div className="flex flex-col gap-6">
@@ -1006,42 +1077,126 @@ export default async function AlumnoDetallePage(
         />
       </section>
 
-      {/* Membresía: el pago es por fuera; el coach confirma y activa/renueva. */}
-      <section className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-col gap-0.5">
-          <span className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] text-on-surface-variant uppercase">
-            Membresía
-          </span>
-          <span
-            className={`inline-flex items-center gap-2 font-[family-name:var(--font-sora)] text-base font-bold ${claseColorMembresia(diasMembresia)}`}
-          >
-            <span aria-hidden className="w-2 h-2 rounded-full bg-current" />
-            {diasMembresia === null
-              ? "Sin membresía"
-              : diasMembresia <= 0
-                ? "Vencida — acceso a entrenamientos bloqueado"
-                : `Activa · ${diasMembresia} día${diasMembresia === 1 ? "" : "s"}`}
-          </span>
+      {/* Membresía: el pago es por fuera; el coach elige 1–30 días y confirma. */}
+      <section className="bg-[#1A1A1A] border border-[#262626] rounded-xl p-4 flex flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <span className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.08em] text-on-surface-variant uppercase">
+              Membresía
+            </span>
+            <span
+              className={`inline-flex items-center gap-2 font-[family-name:var(--font-sora)] text-base font-bold ${claseEstadoMembresia(estadoMembresia)}`}
+            >
+              <span aria-hidden className="w-2 h-2 rounded-full bg-current" />
+              {estadoMembresia.estado === "activa"
+                ? `Activa · ${textoEstadoMembresia(estadoMembresia)}`
+                : `${textoEstadoMembresia(estadoMembresia)} — entrenamiento bloqueado`}
+            </span>
+            {estadoMembresia.vencimiento && (
+              <span className="text-xs text-on-surface-variant">
+                {estadoMembresia.estado === "activa"
+                  ? "Vence el "
+                  : estadoMembresia.estado === "suspendida"
+                    ? "Período hasta el "
+                    : "Venció el "}
+                {FORMATEADOR_FECHA_HORA.format(estadoMembresia.vencimiento)}
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {estadoMembresia.estado === "suspendida" && (
+              <ConfirmForm
+                action={reanudarMembresiaBlackfit}
+                titulo="Reanudar membresía"
+                mensaje={`¿Levantar la suspensión de ${usuario.nombre}? Recupera el acceso hasta el vencimiento original.`}
+                confirmLabel="Reanudar"
+                variante="positiva"
+              >
+                <input type="hidden" name="id_alumno" value={id_alumno} />
+                <button
+                  type="submit"
+                  className="font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] uppercase px-4 py-2 rounded-full border border-primary-container text-primary-container font-bold"
+                >
+                  Reanudar
+                </button>
+              </ConfirmForm>
+            )}
+            {estadoMembresia.estado === "activa" && (
+              <ConfirmForm
+                action={suspenderMembresiaBlackfit}
+                titulo="Suspender membresía"
+                mensaje={`¿Suspender el servicio de ${usuario.nombre}? Pierde el acceso al entrenamiento hasta que lo reanudes; su planificación e historial no se borran.`}
+                confirmLabel="Suspender"
+              >
+                <input type="hidden" name="id_alumno" value={id_alumno} />
+                <button
+                  type="submit"
+                  className="font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] uppercase px-4 py-2 rounded-full border border-[#ffb4ab]/60 text-[#ffb4ab] font-bold"
+                >
+                  Suspender
+                </button>
+              </ConfirmForm>
+            )}
+            <ActivarMembresia
+              idAlumno={id_alumno}
+              nombreAlumno={`${usuario.nombre} ${usuario.apellido}`}
+              vencimientoVigente={
+                estadoMembresia.estado === "activa" && estadoMembresia.vencimiento
+                  ? estadoMembresia.vencimiento.getTime()
+                  : null
+              }
+              etiqueta={estadoMembresia.estado === "sin_membresia" ? "Activar membresía" : "Renovar membresía"}
+            />
+          </div>
         </div>
-        <ConfirmForm
-          action={activarMembresia30Dias}
-          titulo={diasMembresia !== null && diasMembresia > 0 ? "Renovar membresía" : "Activar membresía"}
-          mensaje={
-            diasMembresia !== null && diasMembresia > 0
-              ? `¿Renovar ${DIAS_MEMBRESIA_COACH} días para ${usuario.nombre}? Se suman al final de su período actual.`
-              : `¿Activar ${DIAS_MEMBRESIA_COACH} días para ${usuario.nombre}? Empiezan a contar desde ahora.`
-          }
-          confirmLabel={diasMembresia !== null && diasMembresia > 0 ? "Renovar" : "Activar"}
-          variante="positiva"
-        >
-          <input type="hidden" name="id_alumno" value={id_alumno} />
-          <button
-            type="submit"
-            className="font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] uppercase px-4 py-2 rounded-full bg-primary-container text-black font-bold hover:opacity-90 active:scale-95 transition-all"
-          >
-            Activar / Renovar {DIAS_MEMBRESIA_COACH} días
-          </button>
-        </ConfirmForm>
+
+        {historialMembresias.length > 0 && (
+          <details className="text-sm">
+            <summary className="cursor-pointer select-none text-on-surface-variant text-xs">
+              Historial de activaciones ({historialMembresias.length})
+            </summary>
+            <ul className="mt-2 flex flex-col gap-1.5">
+              {historialMembresias.map((m) => (
+                <li
+                  key={m.id_membresia}
+                  className="bg-[#131313] border border-[#262626] rounded-lg px-3 py-2 flex flex-col gap-0.5"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-on-surface font-semibold">
+                      {m.tipo_operacion === "renovacion"
+                        ? "Renovación"
+                        : m.tipo_operacion === "activacion"
+                          ? "Activación"
+                          : "Membresía"}
+                      {m.dias_contratados ? ` · ${m.dias_contratados} día${m.dias_contratados === 1 ? "" : "s"}` : ""}
+                    </span>
+                    <span className="font-[family-name:var(--font-jetbrains-mono)] text-[10px] tracking-[0.06em] uppercase text-on-surface-variant">
+                      {m.estado_membresia === "activa" && m.fecha_vencimiento_membresia <= new Date()
+                        ? "vencida"
+                        : m.estado_membresia}
+                    </span>
+                  </div>
+                  <span className="text-xs text-on-surface-variant tabular-nums">
+                    {FORMATEADOR_FECHA_HORA.format(m.fecha_inicio_membresia)} →{" "}
+                    {FORMATEADOR_FECHA_HORA.format(m.fecha_vencimiento_membresia)}
+                  </span>
+                  {m.id_usuario_operador && (
+                    <span className="text-xs text-on-surface-variant">
+                      Por {operadores.get(m.id_usuario_operador) ?? "—"} el {FORMATEADOR_FECHA_HORA.format(m.fecha_creacion)}
+                    </span>
+                  )}
+                  {m.fecha_suspension && (
+                    <span className="text-xs text-[#ff8a3d]">
+                      Suspendida el {FORMATEADOR_FECHA_HORA.format(m.fecha_suspension)}
+                      {m.id_usuario_suspension ? ` por ${operadores.get(m.id_usuario_suspension) ?? "—"}` : ""}
+                      {m.motivo_suspension ? ` · ${m.motivo_suspension}` : ""}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
       </section>
 
       <TabsAlumno
@@ -1050,7 +1205,13 @@ export default async function AlumnoDetallePage(
           resumen: panelResumen,
           planificacion: (
             <div className="flex flex-col gap-4">
-              <RmReferenciaCoach idAlumno={id_alumno} rms={rmsSerializados} />
+              <RmReferenciaCoach
+                idAlumno={id_alumno}
+                rms={rmsSerializados}
+                afectadas={cargasAfectadas}
+                propuestas={propuestasRm}
+                paso={pasoRedondeo}
+              />
               <PlanificacionTab
                 idAlumno={id_alumno}
                 idPrograma={programaActivo.id_programa}
@@ -1059,6 +1220,13 @@ export default async function AlumnoDetallePage(
                 bloques={programaConBloques?.bloques ?? []}
                 seguimiento={seguimiento}
                 completadas={sesionesDelPlan.length}
+                ciclo={{
+                  inicioLabel: FORMATEADOR_FECHA.format(inicioCicloPrograma(programaActivo)),
+                  semana: ciclo.semana,
+                  nombreSemana: NOMBRE_SEMANA[ciclo.semana],
+                  ciclo: ciclo.ciclo,
+                  pausado: programaActivo.fecha_pausa !== null,
+                }}
               />
             </div>
           ),
