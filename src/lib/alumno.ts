@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { registrarActividad, PUNTOS, levantamientoCompatiblePR, notificarNuevosPR } from "@/lib/gamificacion";
+import { registrarActividad, PUNTOS } from "@/lib/gamificacion";
+import { aplicarRecords, notificarRecords, type SerieNueva } from "@/lib/records-server";
+import { serieValida } from "@/lib/records";
 import {
   detectarLevantamiento,
   NOMBRE_LEVANTAMIENTO,
@@ -10,6 +12,7 @@ import {
   posicionCiclo,
   progresionHabilitada,
   semanaDelPrograma,
+  type Levantamiento,
 } from "@/lib/progresion-fuerza";
 import { obtenerRmVigentes, obtenerPasoRedondeo } from "@/lib/rm-referencia";
 import {
@@ -428,12 +431,15 @@ export async function guardarSesionEntrenamiento(
   const rmVigentes = hayProgresion ? await obtenerRmVigentes(id_alumno) : null;
   const paso = hayProgresion ? await obtenerPasoRedondeo(bloque.programa.id_entrenador) : undefined;
 
+  // Progresión semanal: una semana sin aproximaciones propias repite las de la 1.
+  const heredarSemana1 = bloque.programa.tipo_planificacion === "semanal";
+
   function objetivoDe(s: SerieRegistrada) {
     const ep = epPorIdPlan.get(s.id_ejercicio_programa);
     if (!conProgresion || !ep?.progresion_fuerza || ep.id_grupo) return { omitir: false, datos: { tipo_serie: null } };
     const levantamiento = detectarLevantamiento(ep.ejercicio.nombre);
     const rm = levantamiento ? (rmVigentes?.[levantamiento]?.valor ?? null) : null;
-    const plan = aproximacionesDeSemana(ep.aproximaciones, semana);
+    const plan = aproximacionesDeSemana(ep.aproximaciones, semana, heredarSemana1);
 
     if (s.tipo_serie === "efectiva") {
       const objetivo = objetivoEfectiva(
@@ -478,6 +484,8 @@ export async function guardarSesionEntrenamiento(
   );
 
   let id_entrenamiento: string;
+  // Series guardadas con peso y reps reales, para detectar récords.
+  const guardadas: { id_serie: string; id_ejercicio_programa: string; peso: number | null; reps: number | null }[] = [];
   try {
     id_entrenamiento = await prisma.$transaction(async (tx) => {
       const entrenamiento = await tx.entrenamiento.create({
@@ -516,7 +524,8 @@ export async function guardarSesionEntrenamiento(
         const objetivo = objetivoDe(s);
         if (objetivo.omitir) continue;
 
-        await tx.serieEntrenamiento.create({
+        const creada = await tx.serieEntrenamiento.create({
+          select: { id_serie: true },
           data: {
             ...objetivo.datos,
             id_entrenamiento: entrenamiento.id_entrenamiento,
@@ -532,6 +541,12 @@ export async function guardarSesionEntrenamiento(
             comentarios: s.comentarios,
           },
         });
+        guardadas.push({
+          id_serie: creada.id_serie,
+          id_ejercicio_programa: s.id_ejercicio_programa,
+          peso: s.peso_utilizado,
+          reps: s.repeticiones_realizadas,
+        });
       }
 
       return entrenamiento.id_entrenamiento;
@@ -543,54 +558,28 @@ export async function guardarSesionEntrenamiento(
     throw e;
   }
 
-  // Logro automático por PR (levantamientos base) — best-effort, nunca
-  // bloquea ni rompe el guardado si algo falla.
+  // Récords automáticos (sentadilla, banca, peso muerto), a partir de las
+  // series REALMENTE registradas: PR de carga / repeticiones y, si supera
+  // al vigente, 1RM nuevo (medido o estimado) sin pasar por el coach. Las
+  // cargas futuras se recalculan solas; esta sesión y las anteriores no
+  // cambian. Idempotente por entrenamiento. Best-effort: nunca rompe el
+  // guardado de la sesión.
   try {
     const epPorId = new Map(bloque.ejercicios_programa.map((ep) => [ep.id_ejercicio_programa, ep]));
-    const maximosHoyPorEjercicio = new Map<string, { nombre: string; peso: number }>();
-    for (const s of series) {
-      if (s.peso_utilizado === null) continue;
-      const ep = epPorId.get(s.id_ejercicio_programa);
-      if (!ep) continue;
-      const clave = levantamientoCompatiblePR(ep.ejercicio.nombre);
-      if (!clave) continue;
-      const actual = maximosHoyPorEjercicio.get(ep.id_ejercicio);
-      if (!actual || s.peso_utilizado > actual.peso) {
-        maximosHoyPorEjercicio.set(ep.id_ejercicio, { nombre: clave, peso: s.peso_utilizado });
-      }
+    const nuevasPorLevantamiento: Partial<Record<Levantamiento, SerieNueva[]>> = {};
+    for (const g of guardadas) {
+      const ep = epPorId.get(g.id_ejercicio_programa);
+      const l = ep ? detectarLevantamiento(ep.ejercicio.nombre) : null;
+      if (!l || !serieValida(g.peso, g.reps)) continue;
+      (nuevasPorLevantamiento[l] ??= []).push({ peso: g.peso!, reps: g.reps!, id_serie: g.id_serie });
     }
-
-    if (maximosHoyPorEjercicio.size > 0) {
-      const historico = await prisma.serieEntrenamiento.findMany({
-        where: {
-          entrenamiento: { id_alumno, NOT: { id_entrenamiento } },
-          peso_utilizado: { not: null },
-          ejercicio_programa: {
-            id_ejercicio: { in: [...maximosHoyPorEjercicio.keys()] },
-          },
-        },
-        select: { peso_utilizado: true, ejercicio_programa: { select: { id_ejercicio: true } } },
-      });
-      const maximosPrevios = new Map<string, number>();
-      for (const s of historico) {
-        if (s.peso_utilizado === null) continue;
-        const id = s.ejercicio_programa.id_ejercicio;
-        const peso = Number(s.peso_utilizado);
-        const actual = maximosPrevios.get(id);
-        if (!actual || peso > actual) maximosPrevios.set(id, peso);
-      }
-
-      const prsNuevos: { nombreEjercicio: string; peso: number }[] = [];
-      for (const [id_ejercicio, hoy] of maximosHoyPorEjercicio) {
-        const previo = maximosPrevios.get(id_ejercicio);
-        if (previo === undefined || hoy.peso > previo) {
-          prsNuevos.push({ nombreEjercicio: hoy.nombre, peso: hoy.peso });
-        }
-      }
-      await notificarNuevosPR(id_alumno, prsNuevos);
-    }
-  } catch {
-    // Silencioso a propósito — nunca puede tumbar el guardado de la sesión.
+    const alumno = await prisma.alumno.findUnique({ where: { id_alumno }, select: { id_usuario: true } });
+    const aplicados = await aplicarRecords(id_alumno, alumno?.id_usuario ?? id_alumno, nuevasPorLevantamiento, {
+      id_entrenamiento,
+    });
+    await notificarRecords(id_alumno, aplicados);
+  } catch (e) {
+    console.error("[alumno] récords automáticos:", e);
   }
 
   // Gamificación: puntos por el entrenamiento completado + re-evaluación de

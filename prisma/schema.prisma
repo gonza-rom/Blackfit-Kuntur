@@ -233,6 +233,7 @@ model Alumno {
   logros             LogroAlumno[]
   movimientos_puntos MovimientoPuntos[]
   rm_referencia      RmReferencia[]
+  records_personales RecordPersonal[]
 
   @@map("alumnos")
 }
@@ -994,11 +995,51 @@ model RmReferencia {
   valor_anterior   Decimal?      @db.Decimal(6, 2)
   fecha_registro   DateTime      @default(now())
   id_usuario_validador String?
+  // De dónde salió: "coach" (lo cargó el coach), "entrenamiento" (detectado
+  // automáticamente en una serie registrada) o "alumno" (marca que registró
+  // el alumno desde su cuenta). Con la serie que lo originó (peso × reps).
+  origen                   String   @default("coach")
+  peso_registrado          Decimal? @db.Decimal(6, 2)
+  repeticiones_registradas Int?
+  // Entrenamiento que lo originó: a lo sumo un 1RM nuevo por levantamiento
+  // y entrenamiento, así resincronizar una sesión nunca lo duplica.
+  id_entrenamiento         String?
+  // Id del formulario del alumno (marca registrada a mano): idempotencia.
+  clave_operacion          String?  @unique
 
   alumno Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
 
+  @@unique([id_entrenamiento, levantamiento])
   @@index([id_alumno, levantamiento, fecha])
   @@map("rm_referencia")
+}
+
+// Récords personales de los 3 levantamientos, detectados automáticamente
+// a partir de series REALMENTE registradas (nunca de la carga planificada):
+// - "carga": mayor peso levantado hasta el momento.
+// - "repeticiones": más repeticiones que nunca con ese peso (o más).
+// Historial inmutable: cada récord nuevo es una fila con el anterior.
+model RecordPersonal {
+  id_record        String        @id @default(uuid())
+  id_alumno        String
+  levantamiento    Levantamiento
+  tipo             String // "carga" | "repeticiones"
+  peso_kg          Decimal       @db.Decimal(6, 2)
+  repeticiones     Int
+  // Récord que superó: peso anterior (tipo carga) o repeticiones
+  // anteriores con ese peso (tipo repeticiones). Nulo = primer registro.
+  valor_anterior   Decimal?      @db.Decimal(6, 2)
+  fecha            DateTime      @default(now())
+  // Origen: serie de un entrenamiento, o marca registrada por el alumno.
+  id_entrenamiento String?
+  id_serie         String?
+  clave_operacion  String?       @unique
+
+  alumno Alumno @relation(fields: [id_alumno], references: [id_alumno], onDelete: Cascade)
+
+  @@unique([id_entrenamiento, levantamiento, tipo])
+  @@index([id_alumno, levantamiento, fecha])
+  @@map("records_personales")
 }
 
 model RegistroAuditoria {

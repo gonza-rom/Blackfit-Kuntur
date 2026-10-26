@@ -15,8 +15,27 @@ export type RmSerializado = {
     anterior: number | null;
     fuente: string;
     estado: string;
+    origen: string;
+    serie: string | null;
     fechaLabel: string;
   }[];
+};
+
+export type RecordSerializado = {
+  id: string;
+  levantamiento: Levantamiento;
+  tipo: string;
+  peso: number;
+  reps: number;
+  anterior: number | null;
+  origen: string;
+  fechaLabel: string;
+};
+
+const ORIGEN: Record<string, string> = {
+  coach: "coach",
+  entrenamiento: "auto · entrenamiento",
+  alumno: "auto · marca del alumno",
 };
 
 export type PropuestaRm = { id_rm: string; levantamiento: Levantamiento; valor: number; fuente: string; fechaLabel: string };
@@ -40,12 +59,14 @@ export function RmReferenciaCoach({
   rms,
   afectadas,
   propuestas,
+  records,
   paso,
 }: {
   idAlumno: string;
   rms: RmSerializado[];
   afectadas: Record<Levantamiento, CargaAfectada[]>;
   propuestas: PropuestaRm[];
+  records: RecordSerializado[];
   paso: number;
 }) {
   const [state, action, pending] = useActionState(actualizarRmReferencia, undefined);
@@ -78,8 +99,9 @@ export function RmReferenciaCoach({
       <div>
         <h3 className={etiqueta.replace("text-[10px]", "text-[11px]")}>1RM de referencia</h3>
         <p className="text-xs text-on-surface-variant mt-0.5">
-          Base de la carga automática en la Progresión semanal. Al cambiarlo se recalculan las cargas
-          futuras; los entrenamientos ya hechos, las cargas reales y las cargas fijas no cambian.
+          Base de la carga automática en la Progresión semanal. Se actualiza solo cuando el alumno registra
+          una serie que lo supera (1 rep = real; 2 a 10 = estimado). También podés corregirlo a mano. Al
+          cambiar, se recalculan las cargas futuras; lo ya entrenado y las cargas fijas no cambian.
         </p>
       </div>
 
@@ -166,7 +188,8 @@ export function RmReferenciaCoach({
                     {r.historial.map((h) => (
                       <li key={h.id_rm} className="flex justify-between gap-2 tabular-nums">
                         <span>
-                          {h.fechaLabel} · {h.fuente}
+                          {h.fechaLabel} · {h.fuente} · {ORIGEN[h.origen] ?? h.origen}
+                          {h.serie ? ` (${h.serie})` : ""}
                           {h.estado !== "validado" ? ` · ${h.estado}` : ""}
                         </span>
                         <span className="text-on-surface">
@@ -214,6 +237,30 @@ export function RmReferenciaCoach({
               </label>
             )}
           </div>
+        )}
+
+        {records.length > 0 && (
+          <details className="text-xs text-on-surface-variant">
+            <summary className="cursor-pointer select-none">Récords personales ({records.length})</summary>
+            <ul className="mt-1 flex flex-col gap-0.5">
+              {records.map((r) => (
+                <li key={r.id} className="flex flex-wrap justify-between gap-2 tabular-nums">
+                  <span>
+                    {r.fechaLabel} · {NOMBRE_LEVANTAMIENTO[r.levantamiento]} ·{" "}
+                    {r.tipo === "carga" ? "PR de carga" : "PR de repeticiones"} · {ORIGEN[r.origen] ?? r.origen}
+                  </span>
+                  <span className="text-on-surface">
+                    {r.peso} kg × {r.reps}
+                    {r.anterior !== null
+                      ? r.tipo === "carga"
+                        ? ` (antes ${r.anterior} kg)`
+                        : ` (antes ${r.anterior} reps)`
+                      : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </details>
         )}
 
         {state?.error && <p className="text-sm text-[#ffb4ab]">{state.error}</p>}

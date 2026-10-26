@@ -71,6 +71,9 @@ export default async function RegistrarEntrenamientoPage(
     ? await Promise.all([obtenerRmVigentes(contexto.id_alumno), obtenerPasoRedondeo(bloque.programa.id_entrenador)])
     : [null, undefined];
 
+  // Progresión semanal: una semana sin aproximaciones propias repite las de la 1.
+  const heredarSemana1 = bloque.programa.tipo_planificacion === "semanal";
+
   function datosFuerza(ep: NonNullable<typeof bloque>["ejercicios_programa"][number]) {
     if (!conProgresion || !ep.progresion_fuerza || ep.id_grupo) return null;
     const levantamiento = detectarLevantamiento(ep.ejercicio.nombre);
@@ -87,6 +90,7 @@ export default async function RegistrarEntrenamientoPage(
       semana,
       nombreSemana: NOMBRE_SEMANA[semana],
       rm,
+      rmEstimado: rmVigentes?.[levantamiento]?.fuente === "estimado",
       efectiva: {
         porcentaje: efectiva.porcentaje,
         peso: efectiva.peso,
@@ -96,7 +100,11 @@ export default async function RegistrarEntrenamientoPage(
       },
       descanso: ep.descanso,
       tempo: ep.tempo,
-      aproximaciones: aproximacionesDeSemana(ep.aproximaciones, semana).map((a) => ({
+      aproximaciones: aproximacionesDeSemana(
+        ep.aproximaciones,
+        semana,
+        heredarSemana1
+      ).map((a) => ({
         reps: a.reps,
         porcentaje: a.porcentaje,
         peso: a.porcentaje != null && rm ? cargaDe1RM(rm, a.porcentaje, paso) : null,

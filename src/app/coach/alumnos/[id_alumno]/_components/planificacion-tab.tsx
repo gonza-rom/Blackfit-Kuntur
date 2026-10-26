@@ -76,11 +76,32 @@ export function PlanificacionTab({
   if (tipoPlanificacion === "fija") {
     grupos = [{ semana_inicio: 1, semana_fin: 4, etiqueta: "Semanas 1 a 4" }];
   } else if (tipoPlanificacion === "semanal") {
-    grupos = [1, 2, 3, 4].map((s) => ({
-      semana_inicio: s,
-      semana_fin: s,
-      etiqueta: `Semana ${s}`,
-    }));
+    // Progresión semanal: el coach arma SOLO la semana 1 y esas mismas
+    // sesiones (días, ejercicios, series, reps, descansos, tempo,
+    // accesorios) rigen en las semanas 2, 3 y 4; lo único que cambia por
+    // semana es el % del 1RM y la carga. Los días armados antes por semana
+    // suelta se siguen mostrando abajo para no perderlos.
+    grupos = [
+      {
+        semana_inicio: 1,
+        semana_fin: 4,
+        etiqueta: "Semana 1 · se replica automáticamente en las semanas 2, 3 y 4",
+      },
+    ];
+    const vistos = new Set<string>(["1-4"]);
+    for (const b of bloquesPorDia) {
+      if (b.semana_inicio == null || b.semana_fin == null) continue;
+      const clave = `${b.semana_inicio}-${b.semana_fin}`;
+      if (vistos.has(clave)) continue;
+      vistos.add(clave);
+      grupos.push({
+        semana_inicio: b.semana_inicio,
+        semana_fin: b.semana_fin,
+        etiqueta: `${
+          b.semana_inicio === b.semana_fin ? `Semana ${b.semana_inicio}` : `Semanas ${b.semana_inicio} a ${b.semana_fin}`
+        } (armado anterior)`,
+      });
+    }
   } else {
     const vistos = new Set<string>();
     grupos = [];
@@ -204,9 +225,11 @@ export function PlanificacionTab({
           </div>
           <p className="text-[11px] text-on-surface-variant">
             Semana 1 Pesada (90–95 %) · Semana 2 Deload (60–65 %) · Semana 3 Intermedia (70–75 %) · Semana 4
-            Preparación (80–85 %). Cada 7 días avanza una semana y después de la 4 vuelve a la 1. En cada
-            sentadilla, press de banca o peso muerto activá &quot;Carga automática por 1RM&quot; y fijá el % exacto de
-            cada semana.
+            Preparación (80–85 %). Armá solo la semana 1: las semanas 2, 3 y 4 repiten los mismos días,
+            ejercicios, series, repeticiones, descansos y tempo, y solo cambian el % y la carga. Cada 7 días
+            avanza una semana y después de la 4 vuelve a la 1. En sentadilla, press de banca o peso muerto
+            activá &quot;Carga automática por 1RM&quot;: con el % de la semana 1 se completan solas las demás
+            (podés ajustarlas).
           </p>
         </section>
       )}
@@ -226,7 +249,8 @@ export function PlanificacionTab({
                 <h2 className="font-[family-name:var(--font-jetbrains-mono)] text-[12px] tracking-[0.08em] text-on-surface-variant uppercase">
                   {grupo.etiqueta}
                 </h2>
-                {tipoPlanificacion === "personalizada" && (
+                {(tipoPlanificacion === "personalizada" ||
+                  (tipoPlanificacion === "semanal" && !(grupo.semana_inicio === 1 && grupo.semana_fin === 4))) && (
                   <BotonEliminarGrupo
                     idPrograma={idPrograma}
                     semanaInicio={grupo.semana_inicio}

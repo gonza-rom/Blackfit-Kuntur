@@ -12,6 +12,7 @@ export type DatosFuerza = {
   semana: number;
   nombreSemana: string;
   rm: number | null;
+  rmEstimado: boolean;
   efectiva: { porcentaje: number | null; peso: number | null; fija: boolean; reps: string; series: number };
   descanso: string | null;
   tempo: string | null;
@@ -157,7 +158,7 @@ export function TarjetaFuerza({
         </div>
         <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
           <dt className="text-on-surface-variant">1RM vigente</dt>
-          <dd className="text-on-surface tabular-nums text-right">{fuerza.rm ? `${fuerza.rm} kg` : "Sin cargar"}</dd>
+          <dd className="text-on-surface tabular-nums text-right">{fuerza.rm ? `${fuerza.rm} kg${fuerza.rmEstimado ? " (estimado)" : ""}` : "Sin cargar"}</dd>
           <dt className="text-on-surface-variant">Intensidad programada</dt>
           <dd className="text-on-surface tabular-nums text-right">
             {fuerza.efectiva.porcentaje !== null ? `${fuerza.efectiva.porcentaje} %` : "Sin configurar"}

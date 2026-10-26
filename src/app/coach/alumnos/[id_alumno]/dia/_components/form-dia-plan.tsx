@@ -413,6 +413,7 @@ export function FormDiaPlan({
                   semanas={semanasDelDia}
                   conProgresion={conProgresion}
                   pasoRedondeo={pasoRedondeo}
+                  replicarDesdeSemana1={tipoPlanificacion === "semanal"}
                   autoFocus={claveEnfocar === item.ejercicio.clave}
                   onCambiar={(cambios) => actualizarEjercicioSuelto(item.clave, cambios)}
                   onElegir={(ej) =>
@@ -596,6 +597,7 @@ function TarjetaEjercicioIndividual({
   semanas,
   conProgresion,
   pasoRedondeo,
+  replicarDesdeSemana1,
   autoFocus,
   onCambiar,
   onElegir,
@@ -607,6 +609,7 @@ function TarjetaEjercicioIndividual({
   semanas: Semana[];
   conProgresion: boolean;
   pasoRedondeo: number;
+  replicarDesdeSemana1: boolean;
   autoFocus: boolean;
   onCambiar: (cambios: Partial<Fila>) => void;
   onElegir: (ejercicio: EjercicioCatalogo) => void;
@@ -666,6 +669,7 @@ function TarjetaEjercicioIndividual({
             rm={rmVigentes[levantamiento] ?? null}
             paso={pasoRedondeo}
             semanas={semanas}
+            replicarDesdeSemana1={replicarDesdeSemana1}
             seriesEfectiva={fila.series}
             repeticionesEfectiva={fila.repeticiones}
             porcentajes={fila.porcentajes_semana ?? {}}
