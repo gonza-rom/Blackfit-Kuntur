@@ -7,6 +7,7 @@ import {
   NOMBRE_LEVANTAMIENTO,
   NOMBRE_SEMANA,
   cargaDe1RM,
+  derivarPorcentajes,
   objetivoEfectiva,
   porcentajeEnRango,
   type Levantamiento,
@@ -53,6 +54,7 @@ export function ConfigProgresionFuerza({
   onCambiarCargasFijas,
   onCambiarAproximaciones,
   onCambiarAlumnoEdita,
+  replicarDesdeSemana1 = false,
 }: {
   levantamiento: Levantamiento;
   rm: number | null;
@@ -68,9 +70,15 @@ export function ConfigProgresionFuerza({
   onCambiarCargasFijas: (valor: ValoresPorSemanaEditor) => void;
   onCambiarAproximaciones: (valor: AproximacionesEditor) => void;
   onCambiarAlumnoEdita: (valor: boolean) => void;
+  // Progresión semanal: se configura la semana 1 y las 2, 3 y 4 la repiten
+  // (los % se completan solos manteniendo la posición en el rango).
+  replicarDesdeSemana1?: boolean;
 }) {
   const [semana, setSemana] = useState<Semana>(semanas[0] ?? 1);
-  const lista = aproximaciones[String(semana)] ?? [];
+  const replica = replicarDesdeSemana1 && semanas.includes(1);
+  // Una semana sin aproximaciones propias repite las de la semana 1.
+  const heredaAproximaciones = replica && semana !== 1 && aproximaciones[String(semana)] === undefined;
+  const lista = aproximaciones[String(semana)] ?? (heredaAproximaciones ? aproximaciones["1"] : undefined) ?? [];
   const [min, max] = INTENSIDAD_SEMANA[semana];
   const pctTexto = porcentajes[String(semana)] ?? "";
   const pctOk = porcentajeValido(porcentajes, semana);
@@ -79,6 +87,39 @@ export function ConfigProgresionFuerza({
 
   function cambiarLista(nueva: AproximacionEditor[]) {
     onCambiarAproximaciones({ ...aproximaciones, [String(semana)]: nueva });
+  }
+
+  // Vuelve a repetir las aproximaciones de la semana 1 en esta semana.
+  function igualarASemana1() {
+    const copia = { ...aproximaciones };
+    delete copia[String(semana)];
+    onCambiarAproximaciones(copia);
+  }
+
+  function cambiarPorcentaje(valor: string) {
+    const nuevos: ValoresPorSemanaEditor = { ...porcentajes, [String(semana)]: valor };
+    // Al cargar el % de la semana 1, las semanas 2–4 vacías se completan solas.
+    if (replica && semana === 1) {
+      const derivados = derivarPorcentajes(aNumero(valor));
+      if (derivados) {
+        for (const s of ["2", "3", "4"] as const) {
+          if (semanas.includes(Number(s) as Semana) && !String(nuevos[s] ?? "").trim()) nuevos[s] = String(derivados[s]);
+        }
+      }
+    }
+    onCambiarPorcentajes(nuevos);
+  }
+
+  // Recalcula las semanas 2–4 desde la semana 1 (pisa lo que tuvieran).
+  function regenerarDesdeSemana1() {
+    const derivados = derivarPorcentajes(aNumero(porcentajes["1"]));
+    if (!derivados) return;
+    onCambiarPorcentajes({
+      ...porcentajes,
+      "2": String(derivados["2"]),
+      "3": String(derivados["3"]),
+      "4": String(derivados["4"]),
+    });
   }
 
   function copiarATodas() {
@@ -144,7 +185,7 @@ export function ConfigProgresionFuerza({
               step="0.5"
               inputMode="decimal"
               value={pctTexto}
-              onChange={(e) => onCambiarPorcentajes({ ...porcentajes, [String(semana)]: e.target.value })}
+              onChange={(e) => cambiarPorcentaje(e.target.value)}
               placeholder={`${min}–${max}`}
               aria-invalid={!pctOk}
               className={`${input} ${pctOk ? "" : "border-[#eda100]/60"}`}
@@ -188,6 +229,16 @@ export function ConfigProgresionFuerza({
         <span className={etiqueta}>
           Aproximaciones · semana {semana} ({lista.length})
         </span>
+        {heredaAproximaciones && (
+          <p className="text-xs text-on-surface-variant">
+            Iguales a la semana 1. Si cambiás algo acá, esta semana pasa a tener las suyas.
+          </p>
+        )}
+        {replica && semana !== 1 && !heredaAproximaciones && (
+          <button type="button" onClick={igualarASemana1} className="self-start text-xs text-on-surface-variant underline">
+            Volver a usar las de la semana 1
+          </button>
+        )}
         {lista.length === 0 && (
           <p className="text-xs text-on-surface-variant">Sin aproximaciones esta semana.</p>
         )}
@@ -243,13 +294,19 @@ export function ConfigProgresionFuerza({
           >
             + Aproximación
           </button>
-          {semanas.length > 1 && lista.length > 0 && (
+          {semanas.length > 1 && lista.length > 0 && !replica && (
             <button type="button" onClick={copiarATodas} className="text-xs text-on-surface-variant">
               Copiar a todas las semanas
             </button>
           )}
         </div>
       </div>
+
+      {replica && semana === 1 && porcentajeValido(porcentajes, 1) && (
+        <button type="button" onClick={regenerarDesdeSemana1} className="self-start text-xs text-primary-container">
+          Recalcular los % de las semanas 2, 3 y 4 desde la semana 1
+        </button>
+      )}
 
       <p className="text-[11px] text-on-surface-variant">
         Ciclo de 4 semanas que se repite: Pesada 90–95 · Deload 60–65 · Intermedia 70–75 · Preparación 80–85.

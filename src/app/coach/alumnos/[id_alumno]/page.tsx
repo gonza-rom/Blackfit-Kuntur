@@ -23,7 +23,12 @@ import {
 import { TabsAlumno } from "./_components/tabs-alumno";
 import { PlanificacionTab } from "./_components/planificacion-tab";
 import { FotosTab, type FotoSerializada } from "./_components/fotos-tab";
-import { RmReferenciaCoach, type RmSerializado, type PropuestaRm } from "./_components/rm-referencia-coach";
+import {
+  RmReferenciaCoach,
+  type RmSerializado,
+  type PropuestaRm,
+  type RecordSerializado,
+} from "./_components/rm-referencia-coach";
 import {
   obtenerHistorialRm,
   obtenerRmVigentes,
@@ -198,11 +203,42 @@ export default async function AlumnoDetallePage(
             anterior: h.valor_anterior,
             fuente: h.fuente,
             estado: h.estado,
+            origen: h.origen,
+            serie:
+              h.peso_registrado !== null && h.repeticiones_registradas !== null
+                ? `${h.peso_registrado} kg × ${h.repeticiones_registradas}`
+                : null,
             fechaLabel: FORMATEADOR_FECHA.format(h.estado === "validado" ? h.fecha : h.fecha_registro),
           })),
       };
     }
   );
+  // Récords personales detectados automáticamente (más recientes primero).
+  const recordsRecientes = await prisma.recordPersonal.findMany({
+    where: { id_alumno },
+    orderBy: { fecha: "desc" },
+    take: 15,
+    select: {
+      id_record: true,
+      levantamiento: true,
+      tipo: true,
+      peso_kg: true,
+      repeticiones: true,
+      valor_anterior: true,
+      fecha: true,
+      id_entrenamiento: true,
+    },
+  });
+  const recordsSerializados: RecordSerializado[] = recordsRecientes.map((r) => ({
+    id: r.id_record,
+    levantamiento: r.levantamiento,
+    tipo: r.tipo,
+    peso: Number(r.peso_kg),
+    reps: r.repeticiones,
+    anterior: r.valor_anterior === null ? null : Number(r.valor_anterior),
+    origen: r.id_entrenamiento ? "entrenamiento" : "alumno",
+    fechaLabel: FORMATEADOR_FECHA.format(r.fecha),
+  }));
   const propuestasRm: PropuestaRm[] = historialRm
     .filter((h) => h.estado === "propuesto")
     .map((h) => ({
@@ -1210,6 +1246,7 @@ export default async function AlumnoDetallePage(
                 rms={rmsSerializados}
                 afectadas={cargasAfectadas}
                 propuestas={propuestasRm}
+                records={recordsSerializados}
                 paso={pasoRedondeo}
               />
               <PlanificacionTab

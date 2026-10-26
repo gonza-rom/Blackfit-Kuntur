@@ -51,12 +51,16 @@ export async function obtenerHistorialRm(id_alumno: string, porLevantamiento = 1
       fuente: true,
       estado: true,
       id_usuario_autor: true,
+      origen: true,
+      peso_registrado: true,
+      repeticiones_registradas: true,
     },
   });
   return filas.map((f) => ({
     ...f,
     valor_kg: Number(f.valor_kg),
     valor_anterior: f.valor_anterior === null ? null : Number(f.valor_anterior),
+    peso_registrado: f.peso_registrado === null ? null : Number(f.peso_registrado),
   }));
 }
 

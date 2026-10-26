@@ -7,6 +7,7 @@ import { esPlanSecuencial, etiquetaSesion } from "@/lib/secuencia";
 import { FilterChips } from "./_components/filter-chips";
 import { resumenDia } from "@/lib/plan-dia";
 import { obtenerRmVigentes, LEVANTAMIENTOS } from "@/lib/rm-referencia";
+import { resumenRecords } from "@/lib/records-server";
 import { MisRm, type MiRm } from "./_components/mis-rm";
 
 type EntrenamientoItem = {
@@ -24,6 +25,12 @@ type ProgramaItem = {
   entrenador: { usuario: { nombre: string; apellido: string } } | null;
   entrenamientos: EntrenamientoItem[];
 };
+
+const FORMATEADOR_FECHA_RM = new Intl.DateTimeFormat("es-AR", {
+  day: "2-digit",
+  month: "short",
+  timeZone: "America/Argentina/Buenos_Aires",
+});
 
 const FORMATEADOR_PROXIMA_SEMANA = new Intl.DateTimeFormat("es-AR", {
   weekday: "long",
@@ -71,24 +78,26 @@ export default async function EntrenamientosPage() {
     : ({ tipo: "sin_plan" } as const);
   const bloqueActual = siguiente.tipo === "sesion" ? siguiente.bloque : null;
 
-  // 1RM vigentes (validados por el coach) y propuestas pendientes.
+  // 1RM vigentes y récords (se actualizan solos con lo que registra).
   const misRm: MiRm[] | null = contexto
     ? await (async () => {
-        const [vigentes, pendientes] = await Promise.all([
+        const [vigentes, records] = await Promise.all([
           obtenerRmVigentes(contexto.id_alumno),
-          prisma.rmReferencia.findMany({
-            where: { id_alumno: contexto.id_alumno, estado: "propuesto" },
-            select: { levantamiento: true, valor_kg: true },
-          }),
+          resumenRecords(contexto.id_alumno),
         ]);
-        return LEVANTAMIENTOS.map((l) => ({
-          levantamiento: l,
-          vigente: vigentes[l]?.valor ?? null,
-          propuesto: (() => {
-            const p = pendientes.find((x) => x.levantamiento === l);
-            return p ? Number(p.valor_kg) : null;
-          })(),
-        }));
+        const fecha = (d: Date) => FORMATEADOR_FECHA_RM.format(d);
+        return LEVANTAMIENTOS.map((l) => {
+          const v = vigentes[l];
+          const r = records.find((x) => x.levantamiento === l);
+          return {
+            levantamiento: l,
+            vigente: v ? { valor: v.valor, fuente: v.fuente, fechaLabel: fecha(v.fecha) } : null,
+            prCarga: r?.prCarga ? { ...r.prCarga, fechaLabel: fecha(r.prCarga.fecha) } : null,
+            prRepeticiones: r?.prRepeticiones
+              ? { ...r.prRepeticiones, fechaLabel: fecha(r.prRepeticiones.fecha) }
+              : null,
+          };
+        });
       })()
     : null;
   // Plan por sesiones: solo los Día N con ejercicios, en orden (semana y número).

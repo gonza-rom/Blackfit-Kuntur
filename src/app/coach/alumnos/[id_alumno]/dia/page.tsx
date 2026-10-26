@@ -113,7 +113,8 @@ export default async function DiaPlanPage(
   if (programa.tipo_planificacion === "fija") {
     opcionesSemanas = [{ semana_inicio: 1, semana_fin: 4, etiqueta: "Semanas 1 a 4" }];
   } else if (programa.tipo_planificacion === "semanal") {
-    opcionesSemanas = [1, 2, 3, 4].map((s) => ({ semana_inicio: s, semana_fin: s, etiqueta: `Semana ${s}` }));
+    // Se arma la semana 1 y se replica en las 4 (solo cambian % y cargas).
+    opcionesSemanas = [{ semana_inicio: 1, semana_fin: 4, etiqueta: "Semana 1 (se replica en 2, 3 y 4)" }];
   } else {
     const vistos = new Map<string, OpcionSemanas>();
     for (const b of [...programa.bloques, { semana_inicio, semana_fin }]) {
@@ -179,8 +180,12 @@ export default async function DiaPlanPage(
           Día {numero_dia}
         </h1>
         <p className="text-sm text-on-surface-variant">
-          {alumno.usuario.nombre} {alumno.usuario.apellido} · semana
-          {semana_inicio === semana_fin ? ` ${semana_inicio}` : `s ${semana_inicio}-${semana_fin}`}
+          {alumno.usuario.nombre} {alumno.usuario.apellido} ·{" "}
+          {programa.tipo_planificacion === "semanal" && semana_inicio === 1 && semana_fin === 4
+            ? "semana 1 · se replica en las semanas 2, 3 y 4 (solo cambian % y cargas)"
+            : semana_inicio === semana_fin
+              ? `semana ${semana_inicio}`
+              : `semanas ${semana_inicio}-${semana_fin}`}
         </p>
       </div>
 

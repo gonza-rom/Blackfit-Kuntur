@@ -176,6 +176,24 @@ export function normalizarCargasFijas(crudo: unknown, semanasPermitidas?: readon
 }
 
 /**
+ * Progresión semanal: el coach fija el % de la semana 1 y las semanas 2, 3
+ * y 4 se derivan manteniendo la MISMA posición dentro de su rango (no es un
+ * valor arbitrario: sale del que eligió el coach). Ej. 92,5 % en la semana 1
+ * (mitad de 90–95) → 62,5 / 72,5 / 82,5. Redondeado a 0,5. El coach puede
+ * ajustar cualquiera después.
+ */
+export function derivarPorcentajes(pctSemana1: number): Record<"2" | "3" | "4", number> | null {
+  if (!porcentajeEnRango(1, pctSemana1)) return null;
+  const [min1, max1] = INTENSIDAD_SEMANA[1];
+  const posicion = (pctSemana1 - min1) / (max1 - min1);
+  const derivar = (s: Semana) => {
+    const [min, max] = INTENSIDAD_SEMANA[s];
+    return Math.min(max, Math.max(min, Math.round((min + posicion * (max - min)) * 2) / 2));
+  };
+  return { "2": derivar(2), "3": derivar(3), "4": derivar(4) };
+}
+
+/**
  * Semanas a las que les falta el % (o lo tienen fuera de rango).
  * Vacío = la configuración está completa y se puede publicar.
  */
@@ -238,6 +256,12 @@ export function normalizarAproximaciones(crudo: unknown, semanasPermitidas?: rea
   return salida;
 }
 
-export function aproximacionesDeSemana(config: unknown, semana: Semana): Aproximacion[] {
-  return normalizarAproximaciones(config)[`${semana}`] ?? [];
+/**
+ * Aproximaciones de una semana. En la Progresión semanal (`heredarSemana1`)
+ * una semana que el coach no configuró aparte repite las de la semana 1
+ * (mismos parámetros en todo el ciclo, salvo excepción expresa).
+ */
+export function aproximacionesDeSemana(config: unknown, semana: Semana, heredarSemana1 = false): Aproximacion[] {
+  const todas = normalizarAproximaciones(config);
+  return todas[`${semana}`] ?? (heredarSemana1 ? todas["1"] : undefined) ?? [];
 }
