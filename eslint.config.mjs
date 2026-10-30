@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Motor OCR minificado, copiado desde node_modules en el postinstall.
+    "public/ocr/**",
   ]),
 ]);
 

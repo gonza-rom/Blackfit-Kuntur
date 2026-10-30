@@ -42,26 +42,20 @@ export const ROLES_ADMIN: RolUsuario[] = ["administrador", "admin_comercios", "a
 export const obtenerUsuarioActual = cache(
   async (): Promise<UsuarioActual | null> => {
     const supabase = await createClient();
-    // `proxy.ts` ya corrió `auth.getUser()` — la verificación real contra
-    // el servidor de Supabase — para esta misma request antes de llegar
-    // acá (ver RUTAS_PROTEGIDAS). Repetir esa ida y vuelta de red en cada
-    // Server Component que pide la identidad no suma seguridad, solo
-    // duplica el costo: la cookie de sesión ya fue validada server-side
-    // para este request. `getSession()` la lee local (sin red, salvo que
-    // el token esté vencido y haga falta refrescarlo).
+    // `getClaims()` verifica la FIRMA del access token (localmente con las
+    // claves públicas del proyecto si usa claves asimétricas; si no, contra
+    // el servidor de Supabase) y la identidad sale de `claims.sub`.
     //
-    // Lo único que se pierde respecto a `getUser()` acá: si alguien
-    // revoca la sesión de este usuario en Supabase Auth a mitad de su
-    // token todavía vigente (borrado forzado, "cerrar sesión en todos
-    // los dispositivos"), esta capa no se entera hasta que el token
-    // expire — el próximo `getUser()` del proxy en su siguiente
-    // navegación sí lo va a detectar.
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const user = session?.user;
+    // Nunca usar `getSession()` acá: su `session.user` se lee tal cual de
+    // la cookie, sin verificar nada — cualquiera podía editar ese objeto y
+    // poner el id de otro usuario (un admin) junto a su propio token
+    // válido. El proxy no alcanza como defensa: valida el token, no ese
+    // objeto, y las server actions se pueden invocar desde cualquier ruta
+    // (incluidas las que el proxy no protege, como /registro o /api).
+    const { data, error } = await supabase.auth.getClaims();
+    const id_usuario = error ? undefined : data?.claims.sub;
 
-    if (!user) return null;
+    if (!id_usuario) return null;
 
     // `relationLoadStrategy: "join"` (requiere el preview `relationJoins` en
     // el generator del schema): sin esto, Prisma resuelve cada relación del
@@ -71,7 +65,7 @@ export const obtenerUsuarioActual = cache(
     // Medido: 8 queries/~1.2s → 4 queries/~0.75s en esta función, que se
     // llama en casi todas las páginas.
     return prisma.usuario.findUnique({
-      where: { id_usuario: user.id },
+      where: { id_usuario },
       include: { roles: true, alumno: true, entrenador: true, comercio: true },
       relationLoadStrategy: "join",
     });
