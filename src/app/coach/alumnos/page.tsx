@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
-import { detectarAlertas, type Alerta } from "@/lib/alertas";
+import { detectarAlertasPorAlumnos, type Alerta } from "@/lib/alertas";
 import {
   resumenMembresiaBlackfit,
   claseEstadoMembresia,
@@ -97,11 +97,11 @@ export default async function CoachAlumnosPage() {
     programasActivos,
     ultimosProgresos,
     ultimosFeedbacks,
-    alertasPorAlumno,
+    mapaAlertas,
     ultimasMembresias,
   ] =
     idsAlumnos.length === 0
-      ? [[], [], [], [], [], [], []]
+      ? [[], [], [], [], [], new Map<string, Alerta[]>(), []]
       : await Promise.all([
           prisma.entrenamiento.findMany({
             where: { id_alumno: { in: idsAlumnos }, fecha: { gte: hace30 } },
@@ -129,9 +129,7 @@ export default async function CoachAlumnosPage() {
             distinct: ["id_alumno"],
             select: { id_alumno: true, respuesta_coach: true },
           }),
-          Promise.all(
-            idsAlumnos.map(async (id_alumno) => [id_alumno, await detectarAlertas(id_alumno)] as const)
-          ),
+          detectarAlertasPorAlumnos(idsAlumnos),
           // Todas las membresías de cada usuario: alcanza con que una esté
           // vigente para mostrar sus días; si tuvo alguna pero ninguna lo
           // está, figura como vencida.
@@ -146,7 +144,6 @@ export default async function CoachAlumnosPage() {
           }),
         ]);
 
-  const mapaAlertas = new Map(alertasPorAlumno);
   const mapaPrograma = new Map(
     programasActivos.map((p) => [p.id_alumno, { id_programa: p.id_programa, nombre: p.nombre }])
   );

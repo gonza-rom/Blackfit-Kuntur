@@ -75,6 +75,18 @@ export async function borrarFotoProgreso(path: string | null | undefined): Promi
     .catch(() => {});
 }
 
+// Las fotos de progreso se suben tal cual salen de la cámara del celular
+// (varios MB, miles de px de ancho) y en la app solo se ven como thumbnail
+// chico o, como mucho, "ampliada" a unos cientos de px (ver
+// medida-corporal-item.tsx y fotos-tab.tsx) — nunca en tamaño original. Sin
+// esta transformación se mandaba el archivo completo por cada foto en cada
+// visita a esas pantallas. Cloudinary resuelve el resize/compresión en su
+// CDN, no hay que tocar el <img> del lado de la app.
+const TRANSFORMACION_THUMBNAIL = [
+  { width: 800, crop: "limit" },
+  { quality: "auto", fetch_format: "auto" },
+];
+
 /**
  * URL firmada para mostrar una foto de progreso. Devuelve null si el path
  * es vacío o Cloudinary no está configurado.
@@ -82,7 +94,12 @@ export async function borrarFotoProgreso(path: string | null | undefined): Promi
 export async function urlFirmadaFoto(path: string | null | undefined): Promise<string | null> {
   if (!path) return null;
   if (!cloudinaryDisponible()) return null;
-  return cloudinary.url(path, { type: "authenticated", sign_url: true, secure: true });
+  return cloudinary.url(path, {
+    type: "authenticated",
+    sign_url: true,
+    secure: true,
+    transformation: TRANSFORMACION_THUMBNAIL,
+  });
 }
 
 /** Igual que urlFirmadaFoto pero para varias, en una sola pasada. */
@@ -94,7 +111,15 @@ export async function urlesFirmadasFotos(
   if (limpios.length === 0 || !cloudinaryDisponible()) return mapa;
 
   for (const path of limpios) {
-    mapa.set(path, cloudinary.url(path, { type: "authenticated", sign_url: true, secure: true }));
+    mapa.set(
+      path,
+      cloudinary.url(path, {
+        type: "authenticated",
+        sign_url: true,
+        secure: true,
+        transformation: TRANSFORMACION_THUMBNAIL,
+      })
+    );
   }
   return mapa;
 }

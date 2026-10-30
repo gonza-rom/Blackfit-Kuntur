@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { obtenerAlumnoLectura, exigirMembresiaActiva } from "@/lib/auth";
 import { evaluarLogros } from "@/lib/gamificacion";
@@ -43,9 +44,11 @@ export default async function LogrosPage() {
   const { id_alumno } = contexto;
 
   // Oportunista: una visita a esta pantalla también puede destrabar un
-  // logro (igual que verificarRecordatorioMembresia en el layout). Nunca
-  // bloquea el render.
-  await evaluarLogros(id_alumno).catch(() => {});
+  // logro (igual que verificarRecordatorioMembresia en el layout). Va en
+  // after() — recalcula todo el historial del alumno (entrenamientos,
+  // series, objetivos) sin filtro de fecha, así que antes bloqueaba el
+  // render en cada visita en vez de solo la primera del día.
+  after(() => evaluarLogros(id_alumno).catch(() => {}));
 
   const [alumno, objetivos, movimientos, catalogo, obtenidos] = await Promise.all([
     prisma.alumno.findUnique({

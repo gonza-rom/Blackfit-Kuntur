@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerEntrenadorActual } from "@/lib/auth";
-import { detectarAlertas } from "@/lib/alertas";
+import { detectarAlertasPorAlumnos } from "@/lib/alertas";
 import { obtenerFeedActividad, type ItemActividad } from "@/lib/actividad-coach";
 
 const ICONO_ACTIVIDAD: Record<ItemActividad["tipo"], string> = {
@@ -33,20 +33,20 @@ export default async function CoachPage() {
   ]);
   const ultimosAlumnos = relacionesActivas.slice(0, 5);
 
-  const feedActividad = await obtenerFeedActividad(
-    relacionesActivas.map((r) => ({
-      id_alumno: r.alumno.id_alumno,
-      nombre: r.alumno.usuario.nombre,
-    }))
-  );
+  // Independientes entre sí (una arma el feed de "hoy", la otra las
+  // alertas) — antes se esperaban una detrás de la otra sin necesidad.
+  const [feedActividad, alertasPorAlumnoMap] = await Promise.all([
+    obtenerFeedActividad(
+      relacionesActivas.map((r) => ({
+        id_alumno: r.alumno.id_alumno,
+        nombre: r.alumno.usuario.nombre,
+      }))
+    ),
+    detectarAlertasPorAlumnos(relacionesActivas.map((r) => r.alumno.id_alumno)),
+  ]);
 
-  const alertasPorAlumno = await Promise.all(
-    relacionesActivas.map(async (r) => ({
-      relacion: r,
-      alertas: await detectarAlertas(r.alumno.id_alumno),
-    }))
-  );
-  const conAlertas = alertasPorAlumno
+  const conAlertas = relacionesActivas
+    .map((r) => ({ relacion: r, alertas: alertasPorAlumnoMap.get(r.alumno.id_alumno) ?? [] }))
     .filter((a) => a.alertas.length > 0)
     .sort((a, b) => b.alertas.length - a.alertas.length)
     .slice(0, 5);

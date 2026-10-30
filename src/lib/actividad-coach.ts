@@ -78,6 +78,13 @@ export async function obtenerFeedActividad(
         });
 
         if (entrenamientoHoy.series.length > 0) {
+          // Solo interesa el máximo histórico de los ejercicios que el
+          // alumno hizo HOY (son los únicos contra los que se compara más
+          // abajo) — filtrar por esos ids evita traer el historial
+          // completo de series con peso de toda la carrera del alumno.
+          const idsEjerciciosHoy = [
+            ...new Set(entrenamientoHoy.series.map((s) => s.ejercicio_programa.ejercicio.id_ejercicio)),
+          ];
           const maximoHistorico = await prisma.serieEntrenamiento.findMany({
             where: {
               entrenamiento: {
@@ -85,6 +92,7 @@ export async function obtenerFeedActividad(
                 NOT: { id_entrenamiento: entrenamientoHoy.id_entrenamiento },
               },
               peso_utilizado: { not: null },
+              ejercicio_programa: { id_ejercicio: { in: idsEjerciciosHoy } },
             },
             select: {
               peso_utilizado: true,

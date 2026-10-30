@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { etiquetaSesion } from "@/lib/secuencia";
 import { prisma } from "@/lib/prisma";
@@ -12,24 +13,38 @@ const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
   minute: "2-digit",
 });
 
-export default async function HistorialPage() {
-  // Disponible con la membresía vencida, pero solo para consultar.
+// Sin esto, la página traía TODO el historial completo del alumno (con
+// series + ejercicio anidados) en una sola query que crece sin techo con
+// el tiempo de uso. Paginado igual que /admin/usuarios.
+const TAMANO_PAGINA = 15;
+
+export default async function HistorialPage(props: PageProps<"/panel/entrenamientos/historial">) {
   // Historial, progreso y logros son parte del servicio de entrenamiento:
   // sin membresía vigente, a la pantalla de bloqueo (solo queda el perfil).
   await exigirMembresiaActiva();
   const contexto = await obtenerAlumnoLectura();
   if (!contexto) redirect("/panel");
 
-  const entrenamientos = await prisma.entrenamiento.findMany({
-    where: { id_alumno: contexto.id_alumno, estado: "completado" },
-    orderBy: { fecha: "desc" },
-    include: {
-      series: {
-        orderBy: [{ id_ejercicio_programa: "asc" }, { numero_serie: "asc" }],
-        include: { ejercicio_programa: { include: { ejercicio: true } } },
+  const { pagina: paginaRaw } = await props.searchParams;
+  const pagina = Math.max(1, Number(typeof paginaRaw === "string" ? paginaRaw : 1) || 1);
+
+  const where = { id_alumno: contexto.id_alumno, estado: "completado" as const };
+  const [entrenamientos, total] = await Promise.all([
+    prisma.entrenamiento.findMany({
+      where,
+      orderBy: { fecha: "desc" },
+      skip: (pagina - 1) * TAMANO_PAGINA,
+      take: TAMANO_PAGINA,
+      include: {
+        series: {
+          orderBy: [{ id_ejercicio_programa: "asc" }, { numero_serie: "asc" }],
+          include: { ejercicio_programa: { include: { ejercicio: true } } },
+        },
       },
-    },
-  });
+    }),
+    prisma.entrenamiento.count({ where }),
+  ]);
+  const totalPaginas = Math.max(1, Math.ceil(total / TAMANO_PAGINA));
 
   const entrenamientosAgrupados = entrenamientos.map((entrenamiento) => {
     const porEjercicio = new Map<
@@ -139,6 +154,32 @@ export default async function HistorialPage() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {totalPaginas > 1 && (
+        <div className="flex items-center justify-between">
+          <Link
+            aria-disabled={pagina <= 1}
+            href={pagina <= 2 ? "/panel/entrenamientos/historial" : `/panel/entrenamientos/historial?pagina=${pagina - 1}`}
+            className={`font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] uppercase px-3 py-1.5 rounded-full border border-outline-variant text-on-surface-variant ${
+              pagina <= 1 ? "pointer-events-none opacity-40" : ""
+            }`}
+          >
+            Anterior
+          </Link>
+          <span className="text-xs text-on-surface-variant">
+            Página {pagina} de {totalPaginas}
+          </span>
+          <Link
+            aria-disabled={pagina >= totalPaginas}
+            href={`/panel/entrenamientos/historial?pagina=${Math.min(totalPaginas, pagina + 1)}`}
+            className={`font-[family-name:var(--font-jetbrains-mono)] text-[11px] tracking-[0.08em] uppercase px-3 py-1.5 rounded-full border border-outline-variant text-on-surface-variant ${
+              pagina >= totalPaginas ? "pointer-events-none opacity-40" : ""
+            }`}
+          >
+            Siguiente
+          </Link>
         </div>
       )}
     </main>

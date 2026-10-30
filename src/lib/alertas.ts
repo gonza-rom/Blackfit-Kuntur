@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export type Alerta = {
@@ -27,6 +28,14 @@ const TIPOS_BLOQUE_DESCARGA = /deload|descarga/i;
 
 type BloqueActual = { nombre: string; tipo: string | null } | null;
 
+type ProgramaConBloques = Prisma.ProgramaEntrenamientoGetPayload<{
+  include: { bloques: true };
+}>;
+
+type EntrenamientoConSeries = Prisma.EntrenamientoGetPayload<{
+  include: { series: true };
+}>;
+
 /**
  * Determina si el alumno está, HOY, dentro de un bloque marcado como
  * deload/descarga en alguno de sus programas activos. Se calcula por
@@ -34,13 +43,7 @@ type BloqueActual = { nombre: string; tipo: string | null } | null;
  * semana_fin del bloque). Si el bloque no tiene semanas definidas, no se
  * puede ubicar temporalmente y se ignora (no bloquea alertas por las dudas).
  */
-async function obtenerBloqueActual(id_alumno: string): Promise<BloqueActual> {
-  const programas = await prisma.programaEntrenamiento.findMany({
-    where: { id_alumno, estado_programa: "activo" },
-    include: { bloques: true },
-    relationLoadStrategy: "join",
-  });
-
+function bloqueActualDesdePrograms(programas: ProgramaConBloques[]): BloqueActual {
   for (const programa of programas) {
     const semanaActual =
       Math.floor((Date.now() - programa.fecha_inicio.getTime()) / (7 * DIA_MS)) + 1;
@@ -59,6 +62,22 @@ async function obtenerBloqueActual(id_alumno: string): Promise<BloqueActual> {
   return null;
 }
 
+async function obtenerBloqueActual(id_alumno: string): Promise<BloqueActual> {
+  const programas = await prisma.programaEntrenamiento.findMany({
+    where: { id_alumno, estado_programa: "activo" },
+    include: { bloques: true },
+    relationLoadStrategy: "join",
+  });
+  return bloqueActualDesdePrograms(programas);
+}
+
+type DatosAlertas = {
+  entrenamientos: EntrenamientoConSeries[];
+  feedbacksDiarios: { comentario_diario: string }[];
+  habitosRecientes: number;
+  bloqueActual: BloqueActual;
+};
+
 /**
  * Reglas simples y explicables sobre datos que el alumno ya registró —
  * sin caja negra. Cubre adherencia baja, estancamiento/caída de volumen,
@@ -71,23 +90,18 @@ async function obtenerBloqueActual(id_alumno: string): Promise<BloqueActual> {
  * programa vigente) o si la caída de volumen viene acompañada de un
  * aumento de peso (progresión de intensidad, no retroceso) — en ambos
  * casos no es una señal real y no debe generar ruido para el coach.
+ *
+ * Pura: no toca la base. `detectarAlertas` y `detectarAlertasPorAlumnos`
+ * son los que juntan los datos (uno por alumno o batcheado para varios) y
+ * llaman a esta misma función, así ambos caminos comparten exactamente la
+ * misma lógica de reglas.
  */
-export async function detectarAlertas(id_alumno: string): Promise<Alerta[]> {
-  const hace30 = new Date(Date.now() - 30 * DIA_MS);
-  const hace14 = new Date(Date.now() - 14 * DIA_MS);
-
-  const [entrenamientos, feedbacksDiarios, habitosRecientes, bloqueActual] = await Promise.all([
-    prisma.entrenamiento.findMany({
-      where: { id_alumno, fecha: { gte: hace30 } },
-      include: { series: true },
-      orderBy: { fecha: "desc" },
-      relationLoadStrategy: "join",
-    }),
-    prisma.feedbackDiario.findMany({ where: { id_alumno, fecha: { gte: hace14 } } }),
-    prisma.habito.count({ where: { id_alumno, fecha: { gte: hace14 } } }),
-    obtenerBloqueActual(id_alumno),
-  ]);
-
+function calcularAlertas({
+  entrenamientos,
+  feedbacksDiarios,
+  habitosRecientes,
+  bloqueActual,
+}: DatosAlertas): Alerta[] {
   const enDeload = bloqueActual != null && TIPOS_BLOQUE_DESCARGA.test(bloqueActual.tipo ?? "");
 
   const alertas: Alerta[] = [];
@@ -225,4 +239,103 @@ export async function detectarAlertas(id_alumno: string): Promise<Alerta[]> {
   }
 
   return alertas;
+}
+
+/** Alertas de un solo alumno (perfil individual, ver /coach/alumnos/[id_alumno]). */
+export async function detectarAlertas(id_alumno: string): Promise<Alerta[]> {
+  const hace30 = new Date(Date.now() - 30 * DIA_MS);
+  const hace14 = new Date(Date.now() - 14 * DIA_MS);
+
+  const [entrenamientos, feedbacksDiarios, habitosRecientes, bloqueActual] = await Promise.all([
+    prisma.entrenamiento.findMany({
+      where: { id_alumno, fecha: { gte: hace30 } },
+      include: { series: true },
+      orderBy: { fecha: "desc" },
+      relationLoadStrategy: "join",
+    }),
+    prisma.feedbackDiario.findMany({ where: { id_alumno, fecha: { gte: hace14 } } }),
+    prisma.habito.count({ where: { id_alumno, fecha: { gte: hace14 } } }),
+    obtenerBloqueActual(id_alumno),
+  ]);
+
+  return calcularAlertas({ entrenamientos, feedbacksDiarios, habitosRecientes, bloqueActual });
+}
+
+/**
+ * Misma regla que detectarAlertas(), pero para varios alumnos de una sola
+ * pasada: 4 queries en total (batcheadas con `id_alumno IN (...)`) en vez
+ * de 4 × cantidad de alumnos. Pensada para listados como /coach y
+ * /coach/alumnos, donde antes se llamaba detectarAlertas() una vez por
+ * alumno dentro de un .map(), multiplicando los viajes a la base por la
+ * cantidad de alumnos de la cartera.
+ */
+export async function detectarAlertasPorAlumnos(
+  idsAlumnos: string[]
+): Promise<Map<string, Alerta[]>> {
+  if (idsAlumnos.length === 0) return new Map();
+
+  const hace30 = new Date(Date.now() - 30 * DIA_MS);
+  const hace14 = new Date(Date.now() - 14 * DIA_MS);
+
+  const [entrenamientos, feedbacksDiarios, habitosRecientes, programasActivos] =
+    await Promise.all([
+      prisma.entrenamiento.findMany({
+        where: { id_alumno: { in: idsAlumnos }, fecha: { gte: hace30 } },
+        include: { series: true },
+        orderBy: { fecha: "desc" },
+        relationLoadStrategy: "join",
+      }),
+      prisma.feedbackDiario.findMany({
+        where: { id_alumno: { in: idsAlumnos }, fecha: { gte: hace14 } },
+        select: { id_alumno: true, comentario_diario: true },
+      }),
+      prisma.habito.groupBy({
+        by: ["id_alumno"],
+        where: { id_alumno: { in: idsAlumnos }, fecha: { gte: hace14 } },
+        _count: { _all: true },
+      }),
+      prisma.programaEntrenamiento.findMany({
+        where: { id_alumno: { in: idsAlumnos }, estado_programa: "activo" },
+        include: { bloques: true },
+        relationLoadStrategy: "join",
+      }),
+    ]);
+
+  const entrenamientosPorAlumno = new Map<string, EntrenamientoConSeries[]>();
+  for (const e of entrenamientos) {
+    const lista = entrenamientosPorAlumno.get(e.id_alumno);
+    if (lista) lista.push(e);
+    else entrenamientosPorAlumno.set(e.id_alumno, [e]);
+  }
+
+  const feedbacksPorAlumno = new Map<string, { comentario_diario: string }[]>();
+  for (const f of feedbacksDiarios) {
+    const lista = feedbacksPorAlumno.get(f.id_alumno);
+    if (lista) lista.push(f);
+    else feedbacksPorAlumno.set(f.id_alumno, [f]);
+  }
+
+  const habitosPorAlumno = new Map(habitosRecientes.map((h) => [h.id_alumno, h._count._all]));
+
+  const programasPorAlumno = new Map<string, ProgramaConBloques[]>();
+  for (const p of programasActivos) {
+    if (!p.id_alumno) continue;
+    const lista = programasPorAlumno.get(p.id_alumno);
+    if (lista) lista.push(p);
+    else programasPorAlumno.set(p.id_alumno, [p]);
+  }
+
+  const resultado = new Map<string, Alerta[]>();
+  for (const id_alumno of idsAlumnos) {
+    resultado.set(
+      id_alumno,
+      calcularAlertas({
+        entrenamientos: entrenamientosPorAlumno.get(id_alumno) ?? [],
+        feedbacksDiarios: feedbacksPorAlumno.get(id_alumno) ?? [],
+        habitosRecientes: habitosPorAlumno.get(id_alumno) ?? 0,
+        bloqueActual: bloqueActualDesdePrograms(programasPorAlumno.get(id_alumno) ?? []),
+      })
+    );
+  }
+  return resultado;
 }

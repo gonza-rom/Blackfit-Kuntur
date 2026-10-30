@@ -11,7 +11,10 @@ const ESTILO_ESTADO: Record<string, string> = {
 export default async function AdminComerciosPage() {
   const [comerciosTodos, pendientesPorComercio] = await Promise.all([
     prisma.comercio.findMany({
-      include: { usuario: true, _count: { select: { beneficios: true } } },
+      include: {
+        usuario: { select: { email: true } },
+        _count: { select: { beneficios: true } },
+      },
       orderBy: { fecha_creacion: "desc" },
     }),
     prisma.beneficio.groupBy({ by: ["id_comercio"], where: { estado: "pendiente" }, _count: true }),
