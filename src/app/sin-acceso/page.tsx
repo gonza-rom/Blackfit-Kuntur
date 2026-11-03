@@ -2,13 +2,14 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { obtenerUsuarioActual, entornosDisponibles } from "@/lib/auth";
 import { cerrarSesion } from "@/app/actions/auth";
+import { FormUnirseKuntur } from "./_components/form-unirse-kuntur";
 
 const MENSAJES: Record<string, { titulo: string; texto: string; acciones: { href: string; texto: string }[] }> = {
   kuntur: {
-    titulo: "Tu cuenta no está vinculada a Kuntur",
+    titulo: "Tu cuenta todavía no es socio de Kuntur",
     texto:
-      "Para entrar a Kuntur Training Club tu cuenta tiene que estar asociada a tu ficha de socio. Si ya sos socio, pedí en recepción que vinculen tu cuenta o tu código de activación.",
-    acciones: [{ href: "/kuntur/activar", texto: "Activar mi cuenta de socio" }],
+      "Ingresá tu DNI y listo: si ya figurás como socio te vinculamos con tu ficha, y si sos nuevo empezás con 30 días de membresía.",
+    acciones: [],
   },
   blackfit: {
     titulo: "Tu cuenta no tiene acceso a Blackfit",
@@ -47,6 +48,9 @@ export default async function SinAccesoPage(props: {
         <span className="material-symbols-outlined text-[#eda100] text-5xl">link_off</span>
         <h1 className="font-[family-name:var(--font-sora)] text-2xl font-bold text-on-surface">{mensaje.titulo}</h1>
         <p className="text-sm text-on-surface-variant">{mensaje.texto}</p>
+
+        {/* Kuntur: se suma sola, sin pasar por recepción (no aplica a comercios). */}
+        {(ruta === "kuntur" || !ruta) && !usuario.comercio && <FormUnirseKuntur dniActual={usuario.dni} />}
 
         {mensaje.acciones.map((a) => (
           <Link

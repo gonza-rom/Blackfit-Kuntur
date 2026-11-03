@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { obtenerAdminComerciosActual } from "@/lib/auth";
 import { diasRestantesMembresia, membresiaVigente } from "@/lib/membresia";
+import { activarSocio30Dias, cambiarEstadoSocio } from "@/app/actions/kuntur";
+import { ConfirmForm } from "@/components/confirm-form";
 
 const FORMATEADOR_FECHA = new Intl.DateTimeFormat("es-AR", {
   day: "2-digit",
@@ -16,6 +18,7 @@ const FILTROS = [
   { valor: "vigente", texto: "Activos" },
   { valor: "vencida", texto: "Vencidos" },
   { valor: "sin_membresia", texto: "Sin membresía" },
+  { valor: "baja", texto: "De baja" },
   { valor: "sin_activar", texto: "Cuenta sin activar" },
 ] as const;
 
@@ -55,7 +58,7 @@ export default async function SociosPage(props: {
           dni: true,
           membresias: {
             where: { plan_membresia: { organizacion: "kuntur" } },
-            orderBy: { fecha_vencimiento_membresia: "desc" },
+            orderBy: { fecha_creacion: "desc" },
             select: { estado_membresia: true, fecha_vencimiento_membresia: true, plan_membresia: { select: { nombre: true } } },
           },
         },
@@ -68,7 +71,16 @@ export default async function SociosPage(props: {
     .map((s) => {
       const vigente = s.usuario.membresias.find(membresiaVigente);
       const ultima = s.usuario.membresias[0];
-      const estado = ultima?.estado_membresia === "suspendida" ? "suspendida" : vigente ? "vigente" : ultima ? "vencida" : "sin_membresia";
+      // Vigente manda; si no, la última operación (suspensión / baja).
+      const estado = vigente
+        ? "vigente"
+        : ultima?.estado_membresia === "suspendida"
+          ? "suspendida"
+          : ultima?.estado_membresia === "cancelada"
+            ? "baja"
+            : ultima
+              ? "vencida"
+              : "sin_membresia";
       return { s, vigente, ultima, estado };
     })
     .filter((f) => (filtro === "sin_activar" ? !f.s.cuenta_activada : !filtro || f.estado === filtro));
@@ -156,7 +168,7 @@ export default async function SociosPage(props: {
       </div>
 
       <div className="bg-[#1A1A1A] border border-[#262626] rounded-xl overflow-x-auto">
-        <table className="w-full text-sm min-w-[640px]">
+        <table className="w-full text-sm min-w-[780px]">
           <thead>
             <tr className="border-b border-[#262626] text-left text-[10px] uppercase tracking-[0.08em] text-on-surface-variant">
               <th className="px-4 py-3">Socio</th>
@@ -164,6 +176,7 @@ export default async function SociosPage(props: {
               <th className="px-4 py-3">Membresía</th>
               <th className="px-4 py-3">Vence</th>
               <th className="px-4 py-3">Cuenta</th>
+              <th className="px-4 py-3">Acciones</th>
             </tr>
           </thead>
           <tbody>
@@ -187,18 +200,59 @@ export default async function SociosPage(props: {
                         ? "Vencida"
                         : estado === "suspendida"
                           ? "Suspendida"
-                          : "Sin membresía"}
+                          : estado === "baja"
+                            ? "Dado de baja"
+                            : "Sin membresía"}
                   </span>
                 </td>
                 <td className="px-4 py-2.5 text-on-surface-variant">
                   {ultima ? FORMATEADOR_FECHA.format((vigente ?? ultima).fecha_vencimiento_membresia) : "—"}
                 </td>
                 <td className="px-4 py-2.5 text-on-surface-variant">{s.cuenta_activada ? "Activada" : "Sin activar"}</td>
+                <td className="px-4 py-2.5">
+                  <div className="flex flex-wrap gap-1.5">
+                    <ConfirmForm
+                      action={activarSocio30Dias}
+                      titulo={estado === "vigente" ? "Renovar 30 días" : "Activar 30 días"}
+                      mensaje={
+                        estado === "vigente"
+                          ? `¿Sumar 30 días a ${s.usuario.nombre} ${s.usuario.apellido}? Empiezan cuando termine su período actual.`
+                          : `¿Activar 30 días a ${s.usuario.nombre} ${s.usuario.apellido}? Empiezan hoy.`
+                      }
+                      confirmLabel={estado === "vigente" ? "Renovar" : "Activar"}
+                      variante="positiva"
+                    >
+                      <input type="hidden" name="id_usuario" value={s.usuario.id_usuario} />
+                      <button
+                        type="submit"
+                        className="whitespace-nowrap text-[10px] uppercase tracking-[0.06em] font-bold px-2.5 py-1 rounded-full bg-primary-container text-black"
+                      >
+                        {estado === "vigente" ? "+30 días" : "Activar 30 días"}
+                      </button>
+                    </ConfirmForm>
+                    {estado === "vigente" && (
+                      <ConfirmForm
+                        action={cambiarEstadoSocio}
+                        mensaje={`¿Dar de baja a ${s.usuario.nombre} ${s.usuario.apellido}? Pierde el acceso a los beneficios; la cuenta y el historial se conservan.`}
+                        confirmLabel="Dar de baja"
+                      >
+                        <input type="hidden" name="id_usuario" value={s.usuario.id_usuario} />
+                        <input type="hidden" name="estado" value="cancelada" />
+                        <button
+                          type="submit"
+                          className="whitespace-nowrap text-[10px] uppercase tracking-[0.06em] px-2.5 py-1 rounded-full border border-[#ffb4ab]/50 text-[#ffb4ab]"
+                        >
+                          Baja
+                        </button>
+                      </ConfirmForm>
+                    )}
+                  </div>
+                </td>
               </tr>
             ))}
             {visibles.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-on-surface-variant">
+                <td colSpan={6} className="px-4 py-6 text-center text-on-surface-variant">
                   No hay socios con ese filtro.
                 </td>
               </tr>

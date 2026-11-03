@@ -12,6 +12,10 @@ import {
 import { crearNotificacion } from "@/lib/notificaciones";
 import { avisar } from "@/lib/aviso";
 import { destinoTrasLogin } from "@/lib/auth";
+import { apellidoCoincide, esFichaSinReclamar, otorgarAltaKunturSiNoTiene } from "@/lib/kuntur";
+import { asegurarCredencial } from "@/lib/beneficios";
+import { cambiarEmailAuth, emailTomado, establecerContrasena } from "@/lib/cuentas";
+import { registrarAuditoria } from "@/lib/auditoria";
 import {
   confirmarEmailComercio,
   confirmarEmailAuth,
@@ -107,7 +111,7 @@ export async function iniciarSesion(
     if (socioSinActivar) {
       return {
         error:
-          "Tu cuenta de socio Kuntur todavía no está activada. Pedí tu código en recepción y activala en \"Ya soy socio: activar mi cuenta\".",
+          "Tu cuenta de socio Kuntur todavía no está activada. Creala en \"Soy socio de Kuntur\" con tu DNI y tu apellido (o con el código que te dan en recepción).",
       };
     }
     return { error: "Email o contraseña incorrectos." };
@@ -155,7 +159,7 @@ export async function iniciarSesion(
     // Blackfit por defecto).
     const usuarioConRoles = await prisma.usuario.findUnique({
       where: { id_usuario: data.user.id },
-      include: { roles: true, alumno: true, entrenador: true, comercio: true },
+      include: { roles: true, alumno: true, entrenador: true, comercio: true, socio_kuntur: true },
     });
     redirect(destinoTrasLogin(usuarioConRoles, ruta));
   }
@@ -211,17 +215,58 @@ export async function registrarse(
   const responsable = String(formData.get("responsable") ?? "").trim().slice(0, 120) || null;
 
   // Socio de Kuntur: el DNI es lo que lo identifica en el gimnasio. Si ya
-  // está (importado del Excel o cargado por la administración), NO se crea
-  // otra cuenta: tiene que activar la suya, así no hay perfiles duplicados.
+  // figura en el padrón (importado del Excel o cargado por la
+  // administración) y todavía no activó su cuenta, se registra SOBRE esa
+  // ficha (conserva su antigüedad, membresía e historial): NO se crea otra
+  // cuenta, así no hay perfiles duplicados. Para eso el apellido tiene que
+  // coincidir con el del padrón.
   const dni = String(formData.get("dni") ?? "").replace(/\D/g, "");
   if (esBeneficiario) {
     if (dni.length < 6 || dni.length > 9) return { error: "Ingresá tu DNI (sin puntos)." };
-    const conEseDni = await prisma.usuario.findUnique({ where: { dni }, select: { id_usuario: true } });
+    const conEseDni = await prisma.usuario.findUnique({
+      where: { dni },
+      select: { id_usuario: true, apellido: true, email: true, socio_kuntur: true, roles: { select: { rol: true } } },
+    });
     if (conEseDni) {
-      return {
-        error:
-          "Ese DNI ya está registrado como socio de Kuntur. Activá tu cuenta desde \"Ya soy socio: activar mi cuenta\" con el código que te dan en recepción.",
-      };
+      if (!esFichaSinReclamar(conEseDni)) {
+        return { error: "Ese DNI ya tiene una cuenta. Iniciá sesión (podés entrar con tu DNI o tu email)." };
+      }
+      if (!apellidoCoincide(apellido, conEseDni.apellido)) {
+        return {
+          error:
+            "Tu DNI figura como socio de Kuntur pero el apellido no coincide con el de tu ficha. Revisalo o pedí en recepción tu código de activación.",
+        };
+      }
+      if (await emailTomado(email, conEseDni.id_usuario)) {
+        return { error: "Ese email ya pertenece a otra cuenta. Usá otro o iniciá sesión con esa cuenta." };
+      }
+      if (await intentar(() => registroBloqueado(), false)) {
+        return { error: "Demasiados registros desde esta conexión. Probá de nuevo más tarde." };
+      }
+      await intentar(() => registrarIntentoRegistro(), undefined);
+      const id = conEseDni.id_usuario;
+      await establecerContrasena(id, password);
+      await cambiarEmailAuth(id, email);
+      await prisma.$transaction([
+        prisma.usuario.update({ where: { id_usuario: id }, data: { email } }),
+        prisma.socioKuntur.update({
+          where: { id_usuario: id },
+          data: { cuenta_activada: true, codigo_activacion_hash: null, codigo_activacion_vence: null },
+        }),
+      ]);
+      await asegurarCredencial(id);
+      await registrarAuditoria({
+        id_usuario_actor: id,
+        accion: "activacion_cuenta_socio",
+        recurso: "usuario",
+        id_recurso: id,
+        resultado: "registro_con_dni_del_padron",
+      }).catch(() => {});
+      const supabaseSocio = await createClient();
+      const { error: errorLogin } = await supabaseSocio.auth.signInWithPassword({ email, password });
+      if (errorLogin) return { message: "¡Cuenta activada! Ya podés iniciar sesión con tu DNI o email." };
+      await avisar("¡Cuenta activada! Bienvenido/a a Kuntur Training Club.");
+      redirect("/beneficiario");
     }
   }
 
@@ -327,6 +372,14 @@ export async function registrarse(
     return { error: "No se pudo crear la cuenta. Intentá de nuevo." };
   }
 
+  // Socio nuevo de Kuntur (no figuraba en el padrón): 30 días de
+  // membresía desde hoy y su credencial para los beneficios. Best-effort:
+  // si falla, la administración lo activa desde Socios Kuntur.
+  if (esBeneficiario) {
+    await intentar(() => otorgarAltaKunturSiNoTiene(idAuth, true), false);
+    await intentar(() => asegurarCredencial(idAuth), undefined);
+  }
+
   // Arranca con todos los logros manuales de la biblioteca (ver
   // otorgarLogrosManualesIniciales) — así nadie queda con menos insignias
   // que el resto solo por registrarse después.
@@ -373,7 +426,7 @@ export async function registrarse(
   }
 
   await avisar("¡Cuenta creada! Bienvenido/a.");
-  redirect(esComercio ? "/comercio" : esBeneficiario ? "/beneficiario/beneficios" : "/panel");
+  redirect(esComercio ? "/comercio" : esBeneficiario ? "/beneficiario" : "/panel");
 }
 
 export async function cerrarSesion() {
