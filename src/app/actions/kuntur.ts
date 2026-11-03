@@ -4,12 +4,19 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
-import { obtenerAdminComerciosActual } from "@/lib/auth";
+import { obtenerAdminComerciosActual, obtenerUsuarioActual, cuentaActiva, tieneRol } from "@/lib/auth";
 import { registrarAuditoria } from "@/lib/auditoria";
 import { avisar } from "@/lib/aviso";
 import { crearNotificacion } from "@/lib/notificaciones";
 import { asegurarCredencial } from "@/lib/beneficios";
 import { calcularVencimiento30Dias, membresiaVigente } from "@/lib/membresia";
+import {
+  apellidoCoincide,
+  esFichaSinReclamar,
+  otorgarAltaKunturSiNoTiene,
+  planKunturDe30Dias,
+  unirCuentaConImportado,
+} from "@/lib/kuntur";
 import { loginBloqueado, registrarLoginFallido } from "@/lib/limite-intentos";
 import {
   cambiarEmailAuth,
@@ -388,27 +395,61 @@ export async function renovarMembresiaSocio(formData: FormData): Promise<void> {
   revalidatePath("/admin/socios");
 }
 
-/** Suspender, reactivar o dar de baja la membresía Kuntur actual (no toca Blackfit). */
+/**
+ * Alta rápida desde la lista de socios: 30 días del plan mensual de Kuntur
+ * (misma regla que renovar: si sigue vigente se suman al final, si no,
+ * desde hoy). Para elegir otro plan está la ficha del socio.
+ */
+export async function activarSocio30Dias(formData: FormData): Promise<void> {
+  if (!(await adminKuntur())) return;
+  const plan = await planKunturDe30Dias(false);
+  const datos = new FormData();
+  datos.set("id_usuario", String(formData.get("id_usuario") ?? ""));
+  datos.set("id_plan_membresia", plan.id_plan_membresia);
+  await renovarMembresiaSocio(datos);
+}
+
+/**
+ * Suspender, reactivar o dar de baja la membresía Kuntur (no toca Blackfit).
+ * Suspender / dar de baja alcanza a TODAS las membresías todavía en curso
+ * (también una renovación anticipada); reactivar, a las suspendidas o de
+ * baja que todavía no vencieron. La cuenta y el historial se conservan.
+ */
 export async function cambiarEstadoSocio(formData: FormData): Promise<void> {
   const contexto = await adminKuntur();
   if (!contexto) return;
   const id_usuario = String(formData.get("id_usuario") ?? "");
   const estado = String(formData.get("estado") ?? "");
   if (!["activa", "suspendida", "cancelada"].includes(estado)) return;
-  const actual = await prisma.membresia.findFirst({
-    where: { id_usuario, plan_membresia: { organizacion: "kuntur" } },
-    orderBy: { fecha_vencimiento_membresia: "desc" },
+  const ahora = new Date();
+  const afectadas = await prisma.membresia.findMany({
+    where: {
+      id_usuario,
+      plan_membresia: { organizacion: "kuntur" },
+      fecha_vencimiento_membresia: { gt: ahora },
+      estado_membresia: estado === "activa" ? { in: ["suspendida", "cancelada"] } : "activa",
+    },
+    select: { id_membresia: true },
   });
-  if (!actual) return;
-  await prisma.membresia.update({
-    where: { id_membresia: actual.id_membresia },
+  if (afectadas.length === 0) {
+    await avisar(
+      estado === "activa"
+        ? "No hay un período en curso para reactivar: usá \"Activar 30 días\"."
+        : "No tiene una membresía en curso.",
+      "info"
+    );
+    revalidatePath(`/admin/socios/${id_usuario}`);
+    return;
+  }
+  await prisma.membresia.updateMany({
+    where: { id_membresia: { in: afectadas.map((m) => m.id_membresia) } },
     data: { estado_membresia: estado as "activa" | "suspendida" | "cancelada" },
   });
   await registrarAuditoria({
     id_usuario_actor: contexto.usuario.id_usuario,
     accion: "estado_membresia_kuntur",
     recurso: "membresia",
-    id_recurso: actual.id_membresia,
+    id_recurso: afectadas[0].id_membresia,
     resultado: estado,
   });
   await avisar(estado === "activa" ? "Membresía reactivada." : estado === "suspendida" ? "Membresía suspendida." : "Socio dado de baja.", "info");
@@ -490,63 +531,8 @@ export async function unirConSocioImportado(_prev: EstadoKuntur, formData: FormD
   const dni = dniLimpio(formData.get("dni"));
   if (!dni) return { error: "Ingresá el DNI del socio importado." };
 
-  const [cuenta, importado] = await Promise.all([
-    prisma.usuario.findUnique({
-      where: { id_usuario: id_cuenta },
-      include: {
-        socio_kuntur: true,
-        credencial: true,
-        roles: true,
-        alumno: { include: { _count: { select: { relaciones: true, entrenamientos: true, programas: true } } } },
-        _count: { select: { membresias: { where: { plan_membresia: { organizacion: "blackfit" } } } } },
-      },
-    }),
-    prisma.usuario.findUnique({ where: { dni }, include: { socio_kuntur: true, credencial: true, roles: true } }),
-  ]);
-  if (!cuenta || !importado || importado.id_usuario === id_cuenta) return { error: "No se encontró otro socio con ese DNI." };
-  if (!importado.email.endsWith("@beneficiario.blackhub.local") || importado.socio_kuntur?.cuenta_activada) {
-    return { error: "Ese socio ya tiene una cuenta propia activada: no se puede unir automáticamente." };
-  }
-  if (importado.roles.some((r) => r.rol !== "beneficiario")) {
-    return { error: "El registro importado tiene otros roles: revisalo a mano." };
-  }
-
-  await prisma.$transaction(async (tx) => {
-    const de = importado.id_usuario;
-    await tx.membresia.updateMany({ where: { id_usuario: de }, data: { id_usuario: id_cuenta } });
-    await tx.validacionBeneficio.updateMany({ where: { id_usuario: de }, data: { id_usuario: id_cuenta } });
-    if (importado.credencial && !cuenta.credencial) {
-      await tx.credencial.update({ where: { id_usuario: de }, data: { id_usuario: id_cuenta } });
-    }
-    const ficha = importado.socio_kuntur;
-    await tx.usuario.update({ where: { id_usuario: de }, data: { dni: null } });
-    await tx.usuario.update({ where: { id_usuario: id_cuenta }, data: { dni } });
-    if (!cuenta.socio_kuntur) {
-      await tx.socioKuntur.create({
-        data: {
-          id_usuario: id_cuenta,
-          fecha_alta_gimnasio: ficha?.fecha_alta_gimnasio ?? cuenta.fecha_creacion,
-          fecha_nacimiento: ficha?.fecha_nacimiento,
-          observaciones: ficha?.observaciones,
-          cuenta_activada: true,
-        },
-      });
-    }
-    await tx.usuarioRol.upsert({
-      where: { usuario_rol_unico: { id_usuario: id_cuenta, rol: "beneficiario" } },
-      update: {},
-      create: { id_usuario: id_cuenta, rol: "beneficiario" },
-    });
-    // Si la cuenta real había quedado como alumno de Blackfit SIN actividad
-    // (el registro viejo), se quita ese perfil vacío: ahora es socio.
-    const a = cuenta.alumno?._count;
-    if (cuenta.alumno && a && !a.relaciones && !a.entrenamientos && !a.programas && !cuenta._count.membresias) {
-      await tx.usuarioRol.deleteMany({ where: { id_usuario: id_cuenta, rol: "alumno" } });
-      await tx.alumno.delete({ where: { id_alumno: cuenta.alumno.id_alumno } });
-    }
-    await tx.usuario.delete({ where: { id_usuario: de } });
-    await tx.$executeRaw`delete from auth.users where id::text = ${de}`;
-  });
+  const error = await unirCuentaConImportado(id_cuenta, dni);
+  if (error) return { error };
   await registrarAuditoria({
     id_usuario_actor: contexto.usuario.id_usuario,
     accion: "union_socio_importado",
@@ -562,4 +548,91 @@ export async function unirConSocioImportado(_prev: EstadoKuntur, formData: FormD
 export async function listarPlanesKuntur() {
   if (!(await adminKuntur())) return [];
   return planesKuntur();
+}
+
+// ------------------------------------------------------------
+// Sumarse a Kuntur desde una cuenta que ya existe (pública, con sesión)
+// ------------------------------------------------------------
+
+/**
+ * Una persona con cuenta (por ejemplo, se registró como alumno de Blackfit
+ * o se le quitó el rol) que quiere entrar a Kuntur. Con su DNI:
+ * - Si figura en el padrón del Excel sin activar y el apellido coincide,
+ *   se une con esa ficha (conserva antigüedad, membresía e historial).
+ * - Si no figura, queda como socio nuevo con 30 días de membresía.
+ * Nunca crea perfiles duplicados.
+ */
+export async function unirseAKuntur(_prev: EstadoKuntur, formData: FormData): Promise<EstadoKuntur> {
+  const usuario = await obtenerUsuarioActual();
+  if (!usuario) return { error: "Iniciá sesión para continuar." };
+  if (!cuentaActiva(usuario)) return { error: "Tu cuenta está inactiva. Consultá en recepción." };
+  if (tieneRol(usuario, "comercio")) {
+    return { error: "Una cuenta de comercio no puede ser socio. Registrate como socio con otro email." };
+  }
+
+  const id_usuario = usuario.id_usuario;
+  const usaBlackfit = tieneRol(usuario, "alumno") || tieneRol(usuario, "entrenador");
+  const rol = usaBlackfit ? "miembro_kuntur" : "beneficiario";
+
+  // Ya tiene ficha (le faltaba el rol): solo se repara el rol.
+  if (usuario.socio_kuntur) {
+    await prisma.usuarioRol.upsert({
+      where: { usuario_rol_unico: { id_usuario, rol } },
+      update: {},
+      create: { id_usuario, rol },
+    });
+    redirect("/beneficiario");
+  }
+
+  const dni = dniLimpio(formData.get("dni"));
+  if (!dni) return { error: "Ingresá tu DNI (sin puntos)." };
+  if (usuario.dni && usuario.dni !== dni) {
+    return { error: "Ese no es el DNI de tu cuenta. Revisalo o consultá en recepción." };
+  }
+
+  const conEseDni = usuario.dni
+    ? null
+    : await prisma.usuario.findUnique({
+        where: { dni },
+        select: { id_usuario: true, apellido: true, email: true, socio_kuntur: true, roles: { select: { rol: true } } },
+      });
+
+  let resultado: string;
+  if (conEseDni) {
+    // Figura en el padrón: se une con esa ficha si el apellido coincide.
+    if (!esFichaSinReclamar(conEseDni) || !apellidoCoincide(usuario.apellido, conEseDni.apellido)) {
+      return {
+        error:
+          "Ese DNI ya pertenece a otra cuenta o el apellido no coincide con el del padrón. Consultá en recepción para que unan tus registros.",
+      };
+    }
+    const error = await unirCuentaConImportado(id_usuario, dni);
+    if (error) return { error };
+    resultado = "unida_con_padron";
+  } else {
+    await prisma.$transaction([
+      prisma.usuario.update({ where: { id_usuario }, data: { dni } }),
+      prisma.socioKuntur.create({
+        data: { id_usuario, fecha_alta_gimnasio: new Date(), cuenta_activada: true },
+      }),
+      prisma.usuarioRol.upsert({
+        where: { usuario_rol_unico: { id_usuario, rol } },
+        update: {},
+        create: { id_usuario, rol },
+      }),
+    ]);
+    await otorgarAltaKunturSiNoTiene(id_usuario, true);
+    resultado = "socio_nuevo_30_dias";
+  }
+  await asegurarCredencial(id_usuario);
+  await registrarAuditoria({
+    id_usuario_actor: id_usuario,
+    accion: "alta_socio_kuntur",
+    recurso: "usuario",
+    id_recurso: id_usuario,
+    resultado,
+  }).catch(() => {});
+  await avisar("¡Listo! Ya sos socio de Kuntur Training Club.");
+  revalidatePath("/admin/socios");
+  redirect("/beneficiario");
 }

@@ -10,6 +10,7 @@ import type {
   Alumno,
   Entrenador,
   Comercio,
+  SocioKuntur,
 } from "@prisma/client";
 
 export type UsuarioActual = Usuario & {
@@ -17,6 +18,7 @@ export type UsuarioActual = Usuario & {
   alumno: Alumno | null;
   entrenador: Entrenador | null;
   comercio: Comercio | null;
+  socio_kuntur: SocioKuntur | null;
 };
 
 // A qué usuarios (por sus roles) llega cada admin recortado. Se reusa
@@ -66,7 +68,7 @@ export const obtenerUsuarioActual = cache(
     // llama en casi todas las páginas.
     return prisma.usuario.findUnique({
       where: { id_usuario },
-      include: { roles: true, alumno: true, entrenador: true, comercio: true },
+      include: { roles: true, alumno: true, entrenador: true, comercio: true, socio_kuntur: true },
       relationLoadStrategy: "join",
     });
   }
@@ -164,8 +166,14 @@ export const obtenerAlumnoActual = cache(
 // "miembro_kuntur" (alumno/coach de Blackfit que además es socio). Ambos
 // entran al panel de Kuntur (/beneficiario); el rol lo asigna la
 // administración, nunca el cliente.
+// También quien tiene FICHA de socio aunque le falte el rol (una cuenta
+// a la que se le quitó o nunca se le asignó): la ficha la crea siempre la
+// administración o el alta de socio, nunca el cliente, y sin esto esa
+// persona quedaba en "Tu cuenta no está vinculada a Kuntur".
 export function esSocioKuntur(usuario: UsuarioActual | null): boolean {
-  return tieneRol(usuario, "beneficiario") || tieneRol(usuario, "miembro_kuntur");
+  return (
+    tieneRol(usuario, "beneficiario") || tieneRol(usuario, "miembro_kuntur") || Boolean(usuario?.socio_kuntur)
+  );
 }
 
 export const obtenerBeneficiarioActual = cache(

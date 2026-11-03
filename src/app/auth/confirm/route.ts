@@ -30,7 +30,7 @@ export async function GET(request: Request) {
       // A su entorno según sus roles reales (ver destinoTrasLogin).
       const usuario = await prisma.usuario.findUnique({
         where: { id_usuario: data.user.id },
-        include: { roles: true, alumno: true, entrenador: true, comercio: true },
+        include: { roles: true, alumno: true, entrenador: true, comercio: true, socio_kuntur: true },
       });
       return NextResponse.redirect(`${origin}${destinoTrasLogin(usuario)}`);
     }
